@@ -126,6 +126,15 @@ const describedBy = computed(() => (props.error != null ? errorId : undefined))
   color: var(--text-faint);
 }
 
+/* Edge/Chromium inyecta su propio botón "revelar contraseña" (::ms-reveal)
+   con fondo claro — se oculta: el toggle custom del suffix lo reemplaza. */
+.app-input__control input::-ms-reveal,
+.app-input__control input::-ms-clear {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 .app-input__control input:disabled {
   opacity: 0.6;
 }
@@ -137,18 +146,36 @@ const describedBy = computed(() => (props.error != null ? errorId : undefined))
   color: var(--text-muted);
 }
 
-.app-input__suffix button {
+/* El botón del suffix llega por SLOT (scope del padre): sin :deep() el CSS
+   scoped no lo alcanza y el navegador pinta el botón nativo claro/outset. */
+.app-input__suffix :deep(button) {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-right: -6px;
   background: none;
   border: 0;
-  padding: 4px;
+  border-radius: 8px;
+  padding: 0;
   color: var(--text-muted);
   cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
 }
 
-.app-input__suffix button:hover {
+.app-input__suffix :deep(button:hover) {
   color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.app-input__suffix :deep(button:active) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.app-input__suffix :deep(button:focus-visible) {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
 }
 
 .app-input__helper {

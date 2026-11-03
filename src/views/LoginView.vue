@@ -245,7 +245,7 @@ function backToActivation(): void {
             <AppInput
               v-model="employeeNumber"
               label="Número de empleado"
-              placeholder="1001"
+              placeholder="Ej. 1001"
               autocomplete="username"
               :inputmode="'numeric'"
               :spellcheck="false"
