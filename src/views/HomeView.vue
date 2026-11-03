@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { CreditCard, LayoutGrid, LogOut, Store, UtensilsCrossed } from 'lucide-vue-next'
+import { LogOut, ScanBarcode, Utensils } from 'lucide-vue-next'
 import { clearSession, session } from '../services/auth'
+import { AppButton } from '../components/ui'
 
 const router = useRouter()
 
@@ -23,7 +24,9 @@ const roleLabel = computed(() => {
       return session.role ?? ''
   }
 })
-const initials = computed(() => displayName.value.slice(0, 1).toUpperCase())
+
+/** Sesión restaurada tras recarga (tryResumeSession OK con token en memoria). */
+const sessionRestored = computed(() => session.accessToken != null)
 
 async function logout(): Promise<void> {
   clearSession()
@@ -32,71 +35,223 @@ async function logout(): Promise<void> {
 </script>
 
 <template>
-  <div class="rl-page column">
-    <header class="rl-header">
-      <div class="rl-header-user">
-        <div class="rl-brand" style="margin: 0">
-          <Store :size="24" aria-hidden="true" />
-          <span class="rl-brand-name">TekLive Rest</span>
-        </div>
+  <div class="home-page">
+    <!-- Header: réplica module_selection_screen.dart (grey[850] + shadow) -->
+    <header class="home-header">
+      <div class="home-header-brand">
+        <img
+          class="home-logo"
+          src="/logoWText.png"
+          alt="Crazy Wings"
+          width="160"
+          height="44"
+        />
       </div>
 
-      <div class="rl-header-user">
-        <div class="rl-avatar" aria-hidden="true">{{ initials || '?' }}</div>
-        <div>
-          <div class="rl-user-name">{{ displayName }}</div>
-          <div class="rl-user-role">{{ roleLabel }}</div>
+      <div class="home-header-user">
+        <div class="home-user-meta">
+          <span class="home-user-name">Bienvenido, {{ displayName }}</span>
+          <span v-if="roleLabel" class="home-user-role">{{ roleLabel }}</span>
         </div>
-        <button
-          type="button"
-          class="rl-btn ghost"
-          style="margin-left: 8px"
-          aria-label="Cerrar sesión"
-          @click="logout"
-        >
-          <LogOut :size="16" aria-hidden="true" />
-          <span>Cerrar sesión</span>
-        </button>
+        <AppButton variant="ghost" :block="false" aria-label="Cerrar sesión" @click="logout">
+          <template #icon><LogOut :size="16" /></template>
+          Cerrar sesión
+        </AppButton>
       </div>
     </header>
 
-    <main class="rl-main">
-      <h1 class="rl-title">Panel principal</h1>
-      <p class="rl-sub">
-        Módulos disponibles para {{ displayName }}
-        <template v-if="roleLabel"> · {{ roleLabel }}</template>. Próximas fases habilitarán la operación.
-      </p>
+    <main class="home-main">
+      <p v-if="sessionRestored" class="home-restored">Sesión restaurada</p>
 
-      <div class="rl-cards">
-        <article class="rl-module-card" aria-disabled="true">
-          <span class="rl-badge">Fase 3</span>
-          <div class="rl-module-icon"><CreditCard :size="22" aria-hidden="true" /></div>
-          <h2 class="rl-module-title">POS Piso 1</h2>
-          <p class="rl-module-desc">
-            Venta rápida, catálogo con templates/opciones, folios diarios y caja
-            (abrir/cerrar/reconciliación).
-          </p>
+      <h1 class="home-title">Selecciona un módulo</h1>
+
+      <!-- Grid de módulos: cards de module_selection_screen.dart (280×180 desktop) -->
+      <div class="home-modules">
+        <article class="home-module" aria-disabled="true" title="Disponible en Fase 3">
+          <div class="home-module-icon">
+            <ScanBarcode :size="30" aria-hidden="true" />
+          </div>
+          <h2 class="home-module-title">POS Piso 1</h2>
+          <p class="home-module-subtitle">Punto de venta</p>
+          <span class="home-module-phase">Fase 3</span>
         </article>
 
-        <article class="rl-module-card" aria-disabled="true">
-          <span class="rl-badge">Fase 4</span>
-          <div class="rl-module-icon"><UtensilsCrossed :size="22" aria-hidden="true" /></div>
-          <h2 class="rl-module-title">Restaurante Piso 2</h2>
-          <p class="rl-module-desc">
-            Piso en vivo, mesas, sesiones, cuentas divididas y facturación master.
-          </p>
-        </article>
-
-        <article class="rl-module-card">
-          <span class="rl-badge">Activo</span>
-          <div class="rl-module-icon"><LayoutGrid :size="22" aria-hidden="true" /></div>
-          <h2 class="rl-module-title">Sesión</h2>
-          <p class="rl-module-desc">
-            Empresa #{{ session.companyId ?? '—' }} · Dispositivo
-            {{ session.deviceId ? 'registrado' : 'sin registrar' }}. El token vive solo en memoria.
-          </p>
+        <article class="home-module" aria-disabled="true" title="Disponible en Fase 4">
+          <div class="home-module-icon">
+            <Utensils :size="30" aria-hidden="true" />
+          </div>
+          <h2 class="home-module-title">Restaurante Piso 2</h2>
+          <p class="home-module-subtitle">Sistema de mesas</p>
+          <span class="home-module-phase">Fase 4</span>
         </article>
       </div>
     </main>
   </div>
 </template>
+
+<style scoped>
+.home-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+/* Header Flutter: Container grey[850], shadow black 0.2 / blur 8 / offset 0,2 */
+.home-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 24px;
+  background: var(--bg-surface);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.home-logo {
+  height: 44px;
+  width: auto;
+  border-radius: 8px;
+  object-fit: contain;
+}
+
+.home-header-user {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.home-user-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.3;
+}
+
+/* "Bienvenido, {nombre}" 20px bold blanco (desktop) */
+.home-user-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* "Rol: {rol}" 14px grey[400] */
+.home-user-role {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.home-main {
+  flex: 1;
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 48px 24px;
+}
+
+.home-restored {
+  margin: 0 0 16px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--info);
+}
+
+/* Título 28px bold blanco (desktop Flutter) */
+.home-title {
+  margin: 0 0 40px;
+  text-align: center;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.home-modules {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 280px));
+  gap: 32px;
+  justify-content: center;
+}
+
+/* _ModuleCard Flutter: grey[850] + overlay black 0.2, radius 12, 280×180 */
+.home-module {
+  position: relative;
+  aspect-ratio: 280 / 180;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px;
+  background:
+    linear-gradient(var(--card-overlay), var(--card-overlay)),
+    var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: not-allowed;
+  opacity: 0.5;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.home-module:hover {
+  border-color: var(--primary);
+}
+
+/* Icono deepOrange 28-32px */
+.home-module-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary);
+}
+
+.home-module-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+  text-align: center;
+}
+
+.home-module-subtitle {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* Badge de fase (pill deepOrange en Flutter; aquí discreto por ser placeholder) */
+.home-module-phase {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--card-overlay);
+  border: 1px solid var(--border);
+  color: var(--text-faint);
+  text-transform: uppercase;
+}
+
+@media (max-width: 600px) {
+  .home-header {
+    padding: 16px;
+  }
+
+  .home-main {
+    padding: 24px 16px;
+  }
+
+  .home-title {
+    font-size: 22px;
+    margin-bottom: 24px;
+  }
+
+  .home-modules {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
+</style>

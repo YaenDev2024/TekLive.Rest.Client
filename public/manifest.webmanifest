@@ -4,7 +4,7 @@
   "description": "TekLive Rest — POS y gestión de restaurante",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f1412",
-  "theme_color": "#2fbf71",
+  "background_color": "#212121",
+  "theme_color": "#FF5722",
   "icons": []
 }

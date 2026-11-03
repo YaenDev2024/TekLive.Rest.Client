@@ -1,15 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import {
-  AlertCircle,
-  ArrowRight,
-  Info,
-  KeyRound,
-  Loader2,
-  LogIn,
-  Store,
-} from 'lucide-vue-next'
+import { Eye, EyeOff, Hash, KeyRound, Lock, ShieldAlert, User } from 'lucide-vue-next'
 import { ApiError } from '../api/client'
 import { activateApp, getMe, loginEmployee } from '../api/rest'
 import {
@@ -19,6 +11,7 @@ import {
   persistSession,
   session,
 } from '../services/auth'
+import { AppBanner, AppButton, AppInput } from '../components/ui'
 
 const router = useRouter()
 
@@ -32,6 +25,10 @@ const router = useRouter()
  *   If decoding fails, a manual companyId input appears as dev fallback
  *   (TODO(backend): include companyId in the loginApp response).
  * - POST /api/rest/auth/login → { Token, RefreshToken, User }.
+ *
+ * Fase 2.5: la capa visual replica login_screen.dart de CrazyWings
+ * (gradiente 135° #303030→#212121, card rgba(0,0,0,0.2) radius 16,
+ * logo 210px). La lógica E2E probada NO cambió.
  */
 type Step = 'activate' | 'login'
 
@@ -42,6 +39,7 @@ const manualCompanyId = ref(session.companyId != null ? String(session.companyId
 const showManualCompanyId = ref(false)
 const employeeNumber = ref(session.employeeNumber ?? '')
 const password = ref('')
+const showPassword = ref(false)
 
 const activating = ref(false)
 const loggingIn = ref(false)
@@ -169,133 +167,224 @@ function backToActivation(): void {
 </script>
 
 <template>
-  <div class="rl-page">
-    <div class="rl-card">
-      <div class="rl-brand">
-        <Store :size="26" aria-hidden="true" />
-        <span class="rl-brand-name">TekLive Rest</span>
-      </div>
+  <div class="login-page">
+    <div class="login-card">
+      <p class="login-brand">TekLive Rest</p>
 
-      <div class="rl-steps" aria-hidden="true">
-        <div class="rl-step-dot" :class="{ active: step === 'activate' }" />
-        <div class="rl-step-dot" :class="{ active: step === 'login' }" />
-      </div>
+      <Transition name="step-fade" mode="out-in">
+        <!-- Step 1: activation -->
+        <div v-if="step === 'activate'" key="activate" class="login-step">
+          <img
+            class="login-logo"
+            src="/logo.png"
+            alt="Crazy Wings"
+            width="210"
+            height="210"
+          />
 
-      <div
-        v-if="errorMessage"
-        class="rl-banner error"
-        role="alert"
-        aria-live="assertive"
-      >
-        <AlertCircle :size="18" aria-hidden="true" />
-        <span>{{ errorMessage }}</span>
-      </div>
-      <div v-if="infoMessage" class="rl-banner info" role="status" aria-live="polite">
-        <Info :size="18" aria-hidden="true" />
-        <span>{{ infoMessage }}</span>
-      </div>
+          <AppBanner v-if="errorMessage" type="error" role="alert" aria-live="assertive">
+            <template #icon><ShieldAlert :size="18" /></template>
+            {{ errorMessage }}
+          </AppBanner>
 
-      <!-- Step 1: activation -->
-      <template v-if="step === 'activate'">
-        <h1 class="rl-title">Activar restaurante</h1>
-        <p class="rl-sub">
-          Ingresa la clave de licencia que recibiste al contratar TekLive Rest.
-        </p>
-
-        <form @submit.prevent="activate" novalidate>
-          <label class="rl-field">
-            <span class="rl-field-label">Clave de licencia</span>
-            <input
+          <form @submit.prevent="activate" novalidate>
+            <AppInput
               v-model="licenseKey"
-              type="text"
-              class="rl-input"
+              label="License key"
               placeholder="XXXX-XXXX-XXXX"
               autocomplete="off"
-              spellcheck="false"
+              :spellcheck="false"
               :disabled="activating"
-            />
-          </label>
+            >
+              <template #prefix><KeyRound :size="20" /></template>
+            </AppInput>
 
-          <button type="submit" class="rl-btn" :disabled="!canActivate">
-            <Loader2 v-if="activating" class="rl-spinner" :size="18" aria-hidden="true" />
-            <KeyRound v-else :size="18" aria-hidden="true" />
-            <span>{{ activating ? 'Activando…' : 'Activar' }}</span>
-          </button>
-        </form>
-      </template>
+            <AppButton
+              type="submit"
+              variant="primary"
+              class="login-submit"
+              :loading="activating"
+              :disabled="!canActivate"
+            >
+              {{ activating ? 'Activando…' : 'Activar' }}
+            </AppButton>
+          </form>
+        </div>
 
-      <!-- Step 2: employee login -->
-      <template v-else>
-        <h1 class="rl-title">Inicio de sesión</h1>
-        <p class="rl-sub">
-          Restaurante TekLive Demo · Empresa #{{ session.companyId ?? '—' }}
-        </p>
+        <!-- Step 2: employee login -->
+        <div v-else key="login" class="login-step">
+          <img
+            class="login-logo"
+            src="/logo.png"
+            alt="Crazy Wings"
+            width="210"
+            height="210"
+          />
 
-        <form @submit.prevent="login" novalidate>
-          <label v-if="showManualCompanyId" class="rl-field">
-            <span class="rl-field-label">ID de empresa (fallback)</span>
-            <input
+          <AppBanner v-if="errorMessage" type="error" role="alert" aria-live="assertive">
+            <template #icon><ShieldAlert :size="18" /></template>
+            {{ errorMessage }}
+          </AppBanner>
+          <AppBanner v-if="infoMessage" type="info" role="status" aria-live="polite">
+            {{ infoMessage }}
+          </AppBanner>
+
+          <form @submit.prevent="login" novalidate>
+            <AppInput
+              v-if="showManualCompanyId"
               v-model="manualCompanyId"
+              label="ID de empresa (fallback)"
               type="number"
-              min="1"
-              class="rl-input"
               placeholder="15"
-              autocomplete="off"
               :disabled="loggingIn"
-            />
-            <p class="rl-hint">
-              Solo necesario si la activación no resolvió la empresa (pendiente en backend).
-            </p>
-          </label>
+              helper-text="Solo necesario si la activación no resolvió la empresa (pendiente en backend)."
+            >
+              <template #prefix><Hash :size="20" /></template>
+            </AppInput>
 
-          <label class="rl-field">
-            <span class="rl-field-label">Número de empleado</span>
-            <input
+            <AppInput
               v-model="employeeNumber"
-              type="text"
-              inputmode="numeric"
-              class="rl-input"
+              label="Número de empleado"
               placeholder="1001"
               autocomplete="username"
-              spellcheck="false"
+              :inputmode="'numeric'"
+              :spellcheck="false"
               :disabled="loggingIn"
-            />
-          </label>
+            >
+              <template #prefix><User :size="20" /></template>
+            </AppInput>
 
-          <label class="rl-field">
-            <span class="rl-field-label">Contraseña</span>
-            <input
+            <AppInput
               v-model="password"
-              type="password"
-              class="rl-input"
+              label="Contraseña"
+              :type="showPassword ? 'text' : 'password'"
               placeholder="••••••••"
               autocomplete="current-password"
               :disabled="loggingIn"
-            />
-          </label>
+            >
+              <template #prefix><Lock :size="20" /></template>
+              <template #suffix>
+                <button
+                  type="button"
+                  :aria-label="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'"
+                  @click="showPassword = !showPassword"
+                >
+                  <EyeOff v-if="showPassword" :size="18" />
+                  <Eye v-else :size="18" />
+                </button>
+              </template>
+            </AppInput>
 
-          <button type="submit" class="rl-btn" :disabled="!canLogin">
-            <Loader2 v-if="loggingIn" class="rl-spinner" :size="18" aria-hidden="true" />
-            <LogIn v-else :size="18" aria-hidden="true" />
-            <span>{{ loggingIn ? 'Entrando…' : 'Entrar' }}</span>
-            <ArrowRight v-if="!loggingIn" :size="18" aria-hidden="true" />
+            <AppButton
+              type="submit"
+              variant="primary"
+              class="login-submit"
+              :loading="loggingIn"
+              :disabled="!canLogin"
+            >
+              Ingresar
+            </AppButton>
+          </form>
+
+          <button type="button" class="login-back" :disabled="loggingIn" @click="backToActivation">
+            Cambiar restaurante
           </button>
-        </form>
-
-        <button
-          type="button"
-          class="rl-btn ghost"
-          style="margin-top: 12px"
-          :disabled="loggingIn"
-          @click="backToActivation"
-        >
-          Usar otra licencia
-        </button>
-      </template>
-
-      <div v-if="step === 'login' && session.companyId != null" class="rl-hint" style="margin-top: 14px; display: flex; align-items: center; gap: 6px;">
-        <span>✓ Licencia verificada · Empresa #{{ session.companyId }}</span>
-      </div>
+        </div>
+      </Transition>
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Réplica de login_screen.dart: gradiente topLeft→bottomRight #303030→#212121 */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: linear-gradient(135deg, #303030 0%, #212121 100%);
+}
+
+/* Card Flutter: rgba(0,0,0,0.2), radius 16, elevation 8, max 380, pad 24/32 */
+.login-card {
+  width: 100%;
+  max-width: 380px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  padding: 32px 24px;
+}
+
+.login-brand {
+  margin: 0 0 8px;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.login-step {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Logo Flutter: assets/logo.png height 210 centrado */
+.login-logo {
+  display: block;
+  height: 210px;
+  width: auto;
+  margin: 0 auto 8px;
+  object-fit: contain;
+}
+
+.login-logo + .app-banner,
+.login-step .app-banner {
+  margin-bottom: 12px;
+}
+
+.login-submit {
+  margin-top: 20px;
+}
+
+.login-back {
+  margin-top: 12px;
+  align-self: center;
+  background: none;
+  border: 0;
+  padding: 8px 12px;
+  font-family: var(--font);
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.login-back:hover:not(:disabled) {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.login-back:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Transición suave entre pasos (fade + slide, como AnimatedOpacity Flutter) */
+.step-fade-enter-active,
+.step-fade-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.step-fade-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.step-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+</style>
