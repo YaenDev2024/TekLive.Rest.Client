@@ -1,0 +1,10 @@
+{
+  "name": "TekLive Rest",
+  "short_name": "TekLiveRest",
+  "description": "TekLive Rest — POS y gestión de restaurante",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f1412",
+  "theme_color": "#2fbf71",
+  "icons": []
+}

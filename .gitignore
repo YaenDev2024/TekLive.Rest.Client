@@ -1,0 +1,36 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Tauri / Rust
+src-tauri/target/
+src-tauri/Cargo.lock
+
+# Capacitor (Fase 5+: android/ and ios/ shells are generated, not committed yet)
+android/
+ios/
+
+# Environment: .env.example is committed, local overrides are not
+.env
+.env.development
+.env.production

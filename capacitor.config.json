@@ -1,0 +1,12 @@
+# Capacitor 6 — Android/iOS shells (Fase 5+).
+# @capacitor/core + @capacitor/cli are installed; `npx cap add android` is
+# INTENTIONALLY deferred (Java 1.8 on this machine; Android needs JDK 17).
+{
+  "appId": "com.teklive.rest",
+  "appName": "TekLive Rest",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  }
+}

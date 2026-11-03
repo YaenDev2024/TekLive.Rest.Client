@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Capability for the main window (Fase 2 scaffold: core defaults only).",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
