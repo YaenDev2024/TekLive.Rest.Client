@@ -110,21 +110,24 @@ export function applyTokens(accessToken: string, refreshToken: string | null): v
 
 /**
  * Restore the persisted profile (no tokens — those are memory-only).
- * Returns true when a profile exists that MIGHT still be valid; the caller
- * must validate with getMe() before skipping the login.
+ * Restores the DEVICE identity (companyId, licenseKey) independently of the
+ * employee profile: the login screen needs companyId to authenticate even
+ * after a logout (which clears employeeNumber on purpose).
+ * Returns true when a device/company is registered; the caller must validate
+ * the employee session with getMe() before skipping the login.
  */
 export function restoreSession(): boolean {
   const companyId = readLS(LS_COMPANY_ID)
-  const employeeNumber = readLS(LS_EMPLOYEE_NUMBER)
-  if (companyId == null || employeeNumber == null) return false
-
-  session.companyId = Number(companyId)
-  session.employeeNumber = employeeNumber
+  if (companyId != null) {
+    const parsed = Number(companyId)
+    session.companyId = Number.isFinite(parsed) && parsed > 0 ? parsed : null
+  }
+  session.employeeNumber = readLS(LS_EMPLOYEE_NUMBER)
   session.displayName = readLS(LS_DISPLAY_NAME)
   session.role = readLS(LS_ROLE)
   session.licenseKey = readLS(LS_LICENSE_KEY)
   getDeviceId() // ensures deviceId is generated/persisted
-  return session.companyId > 0 && session.employeeNumber.length > 0
+  return session.companyId != null && session.companyId > 0
 }
 
 /**

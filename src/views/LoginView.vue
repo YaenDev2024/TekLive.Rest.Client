@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Eye, EyeOff, Hash, KeyRound, Lock, ShieldAlert, User } from 'lucide-vue-next'
+import { Eye, EyeOff, KeyRound, Lock, Settings2, ShieldAlert, User, X } from 'lucide-vue-next'
 import { ApiError } from '../api/client'
 import { activateApp, getMe, loginEmployee } from '../api/rest'
 import {
@@ -9,6 +9,7 @@ import {
   getDeviceId,
   persistLicenseKey,
   persistSession,
+  restoreSession,
   session,
 } from '../services/auth'
 import { AppBanner, AppButton, AppInput } from '../components/ui'
@@ -16,40 +17,45 @@ import { AppBanner, AppButton, AppInput } from '../components/ui'
 const router = useRouter()
 
 /**
- * Step 1: activation (owner, LICENSE_KEY).
- * Step 2: employee login (employeeNumber + password).
+ * Login de empleado (employeeNumber + password) — réplica de login_screen.dart
+ * (gradiente 135° #303030→#212121, card rgba(0,0,0,0.2) radius 16, logo 210px).
  *
- * Verified backend shapes (BusinessSuite, Fase 1A):
- * - POST /api/saas/auth/loginApp → { Token } — NO companyId in body.
- *   The license JWT carries a `CompanyId` claim → decoded client-side.
- *   If decoding fails, a manual companyId input appears as dev fallback
- *   (TODO(backend): include companyId in the loginApp response).
+ * La ACTIVACIÓN DE LICENCIA no es parte del login: es un flujo SaaS bajo el
+ * capó (como Abogados/SPA). El dueño activa el restaurante UNA vez por
+ * dispositivo (modal desde el engrane); el companyId queda persistido y a
+ * partir de ahí los empleados entran directo con número + contraseña.
+ *
+ * Backend shapes verificados (BusinessSuite, Fase 1A):
+ * - POST /api/saas/auth/loginApp → { Token } — sin companyId en el body;
+ *   el claim `CompanyId` del JWT de licencia se decodifica client-side.
+ *   (TODO(backend): incluir companyId en la respuesta de loginApp.)
  * - POST /api/rest/auth/login → { Token, RefreshToken, User }.
- *
- * Fase 2.5: la capa visual replica login_screen.dart de CrazyWings
- * (gradiente 135° #303030→#212121, card rgba(0,0,0,0.2) radius 16,
- * logo 210px). La lógica E2E probada NO cambió.
  */
-type Step = 'activate' | 'login'
 
-const step = ref<Step>(session.companyId != null ? 'login' : 'activate')
+// Restaurar el perfil persistido (companyId/employeeNumber del dispositivo)
+// para que el login funcione directo tras un reload, sin reprocesos.
+restoreSession()
 
-const licenseKey = ref(session.licenseKey ?? '')
-const manualCompanyId = ref(session.companyId != null ? String(session.companyId) : '')
-const showManualCompanyId = ref(false)
 const employeeNumber = ref(session.employeeNumber ?? '')
 const password = ref('')
 const showPassword = ref(false)
 
-const activating = ref(false)
 const loggingIn = ref(false)
 const errorMessage = ref('')
 const infoMessage = ref('')
 
-const canActivate = computed(() => licenseKey.value.trim().length > 0 && !activating.value)
+// --- Activación (modal, no es un paso del login) ---
+const showActivation = ref(false)
+const licenseKey = ref(session.licenseKey ?? '')
+const manualCompanyId = ref(session.companyId != null ? String(session.companyId) : '')
+const showManualCompanyId = ref(false)
+const activating = ref(false)
+const activationError = ref('')
+
 const canLogin = computed(
   () => employeeNumber.value.trim().length > 0 && password.value.length >= 6 && !loggingIn.value,
 )
+const canActivate = computed(() => licenseKey.value.trim().length > 0 && !activating.value)
 
 /** Decode JWT payload without verifying signature (client-side convenience). */
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
@@ -69,9 +75,9 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
   }
 }
 
+/** Activación del restaurante (dueño, una vez por dispositivo). */
 async function activate(): Promise<void> {
-  errorMessage.value = ''
-  infoMessage.value = ''
+  activationError.value = ''
   activating.value = true
   try {
     const { data } = await activateApp(licenseKey.value.trim())
@@ -83,18 +89,18 @@ async function activate(): Promise<void> {
 
     if (Number.isFinite(resolvedCompanyId) && resolvedCompanyId > 0) {
       persistSession({ companyId: resolvedCompanyId, employeeNumber: null, displayName: null, role: null })
-      infoMessage.value = 'Licencia activada. Continúa con tu número de empleado.'
+      showActivation.value = false
+      infoMessage.value = 'Restaurante activado. Ingresa tu número de empleado.'
     } else {
-      // Backend gap: loginApp does not return companyId and JWT decode failed.
+      // Backend gap: loginApp no devuelve companyId y falló el decode del JWT.
       showManualCompanyId.value = true
-      infoMessage.value =
+      activationError.value =
         'Licencia activada, pero no se pudo resolver la empresa automáticamente. Ingresa el ID de empresa.'
       // TODO(backend): add companyId to the loginApp response so this
       // manual fallback can be removed.
     }
-    step.value = 'login'
   } catch (err) {
-    errorMessage.value =
+    activationError.value =
       err instanceof ApiError ? err.message : 'No se pudo activar la licencia. Intenta de nuevo.'
   } finally {
     activating.value = false
@@ -104,10 +110,12 @@ async function activate(): Promise<void> {
 async function login(): Promise<void> {
   errorMessage.value = ''
   infoMessage.value = ''
-  const companyId = session.companyId ?? Number(manualCompanyId.value)
-  if (!Number.isFinite(companyId) || companyId <= 0) {
-    showManualCompanyId.value = true
-    errorMessage.value = 'Falta el ID de empresa (companyId).'
+  const companyId = session.companyId
+  if (companyId == null || companyId <= 0) {
+    showManualCompanyId.value = session.licenseKey == null
+    activationError.value = ''
+    showActivation.value = true
+    errorMessage.value = 'Este dispositivo aún no tiene un restaurante activado.'
     return
   }
 
@@ -158,139 +166,144 @@ async function login(): Promise<void> {
   }
 }
 
-/** Back to activation (e.g. wrong company or license change). */
-function backToActivation(): void {
-  step.value = 'activate'
-  errorMessage.value = ''
-  infoMessage.value = ''
+function openActivation(): void {
+  activationError.value = ''
+  showManualCompanyId.value = false
+  showActivation.value = true
 }
 </script>
 
 <template>
   <div class="login-page">
     <div class="login-card">
-      <p class="login-brand">TekLive Rest</p>
+      <img
+        class="login-logo"
+        src="/logo.png"
+        alt="Crazy Wings"
+        width="210"
+        height="210"
+      />
 
-      <Transition name="step-fade" mode="out-in">
-        <!-- Step 1: activation -->
-        <div v-if="step === 'activate'" key="activate" class="login-step">
-          <img
-            class="login-logo"
-            src="/logo.png"
-            alt="Crazy Wings"
-            width="210"
-            height="210"
-          />
+      <AppBanner v-if="errorMessage" type="error" role="alert" aria-live="assertive">
+        <template #icon><ShieldAlert :size="18" /></template>
+        {{ errorMessage }}
+      </AppBanner>
+      <AppBanner v-if="infoMessage" type="info" role="status" aria-live="polite">
+        {{ infoMessage }}
+      </AppBanner>
 
-          <AppBanner v-if="errorMessage" type="error" role="alert" aria-live="assertive">
-            <template #icon><ShieldAlert :size="18" /></template>
-            {{ errorMessage }}
-          </AppBanner>
+      <form @submit.prevent="login" novalidate>
+        <AppInput
+          v-model="employeeNumber"
+          label="Número de empleado"
+          placeholder="Ej. 1001"
+          autocomplete="username"
+          :inputmode="'numeric'"
+          :spellcheck="false"
+          :disabled="loggingIn"
+        >
+          <template #prefix><User :size="20" /></template>
+        </AppInput>
 
-          <form @submit.prevent="activate" novalidate>
-            <AppInput
-              v-model="licenseKey"
-              label="License key"
-              placeholder="XXXX-XXXX-XXXX"
-              autocomplete="off"
-              :spellcheck="false"
-              :disabled="activating"
+        <AppInput
+          v-model="password"
+          label="Contraseña"
+          :type="showPassword ? 'text' : 'password'"
+          placeholder="••••••••"
+          autocomplete="current-password"
+          :disabled="loggingIn"
+        >
+          <template #prefix><Lock :size="20" /></template>
+          <template #suffix>
+            <button
+              type="button"
+              :aria-label="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'"
+              @click="showPassword = !showPassword"
             >
-              <template #prefix><KeyRound :size="20" /></template>
-            </AppInput>
+              <EyeOff v-if="showPassword" :size="18" />
+              <Eye v-else :size="18" />
+            </button>
+          </template>
+        </AppInput>
 
-            <AppButton
-              type="submit"
-              variant="primary"
-              class="login-submit"
-              :loading="activating"
-              :disabled="!canActivate"
-            >
-              {{ activating ? 'Activando…' : 'Activar' }}
-            </AppButton>
-          </form>
-        </div>
+        <AppButton
+          type="submit"
+          variant="primary"
+          class="login-submit"
+          :loading="loggingIn"
+          :disabled="!canLogin"
+        >
+          Ingresar
+        </AppButton>
+      </form>
 
-        <!-- Step 2: employee login -->
-        <div v-else key="login" class="login-step">
-          <img
-            class="login-logo"
-            src="/logo.png"
-            alt="Crazy Wings"
-            width="210"
-            height="210"
-          />
+      <!-- Activación de restaurante: flujo de dueño, discreto (no es parte
+           del ingreso del empleado). -->
+      <button
+        type="button"
+        class="login-activation"
+        :aria-label="session.companyId != null ? 'Reactivar restaurante' : 'Activar restaurante'"
+        title="Activar restaurante"
+        :disabled="loggingIn"
+        @click="openActivation"
+      >
+        <Settings2 :size="16" />
+      </button>
+    </div>
 
-          <AppBanner v-if="errorMessage" type="error" role="alert" aria-live="assertive">
-            <template #icon><ShieldAlert :size="18" /></template>
-            {{ errorMessage }}
-          </AppBanner>
-          <AppBanner v-if="infoMessage" type="info" role="status" aria-live="polite">
-            {{ infoMessage }}
-          </AppBanner>
-
-          <form @submit.prevent="login" novalidate>
-            <AppInput
-              v-if="showManualCompanyId"
-              v-model="manualCompanyId"
-              label="ID de empresa (fallback)"
-              type="number"
-              placeholder="15"
-              :disabled="loggingIn"
-              helper-text="Solo necesario si la activación no resolvió la empresa (pendiente en backend)."
-            >
-              <template #prefix><Hash :size="20" /></template>
-            </AppInput>
-
-            <AppInput
-              v-model="employeeNumber"
-              label="Número de empleado"
-              placeholder="Ej. 1001"
-              autocomplete="username"
-              :inputmode="'numeric'"
-              :spellcheck="false"
-              :disabled="loggingIn"
-            >
-              <template #prefix><User :size="20" /></template>
-            </AppInput>
-
-            <AppInput
-              v-model="password"
-              label="Contraseña"
-              :type="showPassword ? 'text' : 'password'"
-              placeholder="••••••••"
-              autocomplete="current-password"
-              :disabled="loggingIn"
-            >
-              <template #prefix><Lock :size="20" /></template>
-              <template #suffix>
-                <button
-                  type="button"
-                  :aria-label="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'"
-                  @click="showPassword = !showPassword"
-                >
-                  <EyeOff v-if="showPassword" :size="18" />
-                  <Eye v-else :size="18" />
-                </button>
-              </template>
-            </AppInput>
-
-            <AppButton
-              type="submit"
-              variant="primary"
-              class="login-submit"
-              :loading="loggingIn"
-              :disabled="!canLogin"
-            >
-              Ingresar
-            </AppButton>
-          </form>
-
-          <button type="button" class="login-back" :disabled="loggingIn" @click="backToActivation">
-            Cambiar restaurante
+    <!-- Modal de activación (dueño) -->
+    <div v-if="showActivation" class="activation-overlay" @click.self="showActivation = false">
+      <div class="activation-modal" role="dialog" aria-modal="true" aria-label="Activar restaurante">
+        <div class="activation-head">
+          <h2>Activar restaurante</h2>
+          <button type="button" class="activation-close" aria-label="Cerrar" @click="showActivation = false">
+            <X :size="18" />
           </button>
         </div>
-      </Transition>
+        <p class="activation-hint">
+          Ingresa la licencia del restaurante (una sola vez en este dispositivo).
+        </p>
+
+        <AppBanner v-if="activationError" type="error" role="alert">
+          <template #icon><ShieldAlert :size="18" /></template>
+          {{ activationError }}
+        </AppBanner>
+
+        <form @submit.prevent="activate" novalidate>
+          <AppInput
+            v-model="licenseKey"
+            label="Licencia"
+            placeholder="XXXX-XXXX-XXXX"
+            autocomplete="off"
+            :spellcheck="false"
+            :disabled="activating"
+          >
+            <template #prefix><KeyRound :size="20" /></template>
+          </AppInput>
+
+          <AppInput
+            v-if="showManualCompanyId"
+            v-model="manualCompanyId"
+            label="ID de empresa (fallback)"
+            type="number"
+            placeholder="15"
+            :disabled="activating"
+            helper-text="Solo necesario si la activación no resolvió la empresa (pendiente en backend)."
+          >
+            <template #prefix><User :size="20" /></template>
+          </AppInput>
+
+          <AppButton
+            type="submit"
+            variant="primary"
+            class="activation-submit"
+            :loading="activating"
+            :disabled="!canActivate"
+          >
+            {{ activating ? 'Activando…' : 'Activar' }}
+          </AppButton>
+        </form>
+      </div>
     </div>
   </div>
 </template>
@@ -308,22 +321,15 @@ function backToActivation(): void {
 
 /* Card Flutter: rgba(0,0,0,0.2), radius 16, elevation 8, max 380, pad 24/32 */
 .login-card {
+  position: relative;
   width: 100%;
   max-width: 380px;
   background: rgba(0, 0, 0, 0.2);
   border-radius: var(--radius-lg);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
   padding: 32px 24px;
-}
-
-.login-brand {
-  margin: 0 0 8px;
-  text-align: center;
-  font-size: 0.85rem;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  display: flex;
+  flex-direction: column;
 }
 
 .login-step {
@@ -336,7 +342,7 @@ function backToActivation(): void {
   display: block;
   height: 210px;
   width: auto;
-  margin: 0 auto 8px;
+  margin: 0 auto 16px;
   object-fit: contain;
 }
 
@@ -349,42 +355,96 @@ function backToActivation(): void {
   margin-top: 20px;
 }
 
-.login-back {
-  margin-top: 12px;
-  align-self: center;
+/* Engrane discreto de activación (esquina inferior de la card) */
+.login-activation {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
   background: none;
   border: 0;
-  padding: 8px 12px;
-  font-family: var(--font);
-  font-size: 0.9rem;
-  color: var(--text-muted);
-  cursor: pointer;
   border-radius: 8px;
+  color: var(--text-faint);
+  opacity: 0.55;
+  cursor: pointer;
+  transition: opacity 0.15s ease, color 0.15s ease, background-color 0.15s ease;
 }
 
-.login-back:hover:not(:disabled) {
-  color: var(--text);
-  text-decoration: underline;
+.login-activation:hover:not(:disabled) {
+  opacity: 1;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.06);
 }
 
-.login-back:disabled {
-  opacity: 0.5;
+.login-activation:disabled {
   cursor: not-allowed;
 }
 
-/* Transición suave entre pasos (fade + slide, como AnimatedOpacity Flutter) */
-.step-fade-enter-active,
-.step-fade-leave-active {
-  transition: opacity 0.25s ease, transform 0.25s ease;
+/* --- Modal de activación --- */
+.activation-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 50;
 }
 
-.step-fade-enter-from {
-  opacity: 0;
-  transform: translateY(8px);
+.activation-modal {
+  width: 100%;
+  max-width: 380px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  padding: 20px;
 }
 
-.step-fade-leave-to {
-  opacity: 0;
-  transform: translateY(-8px);
+.activation-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.activation-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.activation-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.activation-close:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.activation-hint {
+  margin: 0 0 12px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.activation-submit {
+  margin-top: 16px;
 }
 </style>
