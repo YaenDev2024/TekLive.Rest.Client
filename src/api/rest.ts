@@ -95,10 +95,10 @@ export function health(): Promise<ApiResult<RestHealthResponse>> {
  * decodes the payload to resolve it. If that fails, the activation view falls
  * back to a manual companyId field (dev-only convenience, see LoginView).
  *
- * NOTE (backend gap, report to coordinator): AuthService.LoginAsync lowercases
- * the license key before querying, and PostgreSQL compares case-sensitively —
- * a license stored as 'LOCAL-REST-KEY-DEMO' never matches. Demo data was
- * normalized to lowercase locally; backend should use ILIKE/LOWER for safety.
+ * NOTE (backend): AuthService lowercases the license key and PostgreSQL compares
+ * case-sensitively. Fixed on both sides: the backend now normalizes
+ * (Trim + ToLowerInvariant) in AuthRepository, and the demo seed stores the key
+ * lowercase ('local-rest-key-demo'). Keys are case-insensitive end to end.
  */
 export function activateApp(licenseKey: string): Promise<ApiResult<AppLoginResponse>> {
   return apiPost<AppLoginResponse>('/api/saas/auth/loginApp', {
