@@ -150,7 +150,14 @@ export interface OrderItemSelectedOption {
 }
 
 export interface OrderItemPayload {
-  productId: number
+  /**
+   * Ronda 2 (réplica tab EXTRAS): opcional SOLO para ítems standalone de
+   * extras (productId=extra.id del Flutter colisiona con ids de templates y
+   * el backend lo resolvería como template — ver cart.ts). El backend valida
+   * `ProductId > 0` al deserializar; los items de extras viajan sin productId
+   * y su precio vive 100% en `extras`. Para productos normales es obligatorio.
+   */
+  productId?: number
   quantity: number
   notes?: string
   extras: OrderItemExtraPayload[]

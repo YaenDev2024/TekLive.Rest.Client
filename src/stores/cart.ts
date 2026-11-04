@@ -41,7 +41,14 @@ export interface CartComplement {
 export interface CartItem {
   /** Estable (uuid) para key de v-for y mutaciones. */
   readonly key: string
-  productId: number
+  /**
+   * null = ítem standalone de extras (tab EXTRAS, réplica _handleExtraTap del
+   * Flutter). El backend NO acepta productId de extra (los ID_EXTRAS colisionan
+   * con ids de templates y PriceItemsAsync resuelve productId SIEMPRE contra
+   * REST_PRODUCT_TEMPLATES) → el extra viaja en `extras` y el precio real lo
+   * recalcula el backend (rest_extras_order_items). El mock usa _unitPrice.
+   */
+  productId: number | null
   productName: string
   quantity: number
   /** Precio congelado al agregar (base + extras + complemento, o customPrice). */
@@ -141,7 +148,7 @@ export const useCartStore = defineStore('cart', {
      * `basePrice` = precio base del template CONGELADO al agregar.
      */
     addItem(payload: {
-      productId: number
+      productId: number | null
       productName: string
       basePrice: number
       extras?: CartExtra[]
@@ -282,11 +289,14 @@ export const useCartStore = defineStore('cart', {
      * El backend recalcula precios/totales: esto es DISPLAY + estructura.
      * F3 (QA ronda 1): `complements` viaja como `number[]` (ids simples de
      * complement_detail), alineado a RestOrderItemRequest.Complements.
-     * Los campos _unitPrice/_productName son auxiliares del MOCK (Fase 3b);
-     * el backend real los ignora (calculated server-side desde productId).
+     * Ronda 2 (réplica tab EXTRAS): items standalone de extras viajan SIN
+     * productId (el backend valida productId > 0 → se omite si es null); el
+     * precio vive 100% en `extras` (resuelto por PriceItemsAsync desde
+     * REST_EXTRAS). Los campos _unitPrice/_productName son auxiliares del
+     * MOCK (Fase 3b); el backend real los ignora.
      */
     toOrderItems(): Array<{
-      productId: number
+      productId?: number
       quantity: number
       notes?: string
       extras: Array<{ extraId: number }>
@@ -296,7 +306,8 @@ export const useCartStore = defineStore('cart', {
       _productName?: string
     }> {
       return this.items.map((item) => ({
-        productId: item.productId,
+        // Ítem standalone de extras: productId omitido (contrato: int > 0).
+        ...(item.productId != null ? { productId: item.productId } : {}),
         quantity: item.quantity,
         notes: buildItemNotes(item) || undefined,
         extras: item.extras.map((e) => ({ extraId: e.id })),

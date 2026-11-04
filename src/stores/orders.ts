@@ -54,6 +54,16 @@ export const useOrdersStore = defineStore('orders', {
     detailError: null as string | null,
   }),
 
+  getters: {
+    /**
+     * Ronda 2 (réplica visual POS): badge del header del panel de orden.
+     * Cuenta órdenes 'pendiente' del último fetch del panel (tab Pendientes).
+     */
+    pendingCount(state): number {
+      return state.pendingOrders.filter((o) => o.orderStatus === 'pendiente').length
+    },
+  },
+
   actions: {
     /**
      * F7 (QA ronda 1): la lista del panel se pide CON filtro de status.

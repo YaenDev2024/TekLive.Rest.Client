@@ -1,16 +1,37 @@
 <script setup lang="ts">
 /**
- * PosPiso1View · shell del POS desktop (Fase 3a+3b).
+ * PosPiso1View · shell del POS desktop (Fase 3, ronda 2 — réplica visual exacta).
  *
- * Réplica del POS P1 de CrazyWings: selector de categorías (izquierda) +
- * grid de productos (centro) + panel carrito (derecha). Modales: opciones
- * dinámicas (templates con optionGroups), extras+nota, checkout, pendientes.
- * Desktop-first, mínimo 1024px (POS de caja).
+ * Copia PIXEL-FIEL del POS Piso 1 de CrazyWings Flutter:
+ * - pos_view.dart:      Row = MenuContent (Expanded) + OrderPanel (290px fijo)
+ * - menu_content.dart:  header (título+fecha izq / búsqueda der), TabBar
+ *                       scrollable horizontal (TODO · categorías · EXTRAS),
+ *                       divider white24, grid responsivo 3/4/5 columnas
+ * - product_card.dart:  card #303030 radius 12, avatar circular 80, Add #FF5722
+ * - ExtraCard (menu_content.dart L413): top deepOrange alpha 0.1 + icono 60,
+ *                       nombre bold, precio deepOrange bold, categoría gris
+ * - order_panel.dart:   "Orden Actual" centrado, items 50px, totales, footer
+ *                       radius-top con botones Proceder al Pago / Pendiente.
+ *
+ * Sin sidebar vertical de categorías (NO existe en CrazyWings). Back discreto.
+ * Lógica de carrito/checkout/pendientes intacta (stores + modales Fase 3).
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import type { ComponentPublicInstance } from 'vue'
 import { RouterLink } from 'vue-router'
-import { Clock, Minus, Plus, Trash2 } from 'lucide-vue-next'
-import type { CatalogTemplate } from '../../api/pos-types'
+import {
+  ArrowLeft,
+  Clock,
+  Hamburger,
+  Info,
+  Plus,
+  Search,
+  Trash2,
+  Utensils,
+  CircleMinus,
+  CirclePlus,
+} from 'lucide-vue-next'
+import type { CatalogExtra, CatalogTemplate } from '../../api/pos-types'
 import { POS_PLANT_ID, useCatalogStore } from '../../stores/catalog'
 import { cartItemUnitPrice, useCartStore } from '../../stores/cart'
 import { useOrdersStore } from '../../stores/orders'
@@ -29,17 +50,83 @@ const toast = useToastStore()
 
 // --- Catálogo ---------------------------------------------------------------
 
-onMounted(() => {
-  void catalog.fetchCatalog(POS_PLANT_ID)
+const gridWrap = ref<HTMLElement | null>(null)
+const gridWidth = ref(0)
+
+function onGridWrapResize(): void {
+  if (gridWrap.value != null) gridWidth.value = gridWrap.value.clientWidth
+}
+
+/** Réplica LayoutBuilder menu_content.dart: <900→3 | <1200→4 | else→5 columnas. */
+const gridColumns = computed<number>(() => {
+  if (gridWidth.value < 900) return 3
+  if (gridWidth.value < 1200) return 4
+  return 5
 })
 
-const selectedCategoryId = ref<number | null>(null)
+let gridObserver: ResizeObserver | null = null
+
+onMounted(() => {
+  void catalog.fetchCatalog(POS_PLANT_ID)
+  // Flutter mide el ancho del CONTENEDOR (LayoutBuilder), no la ventana:
+  // con panel de 290px fijo, contenedor = viewport − 290. ResizeObserver
+  // porque el wrap solo existe cuando el catálogo termina de cargar.
+  gridObserver = new ResizeObserver(onGridWrapResize)
+})
+
+onBeforeUnmount(() => {
+  gridObserver?.disconnect()
+  gridObserver = null
+})
+
+/** Observa el wrap cuando aparece en el DOM (v-else-if tras el fetch). */
+function onGridWrapRef(el: Element | ComponentPublicInstance | null): void {
+  const node = el instanceof HTMLElement ? el : null
+  gridWrap.value = node
+  if (gridObserver != null && node != null) {
+    gridObserver.disconnect()
+    gridObserver.observe(node)
+    onGridWrapResize()
+  }
+}
+
+/** null = TODO; -1 = tab EXTRAS; >0 = categoryId real. */
+type MenuTab = number | null
+const EXTRAS_TAB = -1
+
+const selectedCategoryId = ref<MenuTab>(null)
+const isExtrasTab = computed(() => selectedCategoryId.value === EXTRAS_TAB)
+
+// --- Búsqueda (replica MenuProvider.search: nombre contiene, case-insensitive)
+
+const searchText = ref('')
+
+// --- Fecha formateada (replica DateFormat('EEEE, d MMMM yyyy', 'es_ES')) -----
+
+const currentDate = computed(() => {
+  const formatted = new Intl.DateTimeFormat('es-MX', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(new Date())
+  return formatted.charAt(0).toUpperCase() + formatted.slice(1)
+})
+
+// --- Filtrado (categoría + búsqueda, replica MenuProvider) --------------------
 
 const filteredTemplates = computed<CatalogTemplate[]>(() => {
   const list = catalog.catalog?.templates ?? []
-  if (selectedCategoryId.value == null) return list
-  return list.filter((t) => t.categoryId === selectedCategoryId.value)
+  const query = searchText.value.trim().toLowerCase()
+  return list.filter((t) => {
+    const byCategory = selectedCategoryId.value == null || selectedCategoryId.value < 0
+      || t.categoryId === selectedCategoryId.value
+    const bySearch = query === '' || t.name.toLowerCase().includes(query)
+    return byCategory && bySearch
+  })
 })
+
+const filteredExtras = computed<CatalogExtra[]>(() => catalog.catalog?.extras ?? [])
 
 // --- Modales ----------------------------------------------------------------
 
@@ -58,6 +145,31 @@ function onProductClick(template: CatalogTemplate): void {
   } else {
     modal.value = { kind: 'extras', template }
   }
+}
+
+/**
+ * Réplica de _handleExtraTap (menu_content.dart L500): el Flutter agrega el
+ * extra como PRODUCTO standalone (productId = extra.id) + SnackBar. Nuestro
+ * backend resuelve productId SIEMPRE contra REST_PRODUCT_TEMPLATES y los
+ * ID_EXTRAS locales (1..3) COLISIONAN con templates (1..6) — mandar el extra
+ * como productId crearía una orden con productos equivocados.
+ *
+ * Solución sin tocar backend: ítem standalone con productId = null y el extra
+ * viaja en `extras` (líneas: rest_extras_order_items, precio resuelto por el
+ * backend desde REST_EXTRAS — verificado en PriceItemsAsync). El carrito
+ * trata productId null como ítem de solo-extras (su precio vive 100% en
+ * extras y el backend lo recalcula igual).
+ */
+function onExtraClick(extra: CatalogExtra): void {
+  cart.addItem({
+    productId: null,
+    productName: extra.name,
+    basePrice: 0,
+    extras: [{ id: extra.id, name: extra.name, price: extra.price }],
+    complement: null,
+    note: '',
+  })
+  toast.success(`${extra.name} agregado a la orden`)
 }
 
 /** "Pendiente": crear orden sin payment → toast con folio. */
@@ -106,27 +218,7 @@ const canSell = computed(() => cart.canSell)
 
 <template>
   <div class="pos">
-    <!-- Header -->
-    <header class="pos-header">
-      <div class="pos-header-left">
-        <RouterLink to="/home" class="pos-back" aria-label="Volver al inicio">←</RouterLink>
-        <h1 class="pos-title">POS Piso 1</h1>
-      </div>
-      <div class="pos-header-right">
-        <button
-          type="button"
-          class="pos-pending-link"
-          data-testid="open-pending"
-          @click="modal = { kind: 'pending' }"
-        >
-          <Clock :size="16" aria-hidden="true" />
-          Pendientes
-          <span v-if="cart.itemCount >= 0" class="pos-pending-badge" data-testid="pending-badge">0</span>
-        </button>
-      </div>
-    </header>
-
-    <!-- Estado catálogo -->
+    <!-- Estado catálogo (mantiene loading/error de la Fase 3) -->
     <div v-if="catalog.loading" class="pos-state">
       <AppSpinner :size="32" tone="primary" />
       <p>Cargando catálogo…</p>
@@ -139,149 +231,259 @@ const canSell = computed(() => cart.canSell)
       </AppButton>
     </div>
 
-    <!-- Shell POS -->
+    <!-- Layout raíz: Row = MenuContent(expandible) + OrderPanel(290px) -->
     <div v-else-if="catalog.catalog" class="pos-body">
-      <!-- Categorías -->
-      <nav class="pos-categories" aria-label="Categorías">
-        <button
-          type="button"
-          class="pos-category"
-          :class="{ 'pos-category--active': selectedCategoryId == null }"
-          @click="selectedCategoryId = null"
-        >
-          Todo
-        </button>
-        <button
-          v-for="category in catalog.catalog.categories"
-          :key="category.id"
-          type="button"
-          class="pos-category"
-          :class="{ 'pos-category--active': selectedCategoryId === category.id }"
-          @click="selectedCategoryId = category.id"
-        >
-          {{ category.name }}
-        </button>
-      </nav>
+      <!-- ================= MENUCONTENT ================= -->
+      <section class="menu" aria-label="Menú">
+        <!-- Back discreto (CrazyWings no lo tiene; mínimo impacto) -->
+        <RouterLink to="/home" class="menu-back" aria-label="Volver al inicio">
+          <ArrowLeft :size="18" />
+        </RouterLink>
 
-      <!-- Grid de productos -->
-      <main class="pos-grid-wrap">
-        <div class="pos-grid" data-testid="product-grid">
-          <button
-            v-for="template in filteredTemplates"
-            :key="template.id"
-            type="button"
-            class="pos-product"
-            :data-testid="`product-${template.id}`"
-            @click="onProductClick(template)"
-          >
-            <span class="pos-product-img">
-              <img
-                v-if="template.hasImage"
-                src="/logoWText.png"
-                alt=""
-                loading="lazy"
-              />
-              <span v-else class="pos-product-placeholder" aria-hidden="true">🍽</span>
-            </span>
-            <span class="pos-product-name">{{ template.name }}</span>
-            <span class="pos-product-price">{{ formatMoney(template.basePrice) }}</span>
-            <span
-              v-if="template.optionGroups.length > 0"
-              class="pos-product-options"
-              title="Producto con opciones"
-            >
-              Opciones
-            </span>
-          </button>
-        </div>
-        <div v-if="filteredTemplates.length === 0" class="pos-empty">
-          No hay productos en esta categoría.
-        </div>
-      </main>
-
-      <!-- Carrito -->
-      <aside class="pos-cart">
-        <header class="pos-cart-header">
-          <h2 class="pos-cart-title">Orden actual</h2>
-          <span class="pos-cart-count" data-testid="cart-count">{{ cart.itemCount }}</span>
+        <!-- Header: título+fecha izquierda, búsqueda derecha -->
+        <header class="menu-header">
+          <div class="menu-header-text">
+            <h1 class="menu-title">Crazy Wings</h1>
+            <span class="menu-date">{{ currentDate }}</span>
+          </div>
+          <div class="menu-search">
+            <Search :size="14" class="menu-search-icon" aria-hidden="true" />
+            <input
+              v-model="searchText"
+              type="text"
+              class="menu-search-input"
+              placeholder="Buscar comida, combo, etc..."
+              aria-label="Buscar comida, combo, etc"
+              data-testid="menu-search"
+            />
+          </div>
         </header>
 
-        <div v-if="cart.isEmpty" class="pos-cart-empty">
-          <p>Toca un producto para agregarlo</p>
+        <!-- TabBar scrollable horizontal -->
+        <nav class="menu-tabs" aria-label="Categorías">
+          <div class="menu-tabs-scroll" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              class="menu-tab"
+              :class="{ 'menu-tab--active': selectedCategoryId === null }"
+              :aria-selected="selectedCategoryId === null"
+              @click="selectedCategoryId = null"
+            >
+              TODO
+            </button>
+            <button
+              v-for="category in catalog.catalog.categories"
+              :key="category.id"
+              type="button"
+              role="tab"
+              class="menu-tab"
+              :class="{ 'menu-tab--active': selectedCategoryId === category.id }"
+              :aria-selected="selectedCategoryId === category.id"
+              @click="selectedCategoryId = category.id"
+            >
+              {{ category.name }}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              class="menu-tab"
+              :class="{ 'menu-tab--active': isExtrasTab }"
+              :aria-selected="isExtrasTab"
+              data-testid="extras-tab"
+              @click="selectedCategoryId = EXTRAS_TAB"
+            >
+              EXTRAS
+            </button>
+          </div>
+        </nav>
+        <div class="menu-divider" aria-hidden="true"></div>
+
+        <!-- Grid: extras (tab EXTRAS) o productos -->
+        <div
+          :ref="onGridWrapRef"
+          class="menu-grid-wrap"
+          data-testid="product-grid"
+        >
+          <!-- GRID EXTRAS (ExtraCard de menu_content.dart) -->
+          <div
+            v-if="isExtrasTab"
+            class="menu-grid"
+            :style="{ gridTemplateColumns: `repeat(${gridColumns}, 1fr)` }"
+            data-testid="extras-grid"
+          >
+            <button
+              v-for="extra in filteredExtras"
+              :key="`extra-${extra.id}`"
+              type="button"
+              class="extra-card"
+              :data-testid="`extra-${extra.id}`"
+              @click="onExtraClick(extra)"
+            >
+              <span class="extra-card-top">
+                <Utensils :size="60" class="extra-card-icon" aria-hidden="true" />
+              </span>
+              <span class="extra-card-bottom">
+                <span class="extra-card-name">{{ extra.name }}</span>
+                <span class="extra-card-price">{{ formatMoney(extra.price) }}</span>
+              </span>
+            </button>
+          </div>
+          <div v-else-if="isExtrasTab && filteredExtras.length === 0" class="menu-empty">
+            <Info :size="64" class="menu-empty-icon" />
+            <p>No hay extras disponibles.</p>
+          </div>
+
+          <!-- GRID PRODUCTOS (product_card.dart) -->
+          <div
+            v-else
+            class="menu-grid"
+            :style="{ gridTemplateColumns: `repeat(${gridColumns}, 1fr)` }"
+          >
+            <div
+              v-for="template in filteredTemplates"
+              :key="template.id"
+              class="product-card"
+              :data-testid="`product-${template.id}`"
+              role="button"
+              tabindex="0"
+              @click="onProductClick(template)"
+              @keydown.enter="onProductClick(template)"
+              @keydown.space.prevent="onProductClick(template)"
+            >
+              <span class="product-avatar">
+                <img
+                  v-if="template.hasImage"
+                  src="/logoWText.png"
+                  alt=""
+                  loading="lazy"
+                />
+                <Hamburger
+                  v-else
+                  :size="40"
+                  class="product-avatar-icon"
+                  aria-hidden="true"
+                />
+              </span>
+              <span class="product-name">{{ template.name }}</span>
+              <span class="product-price">{{ formatMoney(template.basePrice) }}</span>
+              <span class="product-add">
+                <Plus :size="16" aria-hidden="true" />
+                Add
+              </span>
+            </div>
+          </div>
+          <div
+            v-if="!isExtrasTab && filteredTemplates.length === 0"
+            class="menu-empty"
+          >
+            No se encontraron productos.
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= ORDER PANEL (290px) ================= -->
+      <aside class="order-panel" data-testid="order-panel">
+        <!-- Header: título centrado + acceso a pendientes (discreto) -->
+        <div class="op-header">
+          <button
+            type="button"
+            class="op-pending"
+            data-testid="open-pending"
+            aria-label="Ver órdenes pendientes"
+            title="Pendientes"
+            @click="modal = { kind: 'pending' }"
+          >
+            <Clock :size="16" aria-hidden="true" />
+            <span v-if="ordersStore.pendingCount > 0" class="op-pending-badge">
+              {{ ordersStore.pendingCount }}
+            </span>
+          </button>
+          <h2 class="op-title">Orden Actual</h2>
+          <span class="op-header-spacer" aria-hidden="true"></span>
         </div>
 
-        <ul v-else class="pos-cart-items" data-testid="cart-items">
-          <li v-for="item in cart.lines" :key="item.key" class="pos-cart-item">
-            <div class="pos-cart-item-main">
-              <span class="pos-cart-item-name">{{ item.productName }}</span>
+        <div class="op-divider" aria-hidden="true"></div>
+
+        <!-- Lista de items (réplica OrderListItem) -->
+        <div v-if="cart.isEmpty" class="op-empty">
+          La orden está vacía.
+        </div>
+        <ul v-else class="op-items" data-testid="cart-items">
+          <li v-for="item in cart.lines" :key="item.key" class="op-item">
+            <div class="op-item-top">
+              <span class="op-item-name">{{ item.productName }}</span>
               <span
                 v-if="itemSubtitle(item.dynamicOptionsSummary, item.note, item.extras.length)"
-                class="pos-cart-item-sub"
+                class="op-item-sub"
               >
                 {{ itemSubtitle(item.dynamicOptionsSummary, item.note, item.extras.length) }}
               </span>
             </div>
-            <div class="pos-cart-item-controls">
-              <button
-                type="button"
-                class="pos-qty-btn"
-                :aria-label="`Quitar uno de ${item.productName}`"
-                @click="cart.decrementItem(item.key)"
-              >
-                <Minus :size="14" />
-              </button>
-              <span class="pos-cart-item-qty">{{ item.quantity }}</span>
-              <button
-                type="button"
-                class="pos-qty-btn"
-                :aria-label="`Agregar uno de ${item.productName}`"
-                @click="cart.incrementItem(item.key)"
-              >
-                <Plus :size="14" />
-              </button>
-              <span class="pos-cart-item-price" data-testid="cart-line-total">
+            <div class="op-item-controls">
+              <span class="op-item-price" data-testid="cart-line-total">
                 {{ formatMoney(cartItemUnitPrice(item) * item.quantity) }}
               </span>
               <button
                 type="button"
-                class="pos-qty-btn pos-qty-btn--danger"
+                class="op-qty"
+                :aria-label="`Quitar uno de ${item.productName}`"
+                @click="cart.decrementItem(item.key)"
+              >
+                <CircleMinus :size="20" />
+              </button>
+              <span class="op-qty-num">{{ item.quantity }}</span>
+              <button
+                type="button"
+                class="op-qty"
+                :aria-label="`Agregar uno de ${item.productName}`"
+                @click="cart.incrementItem(item.key)"
+              >
+                <CirclePlus :size="20" />
+              </button>
+              <button
+                type="button"
+                class="op-qty op-qty--danger"
                 :aria-label="`Eliminar ${item.productName}`"
                 @click="cart.removeItem(item.key)"
               >
-                <Trash2 :size="14" />
+                <Trash2 :size="16" />
               </button>
             </div>
           </li>
         </ul>
 
-        <footer class="pos-cart-footer">
-          <div class="pos-cart-total">
-            <span>Total</span>
-            <span data-testid="cart-total">{{ formatMoney(cart.total) }}</span>
+        <!-- Footer con totales + acciones (réplica footer order_panel) -->
+        <footer class="op-footer">
+          <div class="op-total">
+            <span class="op-total-label">Total</span>
+            <span class="op-total-value" data-testid="cart-total">{{ formatMoney(cart.total) }}</span>
           </div>
-          <div class="pos-cart-actions">
-            <AppButton
-              variant="ghost"
+          <div class="op-actions">
+            <button
+              type="button"
+              class="op-btn op-btn--ghost"
               :disabled="cart.isEmpty || pendingSubmitting"
-              :loading="pendingSubmitting"
               data-testid="submit-pending"
               @click="submitAsPending"
             >
-              Pendiente
-            </AppButton>
-            <AppButton
+              {{ pendingSubmitting ? 'Guardando…' : 'Pendiente' }}
+            </button>
+            <button
+              type="button"
+              class="op-btn op-btn--primary"
               :disabled="cart.isEmpty || !canSell"
               data-testid="open-checkout"
               @click="modal = { kind: 'checkout' }"
             >
               Cobrar
-            </AppButton>
+            </button>
           </div>
         </footer>
       </aside>
     </div>
 
-    <!-- Modales -->
+    <!-- Modales (intactos de Fase 3) -->
     <DynamicOptionsModal
       v-if="modal.kind === 'dynamic'"
       :template="modal.template"
@@ -305,81 +507,14 @@ const canSell = computed(() => cart.canSell)
 </template>
 
 <style scoped>
+/* ==========================================================================
+   Layout raíz (pos_view.dart): Row → menú flexible + panel 290px fijo
+   ========================================================================== */
 .pos {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
   background: var(--bg);
-}
-
-.pos-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 20px;
-  background: var(--bg-surface);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-}
-
-.pos-header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.pos-back {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius);
-  background: var(--input-bg);
-  color: var(--text-muted);
-  text-decoration: none;
-  font-size: 18px;
-}
-
-.pos-back:hover {
-  color: var(--text);
-}
-
-.pos-title {
-  margin: 0;
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--text);
-}
-
-.pos-pending-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  background: var(--input-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text-muted);
-  font-family: var(--font);
-  font-size: 0.9rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.pos-pending-link:hover {
-  color: var(--text);
-  border-color: var(--text-faint);
-}
-
-.pos-pending-badge {
-  min-width: 22px;
-  padding: 2px 6px;
-  border-radius: 999px;
-  background: var(--primary);
-  color: var(--on-primary);
-  font-size: 0.75rem;
-  text-align: center;
 }
 
 .pos-state {
@@ -393,278 +528,601 @@ const canSell = computed(() => cart.canSell)
 
 .pos-body {
   flex: 1;
-  display: grid;
-  grid-template-columns: 200px 1fr 340px;
+  display: flex;
+  flex-direction: row;
   min-height: 0;
 }
 
-/* --- Categorías ------------------------------------------------------------ */
-.pos-categories {
+/* ==========================================================================
+   MENU CONTENT (menu_content.dart)
+   ========================================================================== */
+.menu {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 16px 12px;
-  background: var(--bg-surface);
-  border-right: 1px solid var(--border-soft);
-  overflow-y: auto;
+  position: relative;
 }
 
-.pos-category {
-  padding: 12px 14px;
+/* Back discreto: flecha pequeña esquina superior izquierda, gris → blanco */
+.menu-back {
+  position: absolute;
+  top: 10px;
+  right: auto;
+  left: 10px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  color: var(--text-faint);
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
-  color: var(--text-muted);
-  font-family: var(--font);
-  font-size: 0.95rem;
-  font-weight: 600;
-  text-align: left;
-  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
 }
 
-.pos-category:hover {
+.menu-back:hover {
   color: var(--text);
   background: var(--card-overlay);
 }
 
-.pos-category--active {
-  background: rgba(255, 87, 34, 0.12);
-  border-color: var(--primary);
-  color: var(--primary);
+/* Header dentro del área de menú (no global). padding-left reserva sitio
+   para el back discreto (48px) — el resto idéntico a Flutter (10px). */
+.menu-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 10px 10px 48px;
 }
 
-/* --- Grid ------------------------------------------------------------------ */
-.pos-grid-wrap {
+.menu-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.menu-title {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0;
+}
+
+.menu-date {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.menu-search {
+  position: relative;
+  width: 170px;
+  flex: none;
+}
+
+.menu-search-icon {
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  transform: translateY(-50%);
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.menu-search-input {
+  width: 100%;
+  padding: 5px 8px 5px 26px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 11px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.menu-search-input::placeholder {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.menu-search-input:focus {
+  border-color: var(--primary);
+}
+
+/* TabBar scrollable horizontal con underline deepOrange */
+.menu-tabs {
+  padding: 0 10px;
+}
+
+.menu-tabs-scroll {
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+
+.menu-tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.menu-tab {
+  flex: none;
+  padding: 10px 6px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.menu-tab:hover {
+  color: var(--primary-hover);
+}
+
+.menu-tab--active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+/* Divider white24 bajo tabs (Divider(height:1, thickness:1, white24)) */
+.menu-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.24);
+  margin: 0 10px;
+}
+
+/* Grid responsivo por ancho de contenedor: <900→3 | <1200→4 | else→5 */
+.menu-grid-wrap {
+  flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: 12px;
   min-height: 0;
 }
 
-.pos-grid {
+.menu-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 12px;
 }
 
-.pos-product {
-  position: relative;
+.menu-empty {
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--text-faint);
+}
+
+/* ==========================================================================
+   PRODUCT CARD (product_card.dart)
+   bg #303030, radius 12, elevación 2, avatar circular 80, Add #FF5722 h36
+   ========================================================================== */
+.product-card {
+  aspect-ratio: 0.95;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   padding: 12px;
   background: var(--bg-surface);
-  border: 1px solid var(--border-soft);
   border-radius: var(--radius);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.3),
+    0 1px 2px rgba(0, 0, 0, 0.15);
   cursor: pointer;
-  text-align: left;
-  transition: border-color 0.15s ease, transform 0.05s ease;
+  user-select: none;
+  transition:
+    background 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
-.pos-product:hover {
-  border-color: var(--primary);
+.product-card:hover {
+  background: var(--bg-surface-2);
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.35),
+    0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
-.pos-product:active {
-  transform: translateY(1px);
+.product-card:active {
+  background: var(--primary);
 }
 
-.pos-product-img {
+.product-avatar {
+  width: 80px;
+  height: 80px;
+  border-radius: 40px;
+  background: rgba(0, 0, 0, 0.12);
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 90px;
-  border-radius: 8px;
-  background: var(--input-bg);
   overflow: hidden;
+  flex: none;
 }
 
-.pos-product-img img {
+.product-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  border-radius: 40px;
 }
 
-.pos-product-placeholder {
-  font-size: 40px;
-  opacity: 0.5;
+.product-avatar-icon {
+  color: rgba(255, 255, 255, 0.7);
 }
 
-.pos-product-name {
+.product-name {
   color: var(--text);
-  font-size: 0.95rem;
+  font-size: 13px;
   font-weight: 700;
   line-height: 1.25;
-}
-
-.pos-product-price {
-  color: var(--primary);
-  font-size: 1.05rem;
-  font-weight: 700;
-}
-
-.pos-product-options {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--info);
-  color: #ffffff;
-  font-size: 0.65rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.pos-empty {
-  padding: 40px;
   text-align: center;
-  color: var(--text-faint);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-/* --- Carrito ---------------------------------------------------------------- */
-.pos-cart {
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-surface);
-  border-left: 1px solid var(--border-soft);
-  min-height: 0;
+.product-price {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
 }
 
-.pos-cart-header {
+.product-add {
+  width: 100%;
+  height: 36px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border-soft);
+  justify-content: center;
+  gap: 6px;
+  background: var(--primary);
+  color: var(--on-primary);
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 700;
+  flex: none;
 }
 
-.pos-cart-title {
-  margin: 0;
-  font-size: 1rem;
+/* ==========================================================================
+   EXTRA CARD (menu_content.dart L413)
+   Top flex 3 con deepOrange alpha 0.1 + icono 60; bottom: nombre bold,
+   precio deepOrange bold, categoría gris alpha 0.7 (omitida: el catálogo
+   Rest no trae categoryName en CatalogExtra).
+   ========================================================================== */
+.extra-card {
+  aspect-ratio: 0.95;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  background: var(--bg-surface);
+  border: none;
+  border-radius: var(--radius);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.3),
+    0 1px 2px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  text-align: center;
+  transition: filter 0.15s ease;
+}
+
+.extra-card:hover {
+  filter: brightness(1.15);
+}
+
+.extra-card-top {
+  flex: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 87, 34, 0.1);
+}
+
+.extra-card-icon {
+  color: var(--primary);
+}
+
+.extra-card-bottom {
+  flex: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+}
+
+.extra-card-name {
+  color: var(--text);
+  font-size: 14px;
   font-weight: 700;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.extra-card-price {
+  color: var(--primary);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   ORDER PANEL (order_panel.dart) — 290px exactos
+   ========================================================================== */
+.order-panel {
+  width: 290px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: rgba(48, 48, 48, 0.98);
+}
+
+.op-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 12px 8px;
+}
+
+.op-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
   color: var(--text);
 }
 
-.pos-cart-count {
-  min-width: 26px;
-  padding: 2px 8px;
+.op-pending {
+  position: absolute;
+  left: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.op-pending:hover {
+  color: var(--text);
+  background: var(--card-overlay);
+}
+
+.op-pending-badge {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
   border-radius: 999px;
   background: var(--primary);
   color: var(--on-primary);
-  font-size: 0.8rem;
+  font-size: 10px;
   font-weight: 700;
+  line-height: 16px;
   text-align: center;
 }
 
-.pos-cart-empty {
+.op-header-spacer {
+  width: 30px;
+  flex: none;
+}
+
+.op-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.24);
+}
+
+/* Items (OrderListItem: nombre+precio izq, total der, qty abajo) */
+.op-empty {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-faint);
-  font-size: 0.9rem;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+  padding: 16px;
+  text-align: center;
 }
 
-.pos-cart-items {
+.op-items {
   flex: 1;
   overflow-y: auto;
   margin: 0;
-  padding: 10px 12px;
+  padding: 8px 16px;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 
-.pos-cart-item {
-  padding: 10px 12px;
-  background: var(--input-bg);
-  border-radius: var(--radius);
+.op-item {
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.pos-cart-item-main {
+.op-item:last-child {
+  border-bottom: none;
+}
+
+.op-item-top {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-bottom: 8px;
 }
 
-.pos-cart-item-name {
+.op-item-name {
   color: var(--text);
-  font-size: 0.9rem;
+  font-size: 15px;
   font-weight: 700;
+  line-height: 1.3;
 }
 
-.pos-cart-item-sub {
+.op-item-sub {
   color: var(--text-faint);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
+  font-style: italic;
   word-break: break-word;
 }
 
-.pos-cart-item-controls {
+.op-item-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
+  margin-top: 8px;
 }
 
-.pos-qty-btn {
+.op-item-price {
+  flex: 1;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.op-qty {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 26px;
   height: 26px;
-  background: var(--bg-surface-2);
-  border: 1px solid var(--border-soft);
-  border-radius: 8px;
-  color: var(--text-muted);
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.7);
   cursor: pointer;
+  transition: color 0.15s ease;
 }
 
-.pos-qty-btn:hover {
+.op-qty:hover {
   color: var(--text);
-  border-color: var(--text-faint);
 }
 
-.pos-qty-btn--danger:hover {
+.op-qty--danger:hover {
   color: var(--error);
-  border-color: var(--error);
 }
 
-.pos-cart-item-qty {
+.op-qty-num {
   min-width: 20px;
   text-align: center;
   color: var(--text);
   font-weight: 700;
+  font-size: 15px;
 }
 
-.pos-cart-item-price {
-  flex: 1;
-  text-align: right;
-  color: var(--primary);
-  font-weight: 700;
-  font-size: 0.9rem;
-}
-
-.pos-cart-footer {
-  padding: 14px 16px;
-  border-top: 1px solid var(--border-soft);
+/* Footer (Container radius-top 16, border-top grey[800]) */
+.op-footer {
+  padding: 16px 16px 14px;
+  background: var(--bg-surface);
+  border-radius: 16px 16px 0 0;
+  border-top: 1px solid #424242;
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.pos-cart-total {
+.op-total {
   display: flex;
+  align-items: baseline;
   justify-content: space-between;
-  color: var(--text);
-  font-size: 1.25rem;
-  font-weight: 700;
 }
 
-.pos-cart-actions {
+.op-total-label {
+  color: var(--text-muted);
+  font-size: 16px;
+}
+
+.op-total-value {
+  color: var(--primary);
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.op-actions {
   display: grid;
   grid-template-columns: 1fr 2fr;
   gap: 10px;
+}
+
+.op-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.op-btn--primary {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.op-btn--primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.op-btn--primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.op-btn--ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+.op-btn--ghost:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--text-faint);
+  background: var(--card-overlay);
+}
+
+.op-btn--ghost:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Responsive: bajo 1024px el panel puede envolver (POS es desktop-first) */
+@media (max-width: 1024px) {
+  .pos-body {
+    flex-direction: column;
+  }
+
+  .order-panel {
+    width: 100%;
+    border-top: 1px solid var(--border-soft);
+  }
+
+  .menu-grid-wrap {
+    padding: 8px;
+  }
 }
 </style>
