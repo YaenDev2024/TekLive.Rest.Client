@@ -6,11 +6,13 @@
  *
  * - BusinessSuite.Api/Controllers/Rest/RestAuthController.cs
  *     · POST api/rest/auth/login  → { token, refreshToken, user }  (camelCase!)
+ *       Body: employeeNumber + password + device info. NO company field: the
+ *       backend deduces the company from the globally-unique employee number.
  *     · GET  api/rest/auth/me     → { id, firstName, lastName, email, role,
  *                                    companyId, companyName?, employeeNumber? }
  * - BusinessSuite.Api/Controllers/SaaS/AuthController.cs
- *     · POST api/saas/auth/loginApp     → { token }  (NO companyId in body!)
  *     · POST api/saas/auth/refreshToken → { token, refreshToken? }
+ *       (loginApp is no longer used by this client.)
  * - BusinessSuite.Api/Controllers/Rest/RestDiagnosticController.cs
  *     · GET api/rest/diagnostic/health → { status, module, message, apiVersion, serverUtcNow }
  *
@@ -65,11 +67,6 @@ export interface RestLoginResponse {
   user: UserInfo
 }
 
-/** POST api/saas/auth/loginApp response — controller returns { token } ONLY. */
-export interface AppLoginResponse {
-  token: string
-}
-
 /** POST api/saas/auth/refreshToken response. */
 export interface TokenRefreshResponse {
   token: string
@@ -86,34 +83,12 @@ export function health(): Promise<ApiResult<RestHealthResponse>> {
 }
 
 /**
- * POST api/saas/auth/loginApp — activation with LICENSE_KEY.
- *
- * ⚠️ VERIFIED BACKEND SHAPE: the controller returns `{ token }` ONLY —
- * **no companyId in the response body**. However the license JWT carries a
- * `CompanyId` claim (AuthService.CreateJWT, verified live:
- * {"CompanyId":"15","LicenseId":"8","scope":"app.teklive.rest"}), so the client
- * decodes the payload to resolve it. If that fails, the activation view falls
- * back to a manual companyId field (dev-only convenience, see LoginView).
- *
- * NOTE (backend): AuthService lowercases the license key and PostgreSQL compares
- * case-sensitively. Fixed on both sides: the backend now normalizes
- * (Trim + ToLowerInvariant) in AuthRepository, and the demo seed stores the key
- * lowercase ('local-rest-key-demo'). Keys are case-insensitive end to end.
- */
-export function activateApp(licenseKey: string): Promise<ApiResult<AppLoginResponse>> {
-  return apiPost<AppLoginResponse>('/api/saas/auth/loginApp', {
-    appKey: 'app.teklive.rest',
-    licenseKey,
-  })
-}
-
-/**
  * POST api/rest/auth/login — employee login.
- * Body mirrors RestEmployeeLoginRequest (CompanyId, EmployeeNumber, Password,
- * DeviceId?, DeviceName?, Platform?, AppKey).
+ * Body mirrors RestEmployeeLoginRequest (EmployeeNumber, Password,
+ * DeviceId?, DeviceName?, Platform?, AppKey). The backend deduces the
+ * company from the globally-unique employee number — NO companyId is sent.
  */
 export function loginEmployee(body: {
-  companyId: number
   employeeNumber: string
   password: string
   deviceId?: string
@@ -122,7 +97,6 @@ export function loginEmployee(body: {
   appKey?: string
 }): Promise<ApiResult<RestLoginResponse>> {
   return apiPost<RestLoginResponse>('/api/rest/auth/login', {
-    companyId: body.companyId,
     employeeNumber: body.employeeNumber,
     password: body.password,
     deviceId: body.deviceId,

@@ -16,13 +16,12 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   if (to.name === 'home') {
     if (session.accessToken != null) return true
-    // Web reload wipes memory tokens. If a persisted profile exists, try to
-    // transparently resume; if not possible, go to login (employee number
-    // will be prefilled from the persisted profile).
-    if (restoreSession()) {
-      const resumed = await tryResumeSession()
-      if (resumed) return true
-    }
+    // Web reload wipes memory tokens. Restore the persisted profile (used to
+    // prefill the login) and try to transparently resume; if not possible,
+    // go to login (employee number will be prefilled from the profile).
+    restoreSession()
+    const resumed = await tryResumeSession()
+    if (resumed) return true
     return { name: 'login' }
   }
   if (to.name === 'login' && session.accessToken != null) {
