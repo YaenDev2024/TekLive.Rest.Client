@@ -20,7 +20,17 @@
  * against live responses. Error JSON uses `{ message }` (middleware + controllers).
  */
 
-import { apiGet, apiPost, type ApiResult } from './client'
+import { apiGet, apiPatch, apiPost, type ApiResult } from './client'
+import type {
+  Catalog,
+  CreateOrderPayload,
+  CreatedOrderResponse,
+  OrderDetail,
+  PaymentMethod,
+  PaymentResponse,
+  PendingOrderListItem,
+  UpdateOrderStatusPayload,
+} from './pos-types'
 
 // ---------------------------------------------------------------------------
 // Shared DTO shapes (mirror BusinessSuite.Shared DTOs)
@@ -123,4 +133,68 @@ export function refreshToken(token?: string): Promise<ApiResult<TokenRefreshResp
   return apiPost<TokenRefreshResponse>('/api/saas/auth/refreshToken', {
     refreshToken: token,
   })
+}
+
+// ---------------------------------------------------------------------------
+// POS Piso 1 · catálogo y órdenes (backend Fase 3b en paralelo)
+// Los stores deciden mock vs API real (ver src/stores/*.ts, USE_MOCK).
+// ---------------------------------------------------------------------------
+
+/** GET api/rest/catalog?plantId=&sucursalId= — catálogo completo del POS. */
+export function getCatalog(plantId: number, sucursalId: number): Promise<ApiResult<Catalog>> {
+  return apiGet<Catalog>(
+    `/api/rest/catalog?plantId=${encodeURIComponent(plantId)}&sucursalId=${encodeURIComponent(sucursalId)}`,
+  )
+}
+
+/** POST api/rest/orders — crea orden (con payment = venta, sin = pendiente). */
+export function createOrder(body: CreateOrderPayload): Promise<ApiResult<CreatedOrderResponse>> {
+  return apiPost<CreatedOrderResponse>('/api/rest/orders', body)
+}
+
+/**
+ * GET api/rest/orders?plantId=&date=&status= — lista de órdenes.
+ * `date` formato YYYY-MM-DD; `status` opcional (p.ej. 'pendiente').
+ */
+export function getOrders(params: {
+  plantId: number
+  date: string
+  status?: string
+}): Promise<ApiResult<PendingOrderListItem[]>> {
+  const query = new URLSearchParams({
+    plantId: String(params.plantId),
+    date: params.date,
+  })
+  if (params.status != null) query.set('status', params.status)
+  return apiGet<PendingOrderListItem[]>(`/api/rest/orders?${query.toString()}`)
+}
+
+/** GET api/rest/orders/{id} — detalle con items. */
+export function getOrderDetail(orderId: number): Promise<ApiResult<OrderDetail>> {
+  return apiGet<OrderDetail>(`/api/rest/orders/${encodeURIComponent(orderId)}`)
+}
+
+/**
+ * POST api/rest/orders/{id}/payment — cobra una orden pendiente.
+ * 409 con `{ currentStatus }` si el estado ya no es el esperado (carrera).
+ */
+export function payOrder(
+  orderId: number,
+  body: { method: PaymentMethod; amountReceived: number; expectedStatus: string },
+): Promise<ApiResult<PaymentResponse>> {
+  return apiPost<PaymentResponse>(`/api/rest/orders/${encodeURIComponent(orderId)}/payment`, body)
+}
+
+/**
+ * PATCH api/rest/orders/{id}/status — avanza el estado con control de
+ * concurrencia (expectedStatus). 409 con `{ currentStatus }` en carrera.
+ */
+export function updateOrderStatus(
+  orderId: number,
+  body: UpdateOrderStatusPayload,
+): Promise<ApiResult<Record<string, never>>> {
+  return apiPatch<Record<string, never>>(
+    `/api/rest/orders/${encodeURIComponent(orderId)}/status`,
+    body,
+  )
 }

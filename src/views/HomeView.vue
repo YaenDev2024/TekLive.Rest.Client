@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { LogOut, ScanBarcode, Utensils } from 'lucide-vue-next'
 import { clearSession, session } from '../services/auth'
 import { AppButton } from '../components/ui'
@@ -67,14 +67,18 @@ async function logout(): Promise<void> {
 
       <!-- Grid de módulos: cards de module_selection_screen.dart (280×180 desktop) -->
       <div class="home-modules">
-        <article class="home-module" aria-disabled="true" title="Disponible en Fase 3">
+        <!-- POS Piso 1: ACTIVO desde Fase 3 ronda 1 -->
+        <RouterLink
+          to="/pos/piso1"
+          class="home-module home-module--active"
+          data-testid="module-pos-piso1"
+        >
           <div class="home-module-icon">
             <ScanBarcode :size="30" aria-hidden="true" />
           </div>
           <h2 class="home-module-title">POS Piso 1</h2>
           <p class="home-module-subtitle">Punto de venta</p>
-          <span class="home-module-phase">Fase 3</span>
-        </article>
+        </RouterLink>
 
         <article class="home-module" aria-disabled="true" title="Disponible en Fase 4">
           <div class="home-module-icon">
@@ -190,6 +194,18 @@ async function logout(): Promise<void> {
   cursor: not-allowed;
   opacity: 0.5;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  text-decoration: none;
+}
+
+/* Card activa (POS Piso 1, Fase 3 ronda 1): sin overlay ni cursor prohibido. */
+.home-module--active {
+  cursor: pointer;
+  opacity: 1;
+}
+
+.home-module--active:hover {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary), var(--shadow);
 }
 
 .home-module:hover {

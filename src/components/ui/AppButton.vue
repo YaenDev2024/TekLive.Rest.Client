@@ -5,6 +5,7 @@
  * padding 16/24, radius 12, fontSize 16 bold.
  */
 import { computed } from 'vue'
+import AppSpinner from './AppSpinner.vue'
 
 interface Props {
   variant?: 'primary' | 'ghost' | 'danger' | 'success'
