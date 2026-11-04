@@ -1,10 +1,10 @@
 /**
  * TekLive Rest · Orders store (Fase 3b) — listado de pendientes + acciones.
  *
- * ⚠️ SWITCH MOCK → API REAL (QA ronda 3):
- *   `USE_MOCK` abajo. En `false`, las acciones llaman a los endpoints reales
- *   de src/api/rest.ts (createOrder / getOrders / payOrder / updateOrderStatus).
- *   Mientras el backend no exista, dejar en `true`.
+ * ⚠️ SWITCH MOCK → API REAL (QA ronda 3): flip mock→API real hecho
+ *   (USE_MOCK = false). En `false`, las acciones llaman a los endpoints reales
+ *   de src/api/rest.ts (createOrder / getOrders / getOrderDetail / payOrder /
+ *   updateOrderStatus). El mock queda como fallback de desarrollo.
  *
  * Concurrencia: PATCH/POST payment llevan expectedStatus; un 409 con
  * `{ currentStatus }` significa que otro cajero ya cambió el estado → la UI
@@ -15,6 +15,7 @@ import { defineStore } from 'pinia'
 import { ApiError } from '../api/client'
 import {
   createOrder,
+  getOrderDetail,
   getOrders,
   payOrder,
   updateOrderStatus,
@@ -22,6 +23,7 @@ import {
 import type {
   CreatedOrderResponse,
   CreateOrderPayload,
+  OrderDetail,
   OrderStatus,
   PaymentMethod,
   PaymentResponse,
@@ -29,14 +31,12 @@ import type {
 } from '../api/pos-types'
 import {
   createMockOrder,
-  getMockOrder,
   listMockOrders,
   payMockOrder,
   updateMockOrderStatus,
-  type MockOrder,
 } from '../mocks/orders'
 
-const USE_MOCK = true
+const USE_MOCK = false
 
 export const useOrdersStore = defineStore('orders', {
   state: () => ({
@@ -45,30 +45,47 @@ export const useOrdersStore = defineStore('orders', {
     error: null as string | null,
     /** Última respuesta de conflicto de estado (409) para la UI. */
     lastConflict: null as { orderId: number; currentStatus: OrderStatus | 'not-found' } | null,
+    /**
+     * F7: cache del detalle REAL por orden (expandible de pendientes).
+     * GET /orders/{id} → OrderDetail (unitPrice). Se pide una vez por orden.
+     */
+    detailCache: {} as Record<number, OrderDetail>,
+    /** F5: error del último intento de detalle (el expandible lo muestra). */
+    detailError: null as string | null,
   }),
 
   actions: {
     /**
-     * GET /orders?plantId=&date= — lista de órdenes activas del día.
-     * SIN filtro de status: el panel del POS necesita ver pendiente +
-     * preparando + listo para avanzarlas por etapas (réplica del filtro
-     * "Pendiente/Entregadas/Todas" de pending_orders_screen.dart).
-     * El polling externo (15s) llama aquí.
+     * F7 (QA ronda 1): la lista del panel se pide CON filtro de status.
+     * GET /orders sin filtro devuelve TODAS (pagadas/canceladas incluidas) y
+     * el panel mostraba botones Cobrar/Cancelar sobre pagadas (409 ruidoso).
+     *
+     * El backend NO acepta lista separada por comas (compara
+     * `ORDER_STATUS = @p4` exacto, ver RestOrderRepository.GetOrdersAsync) →
+     * se hace UNA llamada por status y se une por id (sin duplicados).
+     * El panel usa: tab "Pendientes" → ['pendiente'];
+     * tab "En curso" → ['preparando', 'listo'].
      */
-    async fetchPendingOrders(plantId: number, date: string): Promise<void> {
+    async fetchOrdersByStatus(plantId: number, date: string, statuses: string[]): Promise<void> {
       if (this.loading) return
       this.loading = true
       this.error = null
       try {
         if (USE_MOCK) {
           await new Promise((resolve) => setTimeout(resolve, 200))
-          // Mock: excluye pagadas/canceladas (órdenes activas).
-          this.pendingOrders = listMockOrders().filter(
-            (o) => o.orderStatus !== 'pagado' && o.orderStatus !== 'cancelada',
-          )
+          const wanted = new Set(statuses)
+          this.pendingOrders = listMockOrders().filter((o) => wanted.has(o.orderStatus))
         } else {
-          const { data } = await getOrders({ plantId, date })
-          this.pendingOrders = data
+          const results = await Promise.all(
+            statuses.map((status) => getOrders({ plantId, date, status })),
+          )
+          const byId = new Map<number, PendingOrderListItem>()
+          for (const { data } of results) {
+            for (const order of data) byId.set(order.id, order)
+          }
+          this.pendingOrders = [...byId.values()].sort((a, b) =>
+            a.dailyOrderNumber - b.dailyOrderNumber,
+          )
         }
       } catch (err) {
         this.error =
@@ -77,6 +94,27 @@ export const useOrdersStore = defineStore('orders', {
             : 'No se pudo conectar con el servidor. Verifica tu conexión.'
       } finally {
         this.loading = false
+      }
+    },
+
+    /**
+     * F5 (QA ronda 1): detalle REAL del expandible con caché por orden.
+     * Reemplaza a getMockOrderDetail en el flujo de pendientes.
+     * Devuelve el OrderDetail o null si falló (la UI muestra error local).
+     */
+    async fetchOrderDetail(orderId: number): Promise<OrderDetail | null> {
+      const cached = this.detailCache[orderId]
+      if (cached != null) return cached
+      try {
+        const { data } = await getOrderDetail(orderId)
+        this.detailCache[orderId] = data
+        return data
+      } catch (err) {
+        this.detailError =
+          err instanceof ApiError && err.status !== 0
+            ? `Error al cargar el detalle: ${err.message}`
+            : 'No se pudo conectar con el servidor.'
+        return null
       }
     },
 
@@ -174,11 +212,6 @@ export const useOrdersStore = defineStore('orders', {
         // message no era JSON; razón genérica abajo.
       }
       return 'not-found'
-    },
-
-    /** Detalle mock para el expandible de pendientes (solo USE_MOCK). */
-    getMockOrderDetail(orderId: number): MockOrder | undefined {
-      return getMockOrder(orderId)
     },
   },
 })

@@ -280,6 +280,8 @@ export const useCartStore = defineStore('cart', {
     /**
      * Payload de items para POST /api/rest/orders (forma del contrato).
      * El backend recalcula precios/totales: esto es DISPLAY + estructura.
+     * F3 (QA ronda 1): `complements` viaja como `number[]` (ids simples de
+     * complement_detail), alineado a RestOrderItemRequest.Complements.
      * Los campos _unitPrice/_productName son auxiliares del MOCK (Fase 3b);
      * el backend real los ignora (calculated server-side desde productId).
      */
@@ -288,7 +290,7 @@ export const useCartStore = defineStore('cart', {
       quantity: number
       notes?: string
       extras: Array<{ extraId: number }>
-      complements: Array<{ idcomp: number }>
+      complements: number[]
       selectedOptions?: OrderItemSelectedOption[]
       _unitPrice?: number
       _productName?: string
@@ -298,7 +300,7 @@ export const useCartStore = defineStore('cart', {
         quantity: item.quantity,
         notes: buildItemNotes(item) || undefined,
         extras: item.extras.map((e) => ({ extraId: e.id })),
-        complements: item.complement != null ? [{ idcomp: item.complement.id }] : [],
+        complements: item.complement != null ? [item.complement.id] : [],
         ...(isDynamicItem(item) ? { selectedOptions: item.selectedOptions ?? [] } : {}),
         _unitPrice: itemUnitPrice(item),
         _productName: item.productName,

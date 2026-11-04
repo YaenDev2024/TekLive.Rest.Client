@@ -81,7 +81,9 @@ export const MOCK_CATALOG: Catalog = {
       categoryId: 1,
       hasImage: false,
       // Regla condicional demo: el grupo "Salsa extra" SOLO aparece si
-      // el usuario eligió un valor en "Proteína" (acción SHOW).
+      // el usuario eligió el valor "Pollo" en "Proteína" (acción SHOW,
+      // minúsculas + triggerValueId — mismo shape que el backend real).
+      // triggerValueId 41 = Pollo.
       optionGroups: [
         {
           id: 4,
@@ -105,7 +107,7 @@ export const MOCK_CATALOG: Catalog = {
         },
       ],
       conditionalRules: [
-        { id: 1, triggerGroupId: 4, targetGroupId: 5, action: 'SHOW' },
+        { id: 1, triggerGroupId: 4, triggerValueId: 41, targetGroupId: 5, action: 'show' },
       ],
     },
 

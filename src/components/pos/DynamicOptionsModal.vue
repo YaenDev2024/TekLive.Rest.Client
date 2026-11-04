@@ -70,16 +70,25 @@ function toggleValue(group: CatalogOptionGroup, value: CatalogOptionValue): void
   showValidationError.value = false
 }
 
-/** Grupos visibles aplicando reglas condicionales (réplica getVisibleGroups). */
+/** Grupos visibles aplicando reglas condicionales (réplica getVisibleGroups).
+ * F4 (QA ronda 1): el backend manda `action` verbatim de BD en minúsculas
+ * ('show'/'hide') → comparación SIEMPRE normalizada con toLowerCase().
+ * Además se respeta `triggerValueId`: si la regla apunta a un valor específico,
+ * solo esa selección dispara (seed real: Adobos visible solo con Harina). */
 const visibleGroups = computed<CatalogOptionGroup[]>(() => {
   const rules = props.template.conditionalRules
   return props.template.optionGroups.filter((group) => {
     let shouldShow = true
     for (const rule of rules) {
       if (rule.targetGroupId === group.id) {
-        const triggerSelected = (selections.value.get(rule.triggerGroupId) ?? []).length > 0
-        if (rule.action === 'HIDE' && triggerSelected) shouldShow = false
-        if (rule.action === 'SHOW' && !triggerSelected) shouldShow = false
+        const triggerSelection = selections.value.get(rule.triggerGroupId) ?? []
+        const triggerSelected =
+          rule.triggerValueId != null
+            ? triggerSelection.includes(rule.triggerValueId)
+            : triggerSelection.length > 0
+        const action = rule.action?.toLowerCase()
+        if (action === 'hide' && triggerSelected) shouldShow = false
+        if (action === 'show' && !triggerSelected) shouldShow = false
       }
     }
     return shouldShow

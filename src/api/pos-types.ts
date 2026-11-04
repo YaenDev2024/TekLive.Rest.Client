@@ -46,16 +46,19 @@ export interface CatalogOptionGroup {
 }
 
 /**
- * Regla condicional entre grupos (réplica de ProductConditionalRule de
- * CrazyWings): el grupo `targetGroupId` se muestra/oculta según haya
- * selección en `triggerGroupId`.
+ * Regla condicional entre grupos (contrato backend RestCatalogConditionalRule):
+ * el grupo `targetGroupId` se muestra/oculta según haya selección en
+ * `triggerGroupId` (o del valor `triggerValueId` específico si viene).
+ * F4 (QA ronda 1): `action` llega verbatim de BD en minúsculas ('show'|'hide');
+ * el consumo SIEMPRE normaliza con toLowerCase().
  */
 export interface CatalogConditionalRule {
   id: number
   triggerGroupId: number
+  /** Valor específico que dispara la regla (null = cualquier selección). */
+  triggerValueId?: number | null
   targetGroupId: number
-  /** 'SHOW' = el target solo aparece si el trigger tiene selección. */
-  action: 'SHOW' | 'HIDE'
+  action: string
 }
 
 export interface CatalogTemplate {
@@ -134,9 +137,11 @@ export interface OrderItemExtraPayload {
   extraId: number
 }
 
-export interface OrderItemComplementPayload {
-  idcomp: number
-}
+/**
+ * F3 (QA ronda 1): el backend espera `complements: List<int>` (ids de
+ * complement_detail) — ver RestOrderItemRequest.Complements. NO es lista de
+ * objetos { idcomp }. Ya no se define un payload por complemento.
+ */
 
 /** Opciones dinámicas seleccionadas de un grupo. */
 export interface OrderItemSelectedOption {
@@ -149,7 +154,8 @@ export interface OrderItemPayload {
   quantity: number
   notes?: string
   extras: OrderItemExtraPayload[]
-  complements: OrderItemComplementPayload[]
+  /** Ids simples de complement_detail (contrato backend: List<int>). */
+  complements: number[]
   /** Solo para templates con optionGroups (addDynamicItem). */
   selectedOptions?: OrderItemSelectedOption[]
 }
@@ -193,14 +199,19 @@ export interface PendingOrderListItem {
   waiterName: string
 }
 
+/**
+ * Item del detalle real (GET /orders/{id} → RestOrderDetailItem):
+ * `unitPrice` es el campo del backend (NO `price`); el detalle trae `extras`
+ * pero NO complements.
+ */
 export interface OrderDetailItem {
   id: number
+  productId?: number
   productName: string
   quantity: number
-  price: number
+  unitPrice: number
   notes?: string | null
   extras?: Array<{ extraId: number; name: string; price: number }>
-  complements?: Array<{ idcomp: number; name: string; price: number }>
 }
 
 /** GET api/rest/orders/{id}. */

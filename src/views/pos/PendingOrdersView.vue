@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * PendingOrdersView · órdenes pendientes del POS Piso 1 (Fase 3b).
+ * PendingOrdersView · panel de órdenes del POS Piso 1 (Fase 3b).
  *
  * Réplica de pending_orders_screen.dart: listado con POLLING cada 15s
  * (clearInterval en onUnmounted), acciones por fila según estado:
@@ -9,6 +9,11 @@
  *   con expectedStatus; 409 → banner).
  * - Cancelar (modal con nota obligatoria; 403 manejado).
  *
+ * F7: tabs "Pendientes" (status=pendiente) | "En curso" (preparando+listo);
+ * la lista NUNCA se pide sin filtro (pagadas/canceladas no aparecen).
+ * F5: el expandible carga el detalle REAL (GET /orders/{id}, unitPrice)
+ * con caché por orden; sin mock.
+ *
  * Se renderiza como panel modal sobre el POS (esta ronda); ruta propia
  * /pos/piso1/pendientes también registrada para QA directo.
  */
@@ -16,6 +21,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ChevronDown, ChevronUp } from 'lucide-vue-next'
 import { ApiError } from '../../api/client'
 import type {
+  OrderDetailItem,
   OrderStatus,
   PaymentMethod,
   PendingOrderListItem,
@@ -32,6 +38,30 @@ const emit = defineEmits<{ close: [] }>()
 const ordersStore = useOrdersStore()
 const toast = useToastStore()
 
+// --- Tabs de estatus (F7) ------------------------------------------------------
+/**
+ * F7 (QA ronda 1): GET /orders sin filtro devuelve TODAS las órdenes
+ * (pagadas/canceladas incluidas) → botones Cobrar/Cancelar sobre pagadas
+ * con 409 ruidoso. El panel pide status explícito por tab; el backend no
+ * acepta lista separada por comas (compara ORDER_STATUS exacto), así que el
+ * tab "En curso" une 2 llamadas (preparando + listo) vía el store.
+ */
+type PanelTab = 'pendientes' | 'en-curso'
+
+const TAB_STATUSES: Record<PanelTab, string[]> = {
+  pendientes: ['pendiente'],
+  'en-curso': ['preparando', 'listo'],
+}
+
+const activeTab = ref<PanelTab>('pendientes')
+
+function switchTab(tab: PanelTab): void {
+  if (activeTab.value === tab) return
+  activeTab.value = tab
+  expandedId.value = null // el detalle cacheado no aplica al cambiar de tab
+  void refresh()
+}
+
 // --- Polling 15s -------------------------------------------------------------
 
 const POLL_MS = 15_000
@@ -46,7 +76,7 @@ function todayIso(): string {
 }
 
 async function refresh(): Promise<void> {
-  await ordersStore.fetchPendingOrders(POS_PLANT_ID, todayIso())
+  await ordersStore.fetchOrdersByStatus(POS_PLANT_ID, todayIso(), TAB_STATUSES[activeTab.value])
 }
 
 onMounted(() => {
@@ -229,18 +259,44 @@ async function confirmPay(): Promise<void> {
   }
 }
 
-// --- Detalle expandible (mock) ---------------------------------------------------
-
+// --- Detalle expandible (API real, F5) -----------------------------------------
+/**
+ * F5 (QA ronda 1): al expandir se llama a la API real getOrderDetail(id)
+ * (vía ordersStore.fetchOrderDetail, con caché por orden) y se muestran los
+ * items del backend con `unitPrice` (campo real). El mock quedó fuera de este
+ * flujo. Loading/error propios del expandible.
+ */
 const expandedId = ref<number | null>(null)
+const expandedItems = ref<OrderDetailItem[] | null>(null)
+const expandLoading = ref(false)
+const expandError = ref<string | null>(null)
 
-function toggleExpand(orderId: number): void {
-  expandedId.value = expandedId.value === orderId ? null : orderId
+async function toggleExpand(orderId: number): Promise<void> {
+  if (expandedId.value === orderId) {
+    expandedId.value = null
+    expandedItems.value = null
+    expandError.value = null
+    return
+  }
+  expandedId.value = orderId
+  expandError.value = null
+  const cached = ordersStore.detailCache[orderId]
+  if (cached != null) {
+    expandedItems.value = cached.items
+    return
+  }
+  expandedItems.value = null
+  expandLoading.value = true
+  const detail = await ordersStore.fetchOrderDetail(orderId)
+  expandLoading.value = false
+  if (expandedId.value !== orderId) return // se cambió de fila mientras cargaba
+  if (detail == null) {
+    expandedItems.value = null
+    expandError.value = ordersStore.detailError ?? 'No se pudo cargar el detalle.'
+    return
+  }
+  expandedItems.value = detail.items
 }
-
-const expandedItems = computed(() => {
-  if (expandedId.value == null) return null
-  return ordersStore.getMockOrderDetail(expandedId.value)?.items ?? null
-})
 
 function formatMoney(amount: number): string {
   return `$${amount.toFixed(2)}`
@@ -272,8 +328,24 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 </script>
 
 <template>
-  <AppModal title="Órdenes pendientes · Piso 1" :width="860" @close="emit('close')">
+  <AppModal title="Órdenes · Piso 1" :width="860" @close="emit('close')">
     <div class="pnd">
+      <!-- F7: tabs por status (el panel NUNCA pide la lista sin filtro) -->
+      <div class="pnd__tabs" role="tablist" aria-label="Filtrar órdenes por estado">
+        <button
+          v-for="tab in (['pendientes', 'en-curso'] as const)"
+          :key="tab"
+          type="button"
+          role="tab"
+          class="pnd__tab"
+          :class="{ 'pnd__tab--active': activeTab === tab }"
+          :aria-selected="activeTab === tab"
+          @click="switchTab(tab)"
+        >
+          {{ tab === 'pendientes' ? 'Pendientes' : 'En curso' }}
+        </button>
+      </div>
+
       <div v-if="ordersStore.loading && ordersStore.pendingOrders.length === 0" class="pnd__state">
         <AppSpinner :size="28" tone="primary" />
         <p>Cargando órdenes…</p>
@@ -283,7 +355,13 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
         <AppBanner v-if="ordersStore.error" type="error">{{ ordersStore.error }}</AppBanner>
 
         <div v-if="ordersStore.pendingOrders.length === 0 && !ordersStore.error" class="pnd__state">
-          <p>No hay órdenes pendientes.</p>
+          <p>
+            {{
+              activeTab === 'pendientes'
+                ? 'No hay órdenes pendientes.'
+                : 'No hay órdenes preparando o listas.'
+            }}
+          </p>
         </div>
 
         <ul v-else class="pnd__list" data-testid="pending-list">
@@ -348,12 +426,23 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
               "{{ rowConflict.get(order.id) }}". Lista actualizada.
             </AppBanner>
 
-            <ul v-if="expandedId === order.id && expandedItems != null" class="pnd__items">
-              <li v-for="item in expandedItems" :key="item.id" class="pnd__item">
-                <span>{{ item.quantity }}× {{ item.productName }}</span>
-                <span>{{ formatMoney(item.price * item.quantity) }}</span>
-              </li>
-            </ul>
+            <div
+              v-if="expandedId === order.id"
+              class="pnd__expand"
+              aria-live="polite"
+            >
+              <div v-if="expandLoading" class="pnd__expand-state">
+                <AppSpinner :size="18" tone="primary" />
+                <span>Cargando detalle…</span>
+              </div>
+              <AppBanner v-else-if="expandError != null" type="error">{{ expandError }}</AppBanner>
+              <ul v-else-if="expandedItems != null" class="pnd__items">
+                <li v-for="item in expandedItems" :key="item.id" class="pnd__item">
+                  <span>{{ item.quantity }}× {{ item.productName }}</span>
+                  <span>{{ formatMoney(item.unitPrice * item.quantity) }}</span>
+                </li>
+              </ul>
+            </div>
           </li>
         </ul>
       </template>
@@ -622,6 +711,51 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   gap: 4px;
   background: var(--card-overlay);
   border-radius: var(--radius);
+}
+
+.pnd__expand {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pnd__expand-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* Tabs de estatus (F7) */
+.pnd__tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.pnd__tab {
+  padding: 8px 18px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.pnd__tab:hover {
+  color: var(--text);
+  border-color: var(--text-faint);
+}
+
+.pnd__tab--active {
+  border-color: var(--primary);
+  background: rgba(255, 87, 34, 0.12);
+  color: var(--primary);
 }
 
 .pnd__item {

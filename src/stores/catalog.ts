@@ -3,10 +3,10 @@
  *
  * Fetch-once por planta con caché en memoria + loading/error + refetch manual.
  *
- * ⚠️ SWITCH MOCK → API REAL (QA ronda 3):
- *   `USE_MOCK` abajo. En `false`, `fetchCatalog()` llama a `getCatalog()`
- *   de src/api/rest.ts (endpoint real GET /api/rest/catalog). Mientras el
- *   backend no exista, dejar en `true`.
+ * ⚠️ SWITCH MOCK → API REAL (QA ronda 3): flip mock→API real hecho
+ *   (USE_MOCK = false). `fetchCatalog()` llama a `getCatalog()` de
+ *   src/api/rest.ts (endpoint real GET /api/rest/catalog). El mock queda como
+ *   fallback de desarrollo.
  */
 
 import { defineStore } from 'pinia'
@@ -15,7 +15,7 @@ import { ApiError } from '../api/client'
 import type { Catalog } from '../api/pos-types'
 import { MOCK_CATALOG } from '../mocks/catalog'
 
-const USE_MOCK = true
+const USE_MOCK = false
 
 /** Planta/sucursal fijas para el POS Piso 1 (Fase 3 ronda 1). */
 export const POS_PLANT_ID = 1
