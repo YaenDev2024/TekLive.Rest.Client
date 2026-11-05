@@ -154,6 +154,8 @@ export const useCartStore = defineStore('cart', {
       extras?: CartExtra[]
       complement?: CartComplement | null
       note?: string
+      /** Ronda 3: al editar una línea, no deduplicar contra ella misma. */
+      editingKey?: string
     }): void {
       const extras = payload.extras ?? []
       const complement = payload.complement ?? null
@@ -167,6 +169,9 @@ export const useCartStore = defineStore('cart', {
 
       const existing = this.items.find((item) => {
         if (isDynamicItem(item)) return false // dinámicos nunca deduplican
+        if (payload.editingKey != null && item.key === payload.editingKey) {
+          return false // no fusionar consigo mismo (edición)
+        }
         const sameProduct = item.productId === payload.productId
         const sameComplement = (item.complement?.id ?? null) === (complement?.id ?? null)
         const itemExtrasKey = item.extras
@@ -213,8 +218,10 @@ export const useCartStore = defineStore('cart', {
       selectedOptions: OrderItemSelectedOption[]
       optionsSummary: string
       note?: string
+      /** Ronda 3: al editar una línea dinámica, reemplazar en lugar de agregar. */
+      replaceKey?: string
     }): void {
-      this.items.push({
+      const next: CartItem = {
         key: makeCartKey(),
         productId: payload.productId,
         productName: payload.productName,
@@ -225,7 +232,13 @@ export const useCartStore = defineStore('cart', {
         note: payload.note ?? '',
         dynamicOptionsSummary: payload.optionsSummary,
         selectedOptions: payload.selectedOptions,
-      })
+      }
+      if (payload.replaceKey != null) {
+        // Modo EDICIÓN: reemplaza la línea original conservando su key.
+        this.replaceItem(payload.replaceKey, next)
+        return
+      }
+      this.items.push(next)
     },
 
     incrementItem(key: string): void {
@@ -246,6 +259,45 @@ export const useCartStore = defineStore('cart', {
       if (index !== -1) this.items.splice(index, 1)
     },
 
+    /**
+     * Ronda 3 (réplica updateItem de OrderProvider): edición desde el panel.
+     * Actualiza nota y/o cantidad de una línea SIN re-deduplicar (el Flutter
+     * muta el item in-place; deduplicar aquí fusionaría líneas distintas por
+     * accidente). Limpia prefijos legacy de la nota igual que el panel.
+     */
+    updateItem(
+      key: string,
+      patch: { note?: string; quantity?: number },
+    ): void {
+      const item = this.items.find((i) => i.key === key)
+      if (item == null) return
+      if (patch.note != null) {
+        let note = patch.note.trim()
+        // Réplica _onFocusChange (order_panel.dart L989-994): sin prefijos.
+        note = note
+          .replaceAll('NOTA::', '')
+          .replaceAll('NOTE::', '')
+          .replaceAll('OPT::', '')
+          .trim()
+        item.note = note
+      }
+      if (patch.quantity != null) {
+        item.quantity = Math.max(1, patch.quantity)
+      }
+    },
+
+    /**
+     * Ronda 3 (réplica edición vía DynamicProductWizardDialog): reemplaza una
+     * línea existente por la nueva versión editada desde el modal de opciones.
+     * Conserva la key (v-for estable); el Flutter elimina el item original y
+     * agrega el nuevo al confirmar el wizard.
+     */
+    replaceItem(key: string, next: CartItem): void {
+      const index = this.items.findIndex((i) => i.key === key)
+      if (index === -1) return
+      this.items.splice(index, 1, { ...next, key })
+    },
+
     updateItemNote(key: string, note: string): void {
       const item = this.items.find((i) => i.key === key)
       if (item != null) item.note = note
@@ -259,7 +311,9 @@ export const useCartStore = defineStore('cart', {
       if (this.orderType === type) return
       this.orderType = type
       if (type !== 'EXTERNO') this.customerId = null
-      if (type !== 'UBER' && type !== 'DIDI') this.platformDeliveryInfo = ''
+      if (type !== 'UBER' && type !== 'DIDI' && type !== 'UBER/DIDI') {
+        this.platformDeliveryInfo = ''
+      }
     },
 
     setPlatformDeliveryInfo(info: string): void {

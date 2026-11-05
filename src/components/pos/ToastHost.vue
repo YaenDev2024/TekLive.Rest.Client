@@ -80,6 +80,8 @@ const icon = computed(() => ICONS[toast.current?.kind ?? 'info'])
 
 .toast-host__text {
   color: var(--text);
+  /* Ronda 3: toasts multilínea del Flutter ('✓ Orden procesada\n💵 Cambio: $X'). */
+  white-space: pre-line;
 }
 
 .toast-enter-active,

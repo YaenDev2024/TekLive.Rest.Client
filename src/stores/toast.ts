@@ -51,5 +51,10 @@ export const useToastStore = defineStore('toast', {
       this.current = null
       this.timer = null
     },
+
+    /** Advertencia (validaciones tipo SnackBar naranja del Flutter). */
+    warning(message: string): void {
+      this.show('warning', message)
+    },
   },
 })

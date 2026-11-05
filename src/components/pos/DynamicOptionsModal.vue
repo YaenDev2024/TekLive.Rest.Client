@@ -8,6 +8,11 @@
  * - Resumen de selección con sufijo legacy `OPT::Grupo:Valor`.
  * - Precio dinámico en vivo = basePrice + sum(price de valores elegidos).
  * - Agregar → addDynamicItem (NUNCA dedup en el carrito).
+ *
+ * Ronda 3 (réplica DynamicProductWizardDialog con existingItem): cuando el
+ * panel abre el modal en modo EDICIÓN, las props `initialSelections`,
+ * `initialNote` y `editKey` prefill el formulario y confirmar REEMPLAZA la
+ * línea original (replaceKey) en lugar de agregar una nueva.
  */
 import { computed, ref, watch } from 'vue'
 import type {
@@ -22,6 +27,12 @@ import AppModal from './AppModal.vue'
 
 const props = defineProps<{
   template: CatalogTemplate
+  /** Ronda 3 (edición): groupId → valueIds ya elegidos en la línea original. */
+  initialSelections?: OrderItemSelectedOption[] | null
+  /** Ronda 3 (edición): nota del usuario de la línea original. */
+  initialNote?: string
+  /** Ronda 3 (edición): key de la línea a reemplazar al confirmar. */
+  editKey?: string
 }>()
 
 const emit = defineEmits<{ close: [] }>()
@@ -32,6 +43,16 @@ const cart = useCartStore()
 const selections = ref<Map<number, number[]>>(new Map())
 const note = ref('')
 const showValidationError = ref(false)
+
+// Prefill de modo edición (réplica existingItem del wizard Flutter).
+if (props.initialSelections != null) {
+  for (const sel of props.initialSelections) {
+    selections.value.set(sel.groupId, [...sel.valueIds])
+  }
+}
+if (props.initialNote != null && props.initialNote !== '') {
+  note.value = props.initialNote
+}
 
 // Reset al cambiar de template (reuso del modal en la misma vista).
 watch(
@@ -151,6 +172,8 @@ function add(): void {
     selectedOptions,
     optionsSummary: optionsSummary.value,
     note: note.value,
+    // Ronda 3 (edición): reemplaza la línea original en lugar de agregar.
+    ...(props.editKey != null ? { replaceKey: props.editKey } : {}),
   })
   emit('close')
 }

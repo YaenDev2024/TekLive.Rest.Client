@@ -131,6 +131,9 @@ export type OrderType =
   | 'EXTERNO'
   | 'UBER'
   | 'DIDI'
+  /** Réplica del toggle Flutter (order_panel.dart L843): el app real manda
+   *  'UBER/DIDI' literal; el backend Rest guarda ORDER_TYPE sin validar. */
+  | 'UBER/DIDI'
   | 'TRANSFER_P1_P2'
 
 export interface OrderItemExtraPayload {

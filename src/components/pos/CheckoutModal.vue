@@ -135,9 +135,11 @@ async function confirm(): Promise<void> {
 }
 
 function finish(): void {
-  toast.success(
-    saleResult.value != null ? `Venta #${saleResult.value.dailyOrderNumber} registrada` : 'Venta registrada',
-  )
+  // Ronda 3: toast EXACTO del Flutter (order_panel.dart L661-687): '✓ Orden
+  // procesada' + segunda línea '💵 Cambio: $X' solo si cambio > 0.01.
+  const change = saleResult.value?.changeAmount ?? 0
+  const changeText = change > 0.01 ? `\n💵 Cambio: $${change.toFixed(2)}` : ''
+  toast.success('✓ Orden procesada' + changeText)
   emit('close')
 }
 

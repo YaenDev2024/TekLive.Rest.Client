@@ -12,6 +12,12 @@ import AppModal from './AppModal.vue'
 const props = defineProps<{
   template: CatalogTemplate
   extras: CatalogExtra[]
+  /** Ronda 3 (edición): extras ya elegidos en la línea original. */
+  initialExtraIds?: number[] | null
+  /** Ronda 3 (edición): nota del usuario de la línea original. */
+  initialNote?: string
+  /** Ronda 3 (edición): key de la línea a reemplazar al confirmar. */
+  editKey?: string
 }>()
 
 const emit = defineEmits<{ close: [] }>()
@@ -20,6 +26,14 @@ const cart = useCartStore()
 
 const selectedExtraIds = ref<number[]>([])
 const note = ref('')
+
+// Prefill de modo edición (réplica existingItem del wizard Flutter).
+if (props.initialExtraIds != null) {
+  selectedExtraIds.value = [...props.initialExtraIds]
+}
+if (props.initialNote != null && props.initialNote !== '') {
+  note.value = props.initialNote
+}
 
 watch(
   () => props.template.id,
@@ -55,7 +69,13 @@ function add(): void {
     extras: selectedExtras.value,
     complement: null,
     note: note.value,
+    // Ronda 3 (edición): no deduplicar contra la línea que se está editando.
+    ...(props.editKey != null ? { editingKey: props.editKey } : {}),
   })
+  if (props.editKey != null) {
+    // Modo edición de línea normal: la nueva versión sustituye a la original.
+    cart.removeItem(props.editKey)
+  }
   emit('close')
 }
 
@@ -96,7 +116,7 @@ function formatMoney(amount: number): string {
         v-model="note"
         class="ext__note"
         rows="2"
-        placeholder="Ej. sin pepinillos, envolver para llevar…"
+        :placeholder="editKey != null ? 'Editar nota del producto…' : 'Ej. sin pepinillos, envolver para llevar…'"
       ></textarea>
     </div>
 
@@ -108,7 +128,7 @@ function formatMoney(amount: number): string {
             Cancelar
           </button>
           <button type="button" class="ext__btn ext__btn--primary" @click="add">
-            Agregar
+            {{ editKey != null ? 'Guardar cambios' : 'Agregar' }}
           </button>
         </div>
       </div>

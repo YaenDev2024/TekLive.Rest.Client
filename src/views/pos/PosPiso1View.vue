@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * PosPiso1View · vista VENDER del POS desktop (Fase 3 ronda 2 — réplica exacta).
+ * PosPiso1View · vista VENDER del POS desktop (ronda 3 — OrderPanel EXACTO).
  *
  * Copia PIXEL-FIEL del POS Piso 1 de CrazyWings Flutter:
  * - pos_view.dart:      Row = MenuContent (Expanded) + OrderPanel (290px fijo)
@@ -18,19 +18,33 @@
  *                       alpha 0.1 + icono local_dining 60 deepOrange; bottom
  *                       flex 2 nombre bold 14 + precio deepOrange bold 14.
  *                       Tap AGREGA DIRECTO al carrito + SnackBar 2s.
- * - order_panel.dart:   "Orden Actual" centrado, items 50px, totales, footer
- *                       radius-top con botones Proceder al Pago / Pendiente.
- *                       SIN botón de reloj (el acceso a pendientes es SOLO
- *                       por el rail → Órdenes; réplica exacta del panel).
+ * - order_panel.dart    COMPLETO (ronda 3):
+ *                       · Header: 'Orden Actual' + ToggleButtons tipo orden
+ *                         (Local / UBER-DIDI / Externo, fill deepOrange).
+ *                       · Form UBER/DIDI (L883-932): naranja, repartidor.
+ *                       · Form EXTERNO (external_customer_form.dart): sin
+ *                         backend de clientes → serializa en platformInfo.
+ *                       · Items (OrderListItem L946-1192): imagen 50, nombre
+ *                         bold, unitario gris, total bold; complemento/extras
+ *                         itálica, opciones '•' 11px, notas '-'; input nota
+ *                         adicional al blur + −/qty/+/editar/eliminar.
+ *                       · Footer (L432-806): Total deepOrange headlineSmall,
+ *                         2 previews de ticket (Cocina/Cliente), y UN botón:
+ *                         LOCAL → 'Proceder al Pago' (checkout con pago);
+ *                         UBER/DIDI|EXTERNO → 'Guardar Orden' (pendiente).
+ *                       · SIN botón 'Pendiente' (el dueño fue explícito).
  *
- * Lógica de carrito/checkout/pendientes intacta (stores + modales Fase 3).
+ * Lógica de carrito/checkout intacta (stores + modales Fase 3).
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
-import { Soup, Info, Search, Trash2, Utensils, CircleMinus, CirclePlus } from 'lucide-vue-next'
+import {
+  Soup, Info, Search, Trash2, Utensils, CircleMinus, CirclePlus,
+  SquarePen, User, UtensilsCrossed, ReceiptText,
+} from 'lucide-vue-next'
 import type { CatalogExtra, CatalogTemplate } from '../../api/pos-types'
-import { POS_PLANT_ID, useCatalogStore } from '../../stores/catalog'
-import { cartItemUnitPrice, useCartStore } from '../../stores/cart'
+import { POS_PLANT_ID, POS_SUCURSAL_ID, useCatalogStore } from '../../stores/catalog'
+import { cartItemUnitPrice, useCartStore, type CartItem } from '../../stores/cart'
 import { useOrdersStore } from '../../stores/orders'
 import { useToastStore } from '../../stores/toast'
 import { session } from '../../services/auth'
@@ -38,6 +52,8 @@ import { AppBanner, AppButton, AppSpinner } from '../../components/ui'
 import DynamicOptionsModal from '../../components/pos/DynamicOptionsModal.vue'
 import ExtrasNoteModal from '../../components/pos/ExtrasNoteModal.vue'
 import CheckoutModal from '../../components/pos/CheckoutModal.vue'
+import TicketPreviewModal from '../../components/pos/TicketPreviewModal.vue'
+import ExternalCustomerForm from '../../components/pos/ExternalCustomerForm.vue'
 
 const catalog = useCatalogStore()
 const cart = useCartStore()
@@ -128,9 +144,19 @@ const filteredExtras = computed<CatalogExtra[]>(() => catalog.catalog?.extras ??
 
 type ModalState =
   | { kind: 'none' }
-  | { kind: 'dynamic'; template: CatalogTemplate }
-  | { kind: 'extras'; template: CatalogTemplate }
+  | { kind: 'dynamic'; template: CatalogTemplate; edit?: EditContext | null }
+  | { kind: 'extras'; template: CatalogTemplate; edit?: EditContext | null }
   | { kind: 'checkout' }
+  | { kind: 'preview-kitchen' }
+  | { kind: 'preview-client' }
+
+/** Contexto de edición de una línea del carrito (ronda 3, réplica wizard). */
+interface EditContext {
+  key: string
+  selections: import('../../api/pos-types').OrderItemSelectedOption[] | null
+  extras: number[]
+  note: string
+}
 
 const modal = ref<ModalState>({ kind: 'none' })
 
@@ -140,6 +166,27 @@ function onProductClick(template: CatalogTemplate): void {
   } else {
     modal.value = { kind: 'extras', template }
   }
+}
+
+/** Réplica edit_outlined (L1168-1181): reabre el modal en modo EDICIÓN. */
+function onEditItem(item: CartItem): void {
+  const template = catalog.catalog?.templates.find((t) => t.id === item.productId)
+  if (template == null) {
+    // Ítem standalone de extras o template no encontrado: editar nota/qty
+    // desde el panel (el modal de producto no aplica).
+    toast.info('Edita este ítem con su nota o cantidad desde el panel.')
+    return
+  }
+  const edit: EditContext = {
+    key: item.key,
+    selections: item.selectedOptions,
+    extras: item.extras.map((e) => e.id),
+    note: item.note,
+  }
+  modal.value =
+    template.optionGroups.length > 0
+      ? { kind: 'dynamic', template, edit }
+      : { kind: 'extras', template, edit }
 }
 
 /**
@@ -189,22 +236,46 @@ function onExtraClick(extra: CatalogExtra): void {
 /** "Pendiente": crear orden sin payment → toast con folio. */
 const pendingSubmitting = ref(false)
 
+/**
+ * Ronda 3 (Guarda Orden, order_panel.dart L710-803): UBER/DIDI/EXTERNO →
+ * POST sin payment (status pendiente, payment_method PENDIENTE) → toast
+ * '✓ Orden guardada como pendiente' + limpiar y volver a LOCAL.
+ */
 async function submitAsPending(): Promise<void> {
   if (cart.isEmpty || pendingSubmitting.value) return
+  // Validaciones réplica Flutter L722-751.
+  const type = cart.orderType.toUpperCase()
+  if (type === 'EXTERNO' && externalCustomer.value == null) {
+    toast.warning('⚠️ Debes seleccionar un cliente para órdenes EXTERNO')
+    return
+  }
+  if (type.includes('UBER') || type.includes('DIDI')) {
+    if (cart.platformDeliveryInfo.trim() === '') {
+      toast.warning('⚠️ Debes agregar el nombre del repartidor o ID de pedido')
+      return
+    }
+  }
   pendingSubmitting.value = true
   try {
-    const created = await ordersStore.submitOrder(
+    await ordersStore.submitOrder(
       {
         plantId: POS_PLANT_ID,
-        sucursalId: 1,
+        sucursalId: POS_SUCURSAL_ID,
         tableId: 1,
-        orderType: cart.orderType,
+        // 'UBER/DIDI' (UI) → 'DIDI' (catálogo cerrado del backend Rest).
+        orderType: backendOrderType(cart.orderType) as typeof cart.orderType,
+        // EXTERNO sin backend de clientes: datos serializados (columna
+        // external_customer_data, RestOrderService.cs L119 la persiste).
+        ...(externalCustomer.value != null
+          ? { platformDeliveryInfo: serializeExternalCustomer(externalCustomer.value) }
+          : {}),
         items: cart.toOrderItems(),
       },
       session.displayName ?? 'Cajero',
     )
-    toast.success(`Orden pendiente #${created.dailyOrderNumber} creada`)
+    toast.success('✓ Orden guardada como pendiente')
     cart.clear()
+    externalCustomer.value = null
   } catch {
     toast.error('No se pudo crear la orden pendiente. Intenta de nuevo.')
   } finally {
@@ -212,18 +283,102 @@ async function submitAsPending(): Promise<void> {
   }
 }
 
+// --- Tipo de orden (toggle) + formularios (ronda 3) --------------------------
+
+/** Labels EXACTOS del ToggleButtons Flutter (L843, L859-875). */
+const ORDER_TYPE_LABELS = [
+  { value: 'LOCAL', label: 'Local' },
+  { value: 'UBER/DIDI', label: 'UBER/DIDI' },
+  { value: 'EXTERNO', label: 'Externo' },
+] as const
+
+/**
+ * orderType que viaja al backend. El Flutter manda 'UBER/DIDI' literal, pero
+ * el backend Rest tiene catálogo CERRADO (RestOrderService.cs L35-36:
+ * LOCAL|DELIVERY|EXTERNO|UBER|DIDI|TRANSFER_P1_P2) → se manda 'DIDI' (valor
+ * válido de plataforma). La UI muestra 'UBER/DIDI' como el Flutter.
+ * DIVERGENCIA MENOR documentada (el valor BD difiere del Flutter).
+ */
+function backendOrderType(type: string): string {
+  return type === 'UBER/DIDI' ? 'DIDI' : type
+}
+
+const isUberDidi = computed(() => cart.orderType === 'UBER/DIDI')
+const isExterno = computed(() => cart.orderType === 'EXTERNO')
+
+/** Cliente EXTERNO capturado (serializado al guardar — sin backend aún). */
+const externalCustomer = ref<{ name: string; phone: string } | null>(null)
+
+/** Serialización legible en external_customer_data (BACKEND DEPENDENCY). */
+function serializeExternalCustomer(c: { name: string; phone: string }): string {
+  const phone = c.phone !== '' ? ` | Tel: ${c.phone}` : ''
+  return `EXTERNO | Cliente: ${c.name}${phone}`
+}
+
+// --- OrderListItem (ronda 3) -------------------------------------------------
+
+/** Imagen 50x50 por productId; null = icono fastfood (fallback). */
+const brokenLineImageIds = ref<Set<number>>(new Set())
+function onLineImageError(event: Event): void {
+  const img = event.target as HTMLImageElement
+  const match = img.src.match(/templates\/(\d+)\/image/)
+  if (match != null) brokenLineImageIds.value = new Set(brokenLineImageIds.value).add(Number(match[1]))
+}
+
+/** Extras itálica: '+ A, + B' (réplica extrasText L1013). */
+function extrasText(item: CartItem): string {
+  return item.extras.map((e) => `+ ${e.name}`).join(', ')
+}
+
+/** Notas parseadas sin mezclar prefijos (réplica _parsePanelNotes L1195+). */
+function panelNotes(item: CartItem): string[] {
+  const out: string[] = []
+  const raw = item.note
+  if (raw.trim() === '') return out
+  if (
+    !raw.includes('OPT::') && !raw.includes('MIXTO') &&
+    !raw.includes('NOTA::') && !raw.includes('NOTE::')
+  ) {
+    return [`- ${raw}`]
+  }
+  for (const line of raw.split('\n')) {
+    const t = line.trim()
+    if (t === '') continue
+    if (t.startsWith('OPT::')) out.push(`- ${t.slice(5).trim()}`)
+    else if (t.startsWith('NOTE::')) out.push(`- ${t.slice(6).trim()}`)
+    else if (t.startsWith('NOTA::')) out.push(`- ${t.slice(6).trim()}`)
+    else out.push(`- ${t}`)
+  }
+  return out.filter((s) => s !== '- ')
+}
+
+/** Input de nota adicional por línea: guarda al blur (réplica L1140-1153). */
+const lineNotes = ref<Record<string, string>>({})
+function onLineNoteBlur(item: CartItem): void {
+  const value = lineNotes.value[item.key]
+  if (value == null) return
+  cart.updateItem(item.key, { note: value })
+  // Muestra aparte de la nota previa de opciones (sin mezclar prefijos).
+  lineNotes.value = { ...lineNotes.value, [item.key]: '' }
+}
+
+function lineNotePlaceholder(): string {
+  return 'Nota adicional (ej. sin cebolla)...'
+}
+
+/** Opciones dinámicas en líneas '• x' (réplica dynamicOptionsSummary L1094+). */
+function optionLines(item: CartItem): string[] {
+  const summary = item.dynamicOptionsSummary
+  if (summary == null || summary.trim() === '') return []
+  return summary.split('\n').map((l) => l.trim()).filter((l) => l !== '')
+}
+
+// --- Preview de tickets (ronda 3, réplica _TicketPreviewDialog) --------------
+
 // --- Formato ----------------------------------------------------------------
 
 function formatMoney(amount: number): string {
   return `$${amount.toFixed(2)}`
-}
-
-function itemSubtitle(summary: string | null, note: string, extrasCount: number): string {
-  const parts: string[] = []
-  if (summary != null && summary !== '') parts.push(summary)
-  if (extrasCount > 0) parts.push(`+${extrasCount} extra(s)`)
-  if (note !== '') parts.push(`Nota: ${note}`)
-  return parts.join(' · ')
 }
 
 /** Gate de caja: TODO(cash-round-2) — cart.canSell enchufará la sesión. */
@@ -389,106 +544,269 @@ const canSell = computed(() => cart.canSell)
 
       <!-- ================= ORDER PANEL (290px) ================= -->
       <aside class="order-panel" data-testid="order-panel">
-        <!-- Header: título centrado (réplica order_panel.dart; el acceso a
-             pendientes es SOLO por el rail → Órdenes) -->
+        <!-- Header: título + toggle tipo + formularios condicionales
+             (réplica order_panel.dart L346-405) -->
         <div class="op-header">
           <h2 class="op-title">Orden Actual</h2>
+
+          <!-- ToggleButtons tipo orden (réplica _buildOrderTypeToggle L839-880) -->
+          <div class="op-toggle" role="radiogroup" aria-label="Tipo de orden" data-testid="order-type-toggle">
+            <button
+              v-for="t in ORDER_TYPE_LABELS"
+              :key="t.value"
+              type="button"
+              role="radio"
+              class="op-toggle-seg"
+              :class="{ 'op-toggle-seg--active': cart.orderType === t.value }"
+              :aria-checked="cart.orderType === t.value"
+              :data-testid="`order-type-${t.value}`"
+              @click="cart.setOrderType(t.value)"
+            >
+              {{ t.label }}
+            </button>
+          </div>
+
+          <!-- Form UBER/DIDI (réplica _buildPlatformOrderForm L883-932) -->
+          <div v-if="isUberDidi" class="op-platform-form" data-testid="platform-form">
+            <span class="op-platform-label">Información del Repartidor</span>
+            <div class="op-platform-input-wrap">
+              <User :size="16" class="op-platform-icon" aria-hidden="true" />
+              <input
+                type="text"
+                class="op-platform-input"
+                placeholder="Ej: Juan, ID: #12345"
+                aria-label="Información del repartidor"
+                data-testid="platform-info-input"
+                :value="cart.platformDeliveryInfo"
+                @input="cart.setPlatformDeliveryInfo(($event.target as HTMLInputElement).value)"
+              />
+            </div>
+          </div>
+
+          <!-- Form EXTERNO (réplica ExternalCustomerForm Flutter; sin backend
+               de clientes: serializa en platformDeliveryInfo al guardar) -->
+          <div v-if="isExterno" class="op-external-form" data-testid="external-form">
+            <ExternalCustomerForm
+              :initial="externalCustomer"
+              @change="externalCustomer = $event"
+            />
+          </div>
         </div>
 
         <div class="op-divider" aria-hidden="true"></div>
 
-        <!-- Lista de items (réplica OrderListItem) -->
+        <!-- Lista de items (réplica OrderListItem L946-1192) -->
         <div v-if="cart.isEmpty" class="op-empty">
           La orden está vacía.
         </div>
         <ul v-else class="op-items" data-testid="cart-items">
-          <li v-for="item in cart.lines" :key="item.key" class="op-item">
+          <li v-for="item in cart.lines" :key="item.key" class="op-item" :data-testid="`cart-line-${item.key}`">
+            <!-- Fila principal: imagen 50 + nombre/unitario + total bold -->
             <div class="op-item-top">
-              <span class="op-item-name">{{ item.productName }}</span>
-              <span
-                v-if="itemSubtitle(item.dynamicOptionsSummary, item.note, item.extras.length)"
-                class="op-item-sub"
-              >
-                {{ itemSubtitle(item.dynamicOptionsSummary, item.note, item.extras.length) }}
+              <span class="op-item-media">
+                <img
+                  v-if="item.productId != null && !brokenLineImageIds.has(item.productId)"
+                  :src="`/api/rest/catalog/templates/${item.productId}/image`"
+                  alt=""
+                  loading="lazy"
+                  @error="onLineImageError"
+                />
+                <Soup v-else :size="34" class="op-item-media-icon" aria-hidden="true" />
               </span>
-            </div>
-            <div class="op-item-controls">
-              <span class="op-item-price" data-testid="cart-line-total">
+              <span class="op-item-mid">
+                <span class="op-item-name">{{ item.productName }}</span>
+                <span class="op-item-unit">{{ formatMoney(cartItemUnitPrice(item)) }}</span>
+              </span>
+              <span class="op-item-total" data-testid="cart-line-total">
                 {{ formatMoney(cartItemUnitPrice(item) * item.quantity) }}
               </span>
+            </div>
+
+            <!-- Complemento / Extras itálica (réplica L1065-1089) -->
+            <div
+              v-if="item.complement != null || extrasText(item) !== ''"
+              class="op-item-meta"
+            >
+              <span v-if="item.complement != null" class="op-item-meta-line">
+                Complemento: {{ item.complement.name }}
+              </span>
+              <span v-if="extrasText(item) !== ''" class="op-item-meta-line">
+                Extras: {{ extrasText(item) }}
+              </span>
+            </div>
+
+            <!-- Opciones dinámicas '•' 11px (réplica L1093-1126) -->
+            <div v-if="optionLines(item).length > 0" class="op-item-meta">
+              <span class="op-item-meta-title">Opciones:</span>
+              <span v-for="(line, i) in optionLines(item)" :key="i" class="op-item-meta-line">
+                • {{ line }}
+              </span>
+            </div>
+
+            <!-- Notas previas '- texto' 11px #B0B0B0 (réplica _parsePanelNotes) -->
+            <div v-if="panelNotes(item).length > 0" class="op-item-meta op-item-notes">
+              <span v-for="(line, i) in panelNotes(item)" :key="i" class="op-item-note-line">
+                {{ line }}
+              </span>
+            </div>
+
+            <!-- Acciones: nota al blur + −/qty/+/editar/eliminar (L1140-1188) -->
+            <div class="op-item-controls">
+              <input
+                v-model="lineNotes[item.key]"
+                type="text"
+                class="op-item-note-input"
+                :placeholder="lineNotePlaceholder()"
+                :aria-label="`Nota adicional para ${item.productName}`"
+                :data-testid="`note-input-${item.key}`"
+                @blur="onLineNoteBlur(item)"
+                @keydown.enter="($event.target as HTMLInputElement).blur()"
+              />
               <button
                 type="button"
                 class="op-qty"
                 :aria-label="`Quitar uno de ${item.productName}`"
+                :data-testid="`dec-${item.key}`"
                 @click="cart.decrementItem(item.key)"
               >
-                <CircleMinus :size="20" />
+                <CircleMinus :size="22" />
               </button>
-              <span class="op-qty-num">{{ item.quantity }}</span>
+              <span class="op-qty-num" :data-testid="`qty-${item.key}`">{{ item.quantity }}</span>
               <button
                 type="button"
                 class="op-qty"
                 :aria-label="`Agregar uno de ${item.productName}`"
+                :data-testid="`inc-${item.key}`"
                 @click="cart.incrementItem(item.key)"
               >
-                <CirclePlus :size="20" />
+                <CirclePlus :size="22" />
+              </button>
+              <button
+                type="button"
+                class="op-qty"
+                :aria-label="`Editar ${item.productName}`"
+                :data-testid="`edit-${item.key}`"
+                @click="onEditItem(item)"
+              >
+                <SquarePen :size="18" />
               </button>
               <button
                 type="button"
                 class="op-qty op-qty--danger"
                 :aria-label="`Eliminar ${item.productName}`"
+                :data-testid="`del-${item.key}`"
                 @click="cart.removeItem(item.key)"
               >
-                <Trash2 :size="16" />
+                <Trash2 :size="18" />
               </button>
             </div>
           </li>
         </ul>
 
-        <!-- Footer con totales + acciones (réplica footer order_panel) -->
+        <!-- Footer con totales + previews + acción única (réplica L432-806) -->
         <footer class="op-footer">
           <div class="op-total">
             <span class="op-total-label">Total</span>
             <span class="op-total-value" data-testid="cart-total">{{ formatMoney(cart.total) }}</span>
           </div>
-          <div class="op-actions">
+
+          <!-- Previews de ticket (solo con items; réplica L454-484) -->
+          <div v-if="!cart.isEmpty" class="op-previews">
             <button
               type="button"
-              class="op-btn op-btn--ghost"
-              :disabled="cart.isEmpty || pendingSubmitting"
-              data-testid="submit-pending"
-              @click="submitAsPending"
+              class="op-preview op-preview--kitchen"
+              title="Preview Cocina"
+              aria-label="Preview Cocina"
+              data-testid="preview-kitchen"
+              @click="modal = { kind: 'preview-kitchen' }"
             >
-              {{ pendingSubmitting ? 'Guardando…' : 'Pendiente' }}
+              <UtensilsCrossed :size="20" />
             </button>
             <button
               type="button"
-              class="op-btn op-btn--primary"
-              :disabled="cart.isEmpty || !canSell"
-              data-testid="open-checkout"
-              @click="modal = { kind: 'checkout' }"
+              class="op-preview op-preview--client"
+              title="Preview Cliente"
+              aria-label="Preview Cliente"
+              data-testid="preview-client"
+              @click="modal = { kind: 'preview-client' }"
             >
-              Cobrar
+              <ReceiptText :size="20" />
             </button>
           </div>
+
+          <!-- LOCAL: UN solo botón 'Proceder al Pago' (sin 'Pendiente') -->
+          <button
+            v-if="cart.orderType === 'LOCAL'"
+            type="button"
+            class="op-btn op-btn--primary"
+            :disabled="cart.isEmpty || !canSell"
+            data-testid="open-checkout"
+            @click="modal = { kind: 'checkout' }"
+          >
+            Proceder al Pago
+          </button>
+
+          <!-- UBER/DIDI / EXTERNO: 'Guardar Orden' (bg orange[700]) -->
+          <button
+            v-else
+            type="button"
+            class="op-btn op-btn--save"
+            :disabled="cart.isEmpty || pendingSubmitting"
+            data-testid="save-order"
+            @click="submitAsPending"
+          >
+            {{ pendingSubmitting ? 'Guardando…' : 'Guardar Orden' }}
+          </button>
         </footer>
       </aside>
     </div>
 
-    <!-- Modales (intactos de Fase 3) -->
+    <!-- Modales (intactos de Fase 3 + edición ronda 3) -->
     <DynamicOptionsModal
       v-if="modal.kind === 'dynamic'"
       :template="modal.template"
+      :initial-selections="modal.edit?.selections ?? null"
+      :initial-note="modal.edit?.note ?? ''"
+      :edit-key="modal.edit?.key"
       @close="modal = { kind: 'none' }"
     />
     <ExtrasNoteModal
       v-if="modal.kind === 'extras'"
       :template="modal.template"
       :extras="catalog.catalog?.extras ?? []"
+      :initial-extra-ids="modal.edit?.extras ?? null"
+      :initial-note="modal.edit?.note ?? ''"
+      :edit-key="modal.edit?.key"
       @close="modal = { kind: 'none' }"
     />
     <CheckoutModal
       v-if="modal.kind === 'checkout'"
+      @close="modal = { kind: 'none' }"
+    />
+    <TicketPreviewModal
+      v-if="modal.kind === 'preview-kitchen'"
+      :items="cart.lines"
+      :total="cart.total"
+      :order-type="cart.orderType"
+      :platform-delivery-info="
+        isExterno && externalCustomer != null
+          ? serializeExternalCustomer(externalCustomer)
+          : cart.platformDeliveryInfo
+      "
+      :is-kitchen="true"
+      @close="modal = { kind: 'none' }"
+    />
+    <TicketPreviewModal
+      v-if="modal.kind === 'preview-client'"
+      :items="cart.lines"
+      :total="cart.total"
+      :order-type="cart.orderType"
+      :platform-delivery-info="
+        isExterno && externalCustomer != null
+          ? serializeExternalCustomer(externalCustomer)
+          : cart.platformDeliveryInfo
+      "
+      :is-kitchen="false"
       @close="modal = { kind: 'none' }"
     />
   </div>
@@ -843,12 +1161,13 @@ const canSell = computed(() => cart.canSell)
   background: rgba(48, 48, 48, 0.98);
 }
 
+/* Header scrollable: título + toggle + forms condicionales (L346-405) */
 .op-header {
-  position: relative;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px 12px 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 16px 16px 12px;
 }
 
 .op-title {
@@ -856,6 +1175,93 @@ const canSell = computed(() => cart.canSell)
   font-size: 16px;
   font-weight: 600;
   color: var(--text);
+  text-align: center;
+}
+
+/* ToggleButtons centrado (L839-880): fill deepOrange, radius 6, minHeight 32 */
+.op-toggle {
+  display: flex;
+  justify-content: center;
+}
+
+.op-toggle-seg {
+  padding: 0 10px;
+  min-height: 32px;
+  background: transparent;
+  border: 1px solid var(--bg-surface); /* borderColor = surface (#303030) */
+  border-right-width: 0;
+  color: rgba(255, 255, 255, 0.8); /* onSurface 80% */
+  font-family: var(--font);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.op-toggle-seg:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+.op-toggle-seg:last-child {
+  border-radius: 0 6px 6px 0;
+  border-right-width: 1px;
+}
+
+.op-toggle-seg--active {
+  background: var(--primary); /* fillColor primary */
+  border-color: var(--primary); /* selectedBorderColor */
+  color: #fff; /* onPrimary */
+}
+
+/* Form UBER/DIDI (L883-932): naranja alpha .3, borde shade700, radius 6 */
+.op-platform-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  background: rgba(230, 81, 0, 0.3); /* orange.shade900 .3 */
+  border: 1px solid #ef6c00; /* orange.shade700 */
+  border-radius: 6px;
+}
+
+.op-platform-label {
+  color: #ffcc80; /* orange.shade300 */
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.op-platform-input-wrap {
+  position: relative;
+}
+
+.op-platform-icon {
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  transform: translateY(-50%);
+  color: var(--warning); /* Icons.person orange */
+  pointer-events: none;
+}
+
+.op-platform-input {
+  width: 100%;
+  padding: 8px 8px 8px 30px;
+  background: #212121; /* grey[900] */
+  border: 1px solid #616161; /* grey[700] */
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 11px;
+  outline: none;
+}
+
+.op-platform-input::placeholder {
+  color: var(--text-faint); /* grey[600] */
+  font-size: 11px;
+}
+
+/* Form EXTERNO (envuelve ExternalCustomerForm) */
+.op-external-form {
+  /* el hijo trae sus propios estilos */
 }
 
 .op-divider {
@@ -863,7 +1269,7 @@ const canSell = computed(() => cart.canSell)
   background: rgba(255, 255, 255, 0.24);
 }
 
-/* Items (OrderListItem: nombre+precio izq, total der, qty abajo) */
+/* Items (OrderListItem: imagen 50 + nombre/unitario + total 80 bold) */
 .op-empty {
   flex: 1;
   display: flex;
@@ -895,7 +1301,39 @@ const canSell = computed(() => cart.canSell)
   border-bottom: none;
 }
 
+/* Fila imagen 50x50 radius 8 + mid + total (L1021-1063) */
 .op-item-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.op-item-media {
+  flex: none;
+  width: 50px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-surface-2);
+}
+
+.op-item-media img {
+  width: 50px;
+  height: 50px;
+  object-fit: cover;
+  display: block;
+}
+
+.op-item-media-icon {
+  color: #616161; /* grey[700] errorBuilder */
+}
+
+.op-item-mid {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -905,13 +1343,58 @@ const canSell = computed(() => cart.canSell)
   color: var(--text);
   font-size: 15px;
   font-weight: 700;
-  line-height: 1.3;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-.op-item-sub {
-  color: var(--text-faint);
-  font-size: 0.72rem;
+.op-item-unit {
+  color: var(--text-muted); /* bodySmall */
+  font-size: 11px;
+}
+
+.op-item-total {
+  flex: none;
+  width: 80px; /* SizedBox width 80 (L1053) */
+  text-align: right;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* Meta itálica bajo la fila (padding-left 62 = 50 + gap 12; L1065-1126) */
+.op-item-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 62px;
+  margin-top: 4px;
+}
+
+.op-item-meta-title {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.op-item-meta-line {
+  color: rgba(189, 189, 189, 0.7); /* bodySmall alpha .7 */
+  font-size: 11px;
   font-style: italic;
+  word-break: break-word;
+}
+
+/* Notas '- texto' #B0B0B0 (réplica L1212) */
+.op-item-notes {
+  margin-top: 4px;
+  margin-bottom: 12px;
+}
+
+.op-item-note-line {
+  color: #b0b0b0;
+  font-size: 11px;
   word-break: break-word;
 }
 
@@ -922,11 +1405,27 @@ const canSell = computed(() => cart.canSell)
   margin-top: 8px;
 }
 
-.op-item-price {
+/* Input nota adicional (L1143-1152): densidad baja */
+.op-item-note-input {
   flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  background: var(--input-bg);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
   color: var(--text);
-  font-size: 0.95rem;
-  font-weight: 700;
+  font-family: var(--font);
+  font-size: 11px;
+  outline: none;
+}
+
+.op-item-note-input::placeholder {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.op-item-note-input:focus {
+  border-color: var(--primary);
 }
 
 .op-qty {
@@ -948,6 +1447,10 @@ const canSell = computed(() => cart.canSell)
   color: var(--text);
 }
 
+.op-qty--danger {
+  color: var(--error); /* delete_outline colorScheme.error */
+}
+
 .op-qty--danger:hover {
   color: var(--error);
 }
@@ -960,7 +1463,7 @@ const canSell = computed(() => cart.canSell)
   font-size: 15px;
 }
 
-/* Footer (Container radius-top 16, border-top grey[800]) */
+/* Footer (Container radius-top 16, border-top grey[800], padding 24→16) */
 .op-footer {
   padding: 16px 16px 14px;
   background: var(--bg-surface);
@@ -982,6 +1485,7 @@ const canSell = computed(() => cart.canSell)
   font-size: 16px;
 }
 
+/* Total deepOrange headlineSmall (~28px) bold (L812-822) */
 .op-total-value {
   color: var(--primary);
   font-size: 28px;
@@ -989,21 +1493,53 @@ const canSell = computed(() => cart.canSell)
   line-height: 1.2;
 }
 
-.op-actions {
-  display: grid;
-  grid-template-columns: 1fr 2fr;
-  gap: 10px;
+/* Previews de ticket centrados (réplica Row L455-484) */
+.op-previews {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.op-preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.op-preview--kitchen {
+  color: var(--primary); /* deepOrangeAccent */
+  border: 1px solid rgba(255, 87, 34, 0.5);
+}
+
+.op-preview--kitchen:hover {
+  background: rgba(255, 87, 34, 0.12);
+}
+
+.op-preview--client {
+  color: var(--info); /* blueAccent */
+  border: 1px solid rgba(33, 150, 243, 0.5);
+}
+
+.op-preview--client:hover {
+  background: rgba(33, 150, 243, 0.12);
 }
 
 .op-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 12px 16px;
-  border-radius: var(--radius);
+  padding: 16px;
+  border-radius: 12px;
   border: 1px solid transparent;
   font-family: var(--font);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
@@ -1023,19 +1559,17 @@ const canSell = computed(() => cart.canSell)
   cursor: not-allowed;
 }
 
-.op-btn--ghost {
-  background: transparent;
-  border-color: var(--border);
-  color: var(--text-muted);
+/* Guardar Orden (UBER/DIDI|EXTERNO): bg orange[700] (L717) */
+.op-btn--save {
+  background: #f57c00; /* Colors.orange[700] */
+  color: #fff;
 }
 
-.op-btn--ghost:hover:not(:disabled) {
-  color: var(--text);
-  border-color: var(--text-faint);
-  background: var(--card-overlay);
+.op-btn--save:hover:not(:disabled) {
+  background: #ff9800;
 }
 
-.op-btn--ghost:disabled {
+.op-btn--save:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
