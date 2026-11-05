@@ -164,11 +164,10 @@ interface EditContext {
 const modal = ref<ModalState>({ kind: 'none' })
 
 function onProductClick(template: CatalogTemplate): void {
-  if (template.optionGroups.length > 0) {
-    modal.value = { kind: 'dynamic', template }
-  } else {
-    modal.value = { kind: 'extras', template }
-  }
+  // Ronda 5b: el Flutter abre el wizard SIEMPRE (_handleProductTap L395-410 no
+  // condiciona por grupos); el wizard muestra 'Sin opciones disponibles'+Cerrar
+  // si el template no trae grupos (DynamicProductWizardDialog L2843-2889).
+  modal.value = { kind: 'dynamic', template }
 }
 
 /** Réplica edit_outlined (L1168-1181): reabre el modal en modo EDICIÓN. */
@@ -187,10 +186,7 @@ function onEditItem(item: CartItem): void {
     note: item.note,
     summary: item.dynamicOptionsSummary ?? '',
   }
-  modal.value =
-    template.optionGroups.length > 0
-      ? { kind: 'dynamic', template, edit }
-      : { kind: 'extras', template, edit }
+  modal.value = { kind: 'dynamic', template, edit }
 }
 
 /**
@@ -757,7 +753,8 @@ const canSell = computed(() => cart.canSell)
       </aside>
     </div>
 
-    <!-- Modales (intactos de Fase 3 + edición ronda 3) -->
+    <!-- Modales (ronda 5b: el wizard maneja TODOS los productos; ExtrasNoteModal
+         queda sin uso desde el click de producto — se conserva por si se reusa) -->
     <DynamicOptionsModal
       v-if="modal.kind === 'dynamic'"
       :template="modal.template"
