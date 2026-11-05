@@ -1,36 +1,33 @@
 <script setup lang="ts">
 /**
- * PosPiso1View · shell del POS desktop (Fase 3, ronda 2 — réplica visual exacta).
+ * PosPiso1View · vista VENDER del POS desktop (Fase 3 ronda 2 — réplica exacta).
  *
  * Copia PIXEL-FIEL del POS Piso 1 de CrazyWings Flutter:
  * - pos_view.dart:      Row = MenuContent (Expanded) + OrderPanel (290px fijo)
  * - menu_content.dart:  header (título+fecha izq / búsqueda der), TabBar
  *                       scrollable horizontal (TODO · categorías · EXTRAS),
  *                       divider white24, grid responsivo 3/4/5 columnas
- * - product_card.dart:  card #303030 radius 12, avatar circular 80, Add #FF5722
- * - ExtraCard (menu_content.dart L413): top deepOrange alpha 0.1 + icono 60,
- *                       nombre bold, precio deepOrange bold, categoría gris
+ * - ProductCard REAL    (menu_content.dart L316-411, el que usa el grid del
+ *                       POS vía L302): Card #303030 radius 12 elev 2, Column
+ *                       stretch → imagen flex 3 (ClipRRect top 12, cover, si
+ *                       falla icono fastfood 46 grey[700]) + info flex 2
+ *                       (padding 12h/8v, spaceEvenly: nombre bold 13 blanco
+ *                       centrado 2 líneas + precio deepOrange bold 13).
+ *                       SIN botón Add: el click en el CARD abre el modal.
+ * - ExtraCard           (menu_content.dart L413-524): top flex 3 deepOrange
+ *                       alpha 0.1 + icono local_dining 60 deepOrange; bottom
+ *                       flex 2 nombre bold 14 + precio deepOrange bold 14.
+ *                       Tap AGREGA DIRECTO al carrito + SnackBar 2s.
  * - order_panel.dart:   "Orden Actual" centrado, items 50px, totales, footer
  *                       radius-top con botones Proceder al Pago / Pendiente.
+ *                       SIN botón de reloj (el acceso a pendientes es SOLO
+ *                       por el rail → Órdenes; réplica exacta del panel).
  *
- * Sin sidebar vertical de categorías (NO existe en CrazyWings). Back discreto.
  * Lógica de carrito/checkout/pendientes intacta (stores + modales Fase 3).
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
-import { RouterLink } from 'vue-router'
-import {
-  ArrowLeft,
-  Clock,
-  Hamburger,
-  Info,
-  Plus,
-  Search,
-  Trash2,
-  Utensils,
-  CircleMinus,
-  CirclePlus,
-} from 'lucide-vue-next'
+import { Soup, Info, Search, Trash2, Utensils, CircleMinus, CirclePlus } from 'lucide-vue-next'
 import type { CatalogExtra, CatalogTemplate } from '../../api/pos-types'
 import { POS_PLANT_ID, useCatalogStore } from '../../stores/catalog'
 import { cartItemUnitPrice, useCartStore } from '../../stores/cart'
@@ -41,7 +38,6 @@ import { AppBanner, AppButton, AppSpinner } from '../../components/ui'
 import DynamicOptionsModal from '../../components/pos/DynamicOptionsModal.vue'
 import ExtrasNoteModal from '../../components/pos/ExtrasNoteModal.vue'
 import CheckoutModal from '../../components/pos/CheckoutModal.vue'
-import PendingOrdersView from './PendingOrdersView.vue'
 
 const catalog = useCatalogStore()
 const cart = useCartStore()
@@ -135,7 +131,6 @@ type ModalState =
   | { kind: 'dynamic'; template: CatalogTemplate }
   | { kind: 'extras'; template: CatalogTemplate }
   | { kind: 'checkout' }
-  | { kind: 'pending' }
 
 const modal = ref<ModalState>({ kind: 'none' })
 
@@ -144,6 +139,25 @@ function onProductClick(template: CatalogTemplate): void {
     modal.value = { kind: 'dynamic', template }
   } else {
     modal.value = { kind: 'extras', template }
+  }
+}
+
+/**
+ * Fallback de imagen (réplica errorBuilder de Image.network L350-354): si la
+ * imagen falla, muestra el icono fastfood 46px grey[700]. Se marca hasImage
+ * localmente en false para que el icono tome el lugar del <img> roto.
+ */
+const brokenImageIds = ref<Set<number>>(new Set())
+function onImageError(event: Event): void {
+  const img = event.target as HTMLImageElement
+  const match = img.src.match(/templates\/(\d+)\/image/)
+  if (match != null) {
+    const id = Number(match[1])
+    if (!brokenImageIds.value.has(id)) {
+      const next = new Set(brokenImageIds.value)
+      next.add(id)
+      brokenImageIds.value = next
+    }
   }
 }
 
@@ -235,11 +249,6 @@ const canSell = computed(() => cart.canSell)
     <div v-else-if="catalog.catalog" class="pos-body">
       <!-- ================= MENUCONTENT ================= -->
       <section class="menu" aria-label="Menú">
-        <!-- Back discreto (CrazyWings no lo tiene; mínimo impacto) -->
-        <RouterLink to="/home" class="menu-back" aria-label="Volver al inicio">
-          <ArrowLeft :size="18" />
-        </RouterLink>
-
         <!-- Header: título+fecha izquierda, búsqueda derecha -->
         <header class="menu-header">
           <div class="menu-header-text">
@@ -334,7 +343,7 @@ const canSell = computed(() => cart.canSell)
             <p>No hay extras disponibles.</p>
           </div>
 
-          <!-- GRID PRODUCTOS (product_card.dart) -->
+          <!-- GRID PRODUCTOS (ProductCard REAL de menu_content.dart L316-411) -->
           <div
             v-else
             class="menu-grid"
@@ -351,25 +360,21 @@ const canSell = computed(() => cart.canSell)
               @keydown.enter="onProductClick(template)"
               @keydown.space.prevent="onProductClick(template)"
             >
-              <span class="product-avatar">
+              <!-- flex 3: imagen cover con esquinas superiores 12; fallback fastfood -->
+              <span class="product-media">
                 <img
-                  v-if="template.hasImage"
-                  src="/logoWText.png"
+                  v-if="template.hasImage && !brokenImageIds.has(template.id)"
+                  :src="`/api/rest/catalog/templates/${template.id}/image`"
                   alt=""
                   loading="lazy"
+                  @error="onImageError"
                 />
-                <Hamburger
-                  v-else
-                  :size="40"
-                  class="product-avatar-icon"
-                  aria-hidden="true"
-                />
+                <Soup v-else :size="46" class="product-media-icon" aria-hidden="true" />
               </span>
-              <span class="product-name">{{ template.name }}</span>
-              <span class="product-price">{{ formatMoney(template.basePrice) }}</span>
-              <span class="product-add">
-                <Plus :size="16" aria-hidden="true" />
-                Add
+              <!-- flex 2: nombre bold 13 blanco centrado + precio deepOrange bold 13 -->
+              <span class="product-info">
+                <span class="product-name">{{ template.name }}</span>
+                <span class="product-price">{{ formatMoney(template.basePrice) }}</span>
               </span>
             </div>
           </div>
@@ -384,23 +389,10 @@ const canSell = computed(() => cart.canSell)
 
       <!-- ================= ORDER PANEL (290px) ================= -->
       <aside class="order-panel" data-testid="order-panel">
-        <!-- Header: título centrado + acceso a pendientes (discreto) -->
+        <!-- Header: título centrado (réplica order_panel.dart; el acceso a
+             pendientes es SOLO por el rail → Órdenes) -->
         <div class="op-header">
-          <button
-            type="button"
-            class="op-pending"
-            data-testid="open-pending"
-            aria-label="Ver órdenes pendientes"
-            title="Pendientes"
-            @click="modal = { kind: 'pending' }"
-          >
-            <Clock :size="16" aria-hidden="true" />
-            <span v-if="ordersStore.pendingCount > 0" class="op-pending-badge">
-              {{ ordersStore.pendingCount }}
-            </span>
-          </button>
           <h2 class="op-title">Orden Actual</h2>
-          <span class="op-header-spacer" aria-hidden="true"></span>
         </div>
 
         <div class="op-divider" aria-hidden="true"></div>
@@ -499,10 +491,6 @@ const canSell = computed(() => cart.canSell)
       v-if="modal.kind === 'checkout'"
       @close="modal = { kind: 'none' }"
     />
-    <PendingOrdersView
-      v-if="modal.kind === 'pending'"
-      @close="modal = { kind: 'none' }"
-    />
   </div>
 </template>
 
@@ -544,37 +532,13 @@ const canSell = computed(() => cart.canSell)
   position: relative;
 }
 
-/* Back discreto: flecha pequeña esquina superior izquierda, gris → blanco */
-.menu-back {
-  position: absolute;
-  top: 10px;
-  right: auto;
-  left: 10px;
-  z-index: 2;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 999px;
-  color: var(--text-faint);
-  background: transparent;
-  transition: color 0.15s ease, background 0.15s ease;
-}
-
-.menu-back:hover {
-  color: var(--text);
-  background: var(--card-overlay);
-}
-
-/* Header dentro del área de menú (no global). padding-left reserva sitio
-   para el back discreto (48px) — el resto idéntico a Flutter (10px). */
+/* Header (padding 10 como Flutter; sin back: la navegación es por el rail) */
 .menu-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 10px 10px 10px 48px;
+  padding: 10px;
 }
 
 .menu-header-text {
@@ -703,17 +667,18 @@ const canSell = computed(() => cart.canSell)
 }
 
 /* ==========================================================================
-   PRODUCT CARD (product_card.dart)
-   bg #303030, radius 12, elevación 2, avatar circular 80, Add #FF5722 h36
+   PRODUCT CARD (ProductCard REAL de menu_content.dart L316-411)
+   Card #303030 radius 12 elev 2 → Column stretch:
+   - flex 3: ClipRRect top 12 imagen cover; fallback fastfood 46 grey[700]
+   - flex 2: padding 12h/8v spaceEvenly: nombre bold 13 blanco centrado
+     (max 2 líneas ellipsis) + precio deepOrange bold 13.
+   SIN botón Add: el click en cualquier parte del card abre el modal.
    ========================================================================== */
 .product-card {
   aspect-ratio: 0.95;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 12px;
+  overflow: hidden;
   background: var(--bg-surface);
   border-radius: var(--radius);
   box-shadow:
@@ -722,12 +687,12 @@ const canSell = computed(() => cart.canSell)
   cursor: pointer;
   user-select: none;
   transition:
-    background 0.15s ease,
+    filter 0.15s ease,
     box-shadow 0.15s ease;
 }
 
 .product-card:hover {
-  background: var(--bg-surface-2);
+  filter: brightness(1.15);
   box-shadow:
     0 2px 6px rgba(0, 0, 0, 0.35),
     0 1px 3px rgba(0, 0, 0, 0.2);
@@ -737,27 +702,38 @@ const canSell = computed(() => cart.canSell)
   background: var(--primary);
 }
 
-.product-avatar {
-  width: 80px;
-  height: 80px;
-  border-radius: 40px;
-  background: rgba(0, 0, 0, 0.12);
+/* flex 3: media cuadrada arriba (imagen cover o icono fastfood grey[700]) */
+.product-media {
+  flex: 3;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  background: #303030;
+  border-radius: 12px 12px 0 0;
   overflow: hidden;
-  flex: none;
 }
 
-.product-avatar img {
+.product-media img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: 40px;
+  display: block;
 }
 
-.product-avatar-icon {
-  color: rgba(255, 255, 255, 0.7);
+.product-media-icon {
+  color: #616161; /* Colors.grey[700] (errorBuilder L353) */
+}
+
+/* flex 2: info padding 12h/8v, spaceEvenly centrado */
+.product-info {
+  flex: 2;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-evenly;
+  padding: 8px 12px;
 }
 
 .product-name {
@@ -772,32 +748,19 @@ const canSell = computed(() => cart.canSell)
   overflow: hidden;
 }
 
+/* Precio deepOrange bold (theme.colorScheme.primary, L381) */
 .product-price {
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--primary);
   font-size: 13px;
-}
-
-.product-add {
-  width: 100%;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  background: var(--primary);
-  color: var(--on-primary);
-  border-radius: var(--radius);
-  font-family: var(--font);
-  font-size: 14px;
   font-weight: 700;
-  flex: none;
 }
 
 /* ==========================================================================
-   EXTRA CARD (menu_content.dart L413)
-   Top flex 3 con deepOrange alpha 0.1 + icono 60; bottom: nombre bold,
-   precio deepOrange bold, categoría gris alpha 0.7 (omitida: el catálogo
-   Rest no trae categoryName en CatalogExtra).
+   EXTRA CARD (menu_content.dart L413-524)
+   Top flex 3 con deepOrange alpha 0.1 + icono local_dining 60; bottom flex 2:
+   nombre bold 14 blanco centrado, gap 8, precio deepOrange bold 14, gap 4,
+   categoryName gris alpha 0.7 (omitida: el catálogo Rest no trae categoryName
+   en CatalogExtra, solo CategoryId).
    ========================================================================== */
 .extra-card {
   aspect-ratio: 0.95;
@@ -826,6 +789,7 @@ const canSell = computed(() => cart.canSell)
   align-items: center;
   justify-content: center;
   background: rgba(255, 87, 34, 0.1);
+  border-radius: 12px 12px 0 0;
 }
 
 .extra-card-icon {
@@ -838,7 +802,6 @@ const canSell = computed(() => cart.canSell)
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
   padding: 12px;
 }
 
@@ -853,10 +816,19 @@ const canSell = computed(() => cart.canSell)
   overflow: hidden;
 }
 
+/* SizedBox(height: 8) entre nombre y precio (L473) */
 .extra-card-price {
+  margin-top: 8px;
   color: var(--primary);
   font-size: 14px;
   font-weight: 700;
+}
+
+/* SizedBox(height: 4) antes de categoryName (L482) — omitida por contrato */
+.extra-card-category {
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
 }
 
 /* ==========================================================================
@@ -884,48 +856,6 @@ const canSell = computed(() => cart.canSell)
   font-size: 16px;
   font-weight: 600;
   color: var(--text);
-}
-
-.op-pending {
-  position: absolute;
-  left: 10px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  background: transparent;
-  border: none;
-  color: var(--text-faint);
-  cursor: pointer;
-  transition: color 0.15s ease, background 0.15s ease;
-}
-
-.op-pending:hover {
-  color: var(--text);
-  background: var(--card-overlay);
-}
-
-.op-pending-badge {
-  position: absolute;
-  top: -2px;
-  right: -4px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 999px;
-  background: var(--primary);
-  color: var(--on-primary);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 16px;
-  text-align: center;
-}
-
-.op-header-spacer {
-  width: 30px;
-  flex: none;
 }
 
 .op-divider {

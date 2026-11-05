@@ -41,6 +41,11 @@ export const useToastStore = defineStore('toast', {
       this.show('error', message, 5000)
     },
 
+    /** Informativo (deudas Fase 3c/3d: edición de órdenes, impresión, etc.). */
+    info(message: string): void {
+      this.show('info', message)
+    },
+
     dismiss(): void {
       if (this.timer != null) clearTimeout(this.timer)
       this.current = null

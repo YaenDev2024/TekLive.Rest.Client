@@ -75,20 +75,29 @@ export const useOrdersStore = defineStore('orders', {
      * se hace UNA llamada por status y se une por id (sin duplicados).
      * El panel usa: tab "Pendientes" → ['pendiente'];
      * tab "En curso" → ['preparando', 'listo'].
+     *
+     * Ronda 2 (pantalla Órdenes del rail): `statuses = null` pide la lista
+     * SIN filtro (réplica del dropdown "Todas" de pending_orders_screen.dart
+     * L96-98: statusFilter = null). 'pagado' replica el filtro "Entregadas".
      */
-    async fetchOrdersByStatus(plantId: number, date: string, statuses: string[]): Promise<void> {
+    async fetchOrdersByStatus(plantId: number, date: string, statuses: string[] | null): Promise<void> {
       if (this.loading) return
       this.loading = true
       this.error = null
       try {
         if (USE_MOCK) {
           await new Promise((resolve) => setTimeout(resolve, 200))
-          const wanted = new Set(statuses)
-          this.pendingOrders = listMockOrders().filter((o) => wanted.has(o.orderStatus))
-        } else {
-          const results = await Promise.all(
-            statuses.map((status) => getOrders({ plantId, date, status })),
+          const wanted = statuses != null ? new Set(statuses) : null
+          this.pendingOrders = listMockOrders().filter(
+            (o) => wanted == null || wanted.has(o.orderStatus),
           )
+        } else {
+          const results =
+            statuses == null
+              ? [await getOrders({ plantId, date })]
+              : await Promise.all(
+                  statuses.map((status) => getOrders({ plantId, date, status })),
+                )
           const byId = new Map<number, PendingOrderListItem>()
           for (const { data } of results) {
             for (const order of data) byId.set(order.id, order)

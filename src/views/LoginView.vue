@@ -72,7 +72,10 @@ async function login(): Promise<void> {
       // /me is optional enrichment; login response already has the essentials.
     }
 
-    await router.push({ name: 'home' })
+    // CrazyWings desktop arranca con rail + Vender directo (NavigationProvider
+    // index 0): el login aterriza en el shell del POS, no en la selección de
+    // módulos (esa queda como ruta /home para el rol mesero en fases futuras).
+    await router.push({ name: 'pos-piso1' })
   } catch (err) {
     if (err instanceof ApiError) {
       errorMessage.value = err.message
