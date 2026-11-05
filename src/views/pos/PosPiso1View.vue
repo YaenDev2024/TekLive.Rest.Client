@@ -156,6 +156,9 @@ interface EditContext {
   selections: import('../../api/pos-types').OrderItemSelectedOption[] | null
   extras: number[]
   note: string
+  /** Ronda 5: dynamicOptionsSummary de la línea (mitades MIXTO y salsas
+   * aparte no viven en las selecciones estructurales). */
+  summary?: string
 }
 
 const modal = ref<ModalState>({ kind: 'none' })
@@ -182,6 +185,7 @@ function onEditItem(item: CartItem): void {
     selections: item.selectedOptions,
     extras: item.extras.map((e) => e.id),
     note: item.note,
+    summary: item.dynamicOptionsSummary ?? '',
   }
   modal.value =
     template.optionGroups.length > 0
@@ -758,6 +762,7 @@ const canSell = computed(() => cart.canSell)
       v-if="modal.kind === 'dynamic'"
       :template="modal.template"
       :initial-selections="modal.edit?.selections ?? null"
+      :initial-summary="modal.edit?.summary ?? ''"
       :initial-note="modal.edit?.note ?? ''"
       :edit-key="modal.edit?.key"
       @close="modal = { kind: 'none' }"
