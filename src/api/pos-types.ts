@@ -252,3 +252,59 @@ export interface UpdateOrderStatusPayload {
   newStatus: OrderStatus
   notes?: string
 }
+
+// ---------------------------------------------------------------------------
+// Clientes (Fase 3c · flujo EXTERNO — backend commit 0700a12)
+// ---------------------------------------------------------------------------
+
+/**
+ * Shape de RestCustomerResponse (BusinessSuite.Shared DTOs, camelCase).
+ * Espejo de customer_model.dart del POS CrazyWings.
+ */
+export interface RestCustomer {
+  customerId: number
+  customerNumber: string
+  customerName: string
+  /** INDIVIDUAL | EMPRESA (default INDIVIDUAL). */
+  customerType: string
+  phone?: string | null
+  contactPerson?: string | null
+  companyName?: string | null
+  deliveryAddress?: string | null
+  deliveryTimePreference?: string | null
+  comments?: string | null
+  /** Última orden asignada (alimenta la lista de frecuentes). */
+  lastOrderDate?: string | null
+}
+
+/** POST api/rest/customers — body (longitudes = columnas reales). */
+export interface CreateCustomerPayload {
+  customerNumber: string
+  customerName: string
+  /** Default backend: INDIVIDUAL (catálogo cerrado INDIVIDUAL|EMPRESA). */
+  customerType?: string
+  phone?: string | null
+  contactPerson?: string | null
+  companyName?: string | null
+  deliveryAddress?: string | null
+  deliveryTimePreference?: string | null
+  /** Default backend: NORMAL. */
+  status?: string
+  comments?: string | null
+}
+
+/**
+ * PATCH api/rest/customers/{id} — subconjunto editable (null = no tocar).
+ * NOTA: el backend NO acepta customerName en el PATCH (deuda documentada:
+ * el nombre solo se fija al crear).
+ */
+export interface UpdateCustomerPayload {
+  customerType?: string
+  phone?: string | null
+  contactPerson?: string | null
+  companyName?: string | null
+  deliveryAddress?: string | null
+  deliveryTimePreference?: string | null
+  status?: string
+  comments?: string | null
+}

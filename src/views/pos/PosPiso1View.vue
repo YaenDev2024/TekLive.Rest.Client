@@ -245,7 +245,7 @@ async function submitAsPending(): Promise<void> {
   if (cart.isEmpty || pendingSubmitting.value) return
   // Validaciones réplica Flutter L722-751.
   const type = cart.orderType.toUpperCase()
-  if (type === 'EXTERNO' && externalCustomer.value == null) {
+  if (type === 'EXTERNO' && cart.customerId == null) {
     toast.warning('⚠️ Debes seleccionar un cliente para órdenes EXTERNO')
     return
   }
@@ -264,18 +264,16 @@ async function submitAsPending(): Promise<void> {
         tableId: 1,
         // 'UBER/DIDI' (UI) → 'DIDI' (catálogo cerrado del backend Rest).
         orderType: backendOrderType(cart.orderType) as typeof cart.orderType,
-        // EXTERNO sin backend de clientes: datos serializados (columna
-        // external_customer_data, RestOrderService.cs L119 la persiste).
-        ...(externalCustomer.value != null
-          ? { platformDeliveryInfo: serializeExternalCustomer(externalCustomer.value) }
-          : {}),
+        // Ronda 4 (API real de clientes, backend 0700a12): EXTERNO manda
+        // customerId; el backend toca last_order_date. platformDeliveryInfo
+        // queda SOLO para UBER/DIDI (ya no se serializa texto del cliente).
+        ...(cart.customerId != null ? { customerId: cart.customerId } : {}),
         items: cart.toOrderItems(),
       },
       session.displayName ?? 'Cajero',
     )
     toast.success('✓ Orden guardada como pendiente')
     cart.clear()
-    externalCustomer.value = null
   } catch {
     toast.error('No se pudo crear la orden pendiente. Intenta de nuevo.')
   } finally {
@@ -306,14 +304,8 @@ function backendOrderType(type: string): string {
 const isUberDidi = computed(() => cart.orderType === 'UBER/DIDI')
 const isExterno = computed(() => cart.orderType === 'EXTERNO')
 
-/** Cliente EXTERNO capturado (serializado al guardar — sin backend aún). */
-const externalCustomer = ref<{ name: string; phone: string } | null>(null)
-
-/** Serialización legible en external_customer_data (BACKEND DEPENDENCY). */
-function serializeExternalCustomer(c: { name: string; phone: string }): string {
-  const phone = c.phone !== '' ? ` | Tel: ${c.phone}` : ''
-  return `EXTERNO | Cliente: ${c.name}${phone}`
-}
+// Ronda 4: el cliente EXTERNO vive en el cart store (RestCustomer completo
+// del API real de clientes). Ya NO se serializa texto en platformDeliveryInfo.
 
 // --- OrderListItem (ronda 3) -------------------------------------------------
 
@@ -583,12 +575,12 @@ const canSell = computed(() => cart.canSell)
             </div>
           </div>
 
-          <!-- Form EXTERNO (réplica ExternalCustomerForm Flutter; sin backend
-               de clientes: serializa en platformDeliveryInfo al guardar) -->
+          <!-- Form EXTERNO (ronda 4: API real de clientes — search/frequent/
+               create contra backend 0700a12; guarda customerId en el cart) -->
           <div v-if="isExterno" class="op-external-form" data-testid="external-form">
             <ExternalCustomerForm
-              :initial="externalCustomer"
-              @change="externalCustomer = $event"
+              :initial="cart.customer"
+              @change="cart.setCustomer($event)"
             />
           </div>
         </div>
@@ -789,8 +781,8 @@ const canSell = computed(() => cart.canSell)
       :total="cart.total"
       :order-type="cart.orderType"
       :platform-delivery-info="
-        isExterno && externalCustomer != null
-          ? serializeExternalCustomer(externalCustomer)
+        isExterno && cart.customer != null
+          ? cart.customer.customerName
           : cart.platformDeliveryInfo
       "
       :is-kitchen="true"
@@ -802,8 +794,8 @@ const canSell = computed(() => cart.canSell)
       :total="cart.total"
       :order-type="cart.orderType"
       :platform-delivery-info="
-        isExterno && externalCustomer != null
-          ? serializeExternalCustomer(externalCustomer)
+        isExterno && cart.customer != null
+          ? cart.customer.customerName
           : cart.platformDeliveryInfo
       "
       :is-kitchen="false"

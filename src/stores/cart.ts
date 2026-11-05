@@ -9,7 +9,8 @@
  *   (precio base + extras + complemento capturado al agregar).
  * - addDynamicItem: NUNCA dedup — siempre item nuevo con customPrice y el
  *   resumen de opciones en notes con sufijo legacy `OPT::Grupo:Valor`.
- * - setOrderType: al cambiar limpia customer / platformDeliveryInfo.
+ * - setOrderType: al cambiar limpia customer (EXTERNO, ronda 4: objeto
+ *   RestCustomer completo del API de clientes) / platformDeliveryInfo.
  * - total/subtotal: DISPLAY solamente — el backend RECALCULA al crear.
  *
  * Sin impuestos (CrazyWings: taxRate 0.0).
@@ -20,6 +21,7 @@ import type {
   OrderItemSelectedOption,
   OrderType,
   PaymentMethod,
+  RestCustomer,
 } from '../api/pos-types'
 
 // ---------------------------------------------------------------------------
@@ -103,8 +105,12 @@ export const useCartStore = defineStore('cart', {
   state: () => ({
     items: [] as CartItem[],
     orderType: 'LOCAL' as OrderType,
-    /** Cliente para EXTERNO (ronda posterior: buscador de clientes). */
-    customerId: null as number | null,
+    /**
+     * Ronda 4: cliente EXTERNO completo (API real de clientes, backend
+     * 0700a12). `customerId` se deduce de `customer?.customerId`; mantener
+     * el objeto permite mostrar nombre/número en la UI.
+     */
+    customer: null as RestCustomer | null,
     /** Info de repartidor/folio para UBER/DIDI. */
     platformDeliveryInfo: '',
     placing: false,
@@ -126,6 +132,11 @@ export const useCartStore = defineStore('cart', {
 
     itemCount(state): number {
       return state.items.reduce((n, item) => n + item.quantity, 0)
+    },
+
+    /** Id del cliente EXTERNO seleccionado (payload de createOrder). */
+    customerId(state): number | null {
+      return state.customer?.customerId ?? null
     },
 
     isEmpty(state): boolean {
@@ -310,10 +321,18 @@ export const useCartStore = defineStore('cart', {
     setOrderType(type: OrderType): void {
       if (this.orderType === type) return
       this.orderType = type
-      if (type !== 'EXTERNO') this.customerId = null
+      if (type !== 'EXTERNO') this.customer = null
       if (type !== 'UBER' && type !== 'DIDI' && type !== 'UBER/DIDI') {
         this.platformDeliveryInfo = ''
       }
+    },
+
+    /**
+     * Ronda 4: selecciona/limpia el cliente EXTERNO (API real de clientes).
+     * null = limpiar (botón X de la tarjeta verde).
+     */
+    setCustomer(customer: RestCustomer | null): void {
+      this.customer = customer
     },
 
     setPlatformDeliveryInfo(info: string): void {
@@ -324,7 +343,7 @@ export const useCartStore = defineStore('cart', {
     clear(): void {
       this.items = []
       this.orderType = 'LOCAL'
-      this.customerId = null
+      this.customer = null
       this.platformDeliveryInfo = ''
       this.placing = false
     },
