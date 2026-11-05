@@ -142,6 +142,16 @@ async function logout(): Promise<void> {
   overflow: hidden;
 }
 
+/* Vista activa: llena todo el ancho restante junto al rail (Expanded en Flutter) */
+.pos-shell-view {
+  flex: 1 1 0%;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 /* NavigationRail: ancho 80 exacto, bg cardTheme (#303030), altura completa */
 .rail {
   width: 80px;
