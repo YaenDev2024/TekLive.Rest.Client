@@ -16,8 +16,10 @@
  * - cashSessionId: al submit se incluye si hay sesión abierta; sin sesión en
  *   efectivo/dólares → banner warning NO bloqueante (réplica del StateError
  *   de pending_payments_screen.dart L616-617, aquí informativo).
- * - Success: captura snapshot items/total/orderType ANTES de cart.clear() y
- *   habilita 'Imprimir ticket' → TicketPreviewModal (isKitchen=false).
+ * - Success: captura snapshot items/total/orderType ANTES de cart.clear() e
+ *   imprime SILENCIOSO (printSaleTickets: cocina x2 keywords + cliente). Si
+ *   el navegador bloquea el diálogo → success con 'Imprimir ticket' para
+ *   reintentar (réplica: el original nunca muestra preview).
  */
 import { computed, onMounted, ref } from 'vue'
 import { ApiError } from '../../api/client'
@@ -28,7 +30,7 @@ import { useOrdersStore } from '../../stores/orders'
 import { useToastStore } from '../../stores/toast'
 import { POS_PLANT_ID, POS_SUCURSAL_ID } from '../../stores/catalog'
 import { session } from '../../services/auth'
-import TicketPreviewModal from './TicketPreviewModal.vue'
+import { printSaleTickets } from '../../services/ticket'
 import { AppBanner } from '../ui'
 import AppModal from './AppModal.vue'
 
@@ -61,7 +63,7 @@ const formError = ref<string | null>(null)
 const submitError = ref<string | null>(null)
 
 const saleResult = ref<CreatedOrderResponse | null>(null)
-/** Snapshot para imprimir tras cart.clear() (el carrito ya no tiene items). */
+/** Datos para imprimir tras cart.clear() (el carrito ya no tiene items). */
 interface SaleSnapshot {
   items: typeof cart.lines
   total: number
@@ -69,7 +71,7 @@ interface SaleSnapshot {
   platformDeliveryInfo: string
   orderId: number | null
   folio: string | null
-  /** Estado PAGADO del ticket (la venta del success ya se cobró). */
+  /** Estado PAGADO del ticket (la venta ya se cobró). */
   paymentMethod: 'efectivo' | 'tarjeta' | 'transferencia' | 'dolares'
   amountReceived: number
   changeAmount: number
@@ -77,7 +79,6 @@ interface SaleSnapshot {
   dollarRate?: number
 }
 const saleSnapshot = ref<SaleSnapshot | null>(null)
-const showTicketPreview = ref(false)
 
 const total = computed(() => cart.total)
 
@@ -212,7 +213,7 @@ async function confirm(): Promise<void> {
       session.displayName ?? 'Cajero',
     )
 
-    // Snapshot ANTES de cart.clear() (el success necesita items para imprimir).
+    // Snapshot ANTES de cart.clear() (la impresión necesita items).
     saleSnapshot.value = {
       items: [...cart.lines],
       total: created.total,
@@ -230,8 +231,38 @@ async function confirm(): Promise<void> {
       dollarRate: payment.method === 'dolares' ? rate.value : undefined,
     }
     saleResult.value = created
-    step.value = 'success'
     cart.clear()
+
+    // Auto-impresión SILENCIOSA (réplica order_provider.dart L636-648):
+    // cocina (+duplicado si keywords) + cliente → 1 print del navegador.
+    // El original NUNCA muestra preview: imprime, toast '✓ Orden
+    // procesada' y cierra TODO al instante.
+    const snap = saleSnapshot.value
+    let printed = false
+    if (snap != null) {
+      printed = printSaleTickets({
+        folio: snap.folio ?? String(snap.orderId ?? ''),
+        orderType: snap.orderType,
+        platformDeliveryInfo: snap.platformDeliveryInfo,
+        items: snap.items,
+        total: snap.total,
+        paidState: {
+          paymentMethod: snap.paymentMethod,
+          amountReceived: snap.amountReceived,
+          changeAmount: snap.changeAmount,
+          dollarRate: snap.dollarRate,
+        },
+        orderId: snap.orderId,
+      })
+    }
+    if (printed) {
+      // Flujo normal: sin pantallas intermedias (réplica L651-688).
+      finish()
+    } else {
+      // Fallback: el navegador bloqueó el diálogo → success con botón
+      // 'Imprimir ticket' para reintentar (no se pierde la venta).
+      step.value = 'success'
+    }
   } catch (err) {
     submitError.value =
       err instanceof ApiError && err.status !== 0
@@ -253,6 +284,26 @@ function finish(): void {
 
 function formatMoney(amount: number): string {
   return `$${amount.toFixed(2)}`
+}
+
+/** Fallback: reintenta la impresión silenciosa completa (cocina+cliente). */
+function retryPrint(): void {
+  const snap = saleSnapshot.value
+  if (snap == null) return
+  printSaleTickets({
+    folio: snap.folio ?? String(snap.orderId ?? ''),
+    orderType: snap.orderType,
+    platformDeliveryInfo: snap.platformDeliveryInfo,
+    items: snap.items,
+    total: snap.total,
+    paidState: {
+      paymentMethod: snap.paymentMethod,
+      amountReceived: snap.amountReceived,
+      changeAmount: snap.changeAmount,
+      dollarRate: snap.dollarRate,
+    },
+    orderId: snap.orderId,
+  })
 }
 
 const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'] as const
@@ -384,12 +435,12 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
           <dd>#{{ saleResult?.id }}</dd>
         </div>
       </dl>
-      <!-- Fase 3c: impresión del ticket cliente (habilitada). -->
+      <!-- Fallback: el navegador bloqueó el diálogo → reintento 1-click. -->
       <button
         type="button"
         class="chk__print"
         data-testid="print-ticket"
-        @click="showTicketPreview = true"
+        @click="retryPrint"
       >
         Imprimir ticket
       </button>
@@ -428,24 +479,9 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
     </template>
   </AppModal>
 
-  <!-- Preview/impresión del ticket CLIENTE con la orden creada. -->
-  <TicketPreviewModal
-    v-if="showTicketPreview && saleSnapshot != null"
-    :items="saleSnapshot.items"
-    :total="saleSnapshot.total"
-    :order-type="saleSnapshot.orderType"
-    :platform-delivery-info="saleSnapshot.platformDeliveryInfo"
-    :is-kitchen="false"
-    :order-id="saleSnapshot.orderId"
-    :folio="saleSnapshot.folio"
-    :paid-state="{
-      paymentMethod: saleSnapshot.paymentMethod,
-      amountReceived: saleSnapshot.amountReceived,
-      changeAmount: saleSnapshot.changeAmount,
-      dollarRate: saleSnapshot.dollarRate,
-    }"
-    @close="showTicketPreview = false"
-  />
+  <!-- Sin preview tras la venta (réplica): la impresión es silenciosa.
+       Si el navegador bloqueó el diálogo, el success muestra el botón
+       'Imprimir ticket' que reintenta printSaleTickets directamente. -->
 </template>
 
 <style scoped>

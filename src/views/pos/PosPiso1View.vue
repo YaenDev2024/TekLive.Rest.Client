@@ -48,6 +48,7 @@ import { cartItemUnitPrice, useCartStore, type CartItem } from '../../stores/car
 import { useOrdersStore } from '../../stores/orders'
 import { useToastStore } from '../../stores/toast'
 import { session } from '../../services/auth'
+import { printPendingKitchenTicket } from '../../services/ticket'
 import { AppBanner, AppButton, AppSpinner } from '../../components/ui'
 import DynamicOptionsModal from '../../components/pos/DynamicOptionsModal.vue'
 import ExtrasNoteModal from '../../components/pos/ExtrasNoteModal.vue'
@@ -257,7 +258,11 @@ async function submitAsPending(): Promise<void> {
   }
   pendingSubmitting.value = true
   try {
-    await ordersStore.submitOrder(
+    // Snapshot ANTES de cart.clear() (la impresión necesita items).
+    const items = [...cart.lines]
+    const type = cart.orderType
+    const deliveryInfo = cart.platformDeliveryInfo
+    const created = await ordersStore.submitOrder(
       {
         plantId: POS_PLANT_ID,
         sucursalId: POS_SUCURSAL_ID,
@@ -272,6 +277,16 @@ async function submitAsPending(): Promise<void> {
       },
       session.displayName ?? 'Cajero',
     )
+    // Auto-impresión silenciosa SOLO COCINA (réplica order_provider.dart
+    // L374-388: pendiente → kitchen ticket al momento; x2 si keywords).
+    printPendingKitchenTicket({
+      folio: created.dailyOrderNumber.toString(),
+      orderType: type,
+      platformDeliveryInfo: deliveryInfo,
+      items,
+      total: created.total,
+      orderId: created.id,
+    })
     toast.success('✓ Orden guardada como pendiente')
     cart.clear()
   } catch {

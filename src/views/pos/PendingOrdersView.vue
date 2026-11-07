@@ -53,6 +53,7 @@ import { useOrdersStore } from '../../stores/orders'
 import { useToastStore } from '../../stores/toast'
 import { AppBanner, AppSpinner } from '../../components/ui'
 import CancelOrderModal from '../../components/pos/CancelOrderModal.vue'
+import { printPendingKitchenTicket, printSaleTickets } from '../../services/ticket'
 
 const ordersStore = useOrdersStore()
 const cashStore = useCashStore()
@@ -274,8 +275,62 @@ function todoEditOrder(): void {
   toast.info('Edición de órdenes disponible próximamente')
 }
 
-function todoPrint(): void {
-  toast.info('Impresión disponible próximamente')
+/**
+ * Impresión real (ronda print): carga el detalle (si no está en cache) e
+ * imprime. Cocina = solo ticket kitchen (x2 si keywords); Cliente = cocina
+ * + cliente como la venta (estado PENDIENTE DE PAGO).
+ */
+const printingOrderId = ref<number | null>(null)
+
+async function printOrderTickets(
+  order: PendingOrderListItem,
+  kind: 'kitchen' | 'client',
+): Promise<void> {
+  if (printingOrderId.value != null) return
+  printingOrderId.value = order.id
+  try {
+    const detail = await ordersStore.fetchOrderDetail(order.id)
+    if (detail == null) {
+      toast.error('No se pudo cargar el detalle de la orden.')
+      return
+    }
+    // OrderDetailItem → KitchenTicketItem/ClientTicketItem. El detalle trae
+    // extras; complementos no viajan en el detalle (backend no los retorna).
+    const items = detail.items.map((it) => ({
+      key: `d-${it.id}`,
+      productId: it.productId ?? null,
+      productName: it.productName,
+      quantity: it.quantity,
+      priceAtTimeOfAddition: it.unitPrice,
+      extras: (it.extras ?? []).map((e) => ({ id: e.extraId, name: e.name, price: e.price })),
+      complement: null,
+      note: '',
+      dynamicOptionsSummary: null,
+      selectedOptions: null,
+    }))
+    const shared = {
+      folio: String(detail.dailyOrderNumber),
+      orderType: detail.orderType,
+      platformDeliveryInfo: null,
+      items,
+      total: detail.total,
+      orderId: detail.id,
+    }
+    const ok =
+      kind === 'kitchen'
+        ? printPendingKitchenTicket(shared)
+        : printSaleTickets({
+            ...shared,
+            paidState:
+              detail.orderStatus === 'pagado'
+                ? { paymentMethod: 'efectivo', amountReceived: detail.total, changeAmount: 0 }
+                : null,
+          })
+    if (ok) toast.success(kind === 'kitchen' ? '🖨️ Ticket de cocina enviado' : '🖨️ Tickets enviados')
+    else toast.error('No se pudo abrir el diálogo de impresión.')
+  } finally {
+    printingOrderId.value = null
+  }
 }
 
 // --- Cancelar (funcional: rol cajero/admin + nota) ------------------------------
@@ -613,7 +668,8 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
                   type="button"
                   class="po-btn po-btn--ticket-client"
                   :data-testid="`order-ticket-client-${order.id}`"
-                  @click="todoPrint"
+                  :disabled="printingOrderId === order.id"
+                  @click="printOrderTickets(order, 'client')"
                 >
                   <ReceiptText :size="18" aria-hidden="true" />
                   Ticket Cliente
@@ -622,7 +678,8 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
                   type="button"
                   class="po-btn po-btn--ticket-kitchen"
                   :data-testid="`order-ticket-kitchen-${order.id}`"
-                  @click="todoPrint"
+                  :disabled="printingOrderId === order.id"
+                  @click="printOrderTickets(order, 'kitchen')"
                 >
                   <Soup :size="18" aria-hidden="true" />
                   Ticket Cocina
