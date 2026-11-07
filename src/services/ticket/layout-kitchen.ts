@@ -10,7 +10,8 @@
  *   → 'Atendio: X' + 'Fecha: dd/MM/yyyy' → hr
  *   → 'PRODUCTOS A PREPARAR' centrado + feed
  *   → items '2x NOMBRE' doble-bold con notas '  • x' (opciones divididas
- *     por coma; NOTA:: con 2 espacios) + feed + hr por item
+ *     por coma; NOTA:: con 2 espacios) + Extras: '  • x' + Complementos:
+ *     '  • x' (L864-888: SIEMPRE se muestran en cocina) + feed + hr por item
  *   → hr + 'TOTAL: $X' centrado doble → hr
  *   → 'Tiempo: 20 min' + 'Impreso: HH:mm' → feed 3 + cut + feed 1.
  */
@@ -26,6 +27,21 @@ export interface KitchenTicketItem {
    * parser de abajo la descompone igual que _appendEscPosParsedNotes.
    */
   notes?: string | null
+  /**
+   * Nombres de extras YA limpios (_displayModifierName) — en cocina se
+   * muestran SIEMPRE como 'Extras:' + '  • x' (L864-875), incluso con nota.
+   */
+  extras?: string[]
+  /** Nombres de complementos limpios — 'Complementos:' (L877-888). */
+  complements?: string[]
+}
+
+/**
+ * Réplica _displayModifierName (L1326-1328): '_' y '-' → espacio, trim.
+ * Aplica a nombres de extras/complementos en AMBOS tickets.
+ */
+export function displayModifierName(name: string): string {
+  return name.replaceAll(/[_-]/g, ' ').trim()
 }
 
 export interface KitchenTicketInput {
@@ -241,7 +257,14 @@ export function buildKitchenTicket(input: KitchenTicketInput): TicketDoc {
   lines.push({ kind: 'hr' })
 
   // ===== INFO CARD: FOLIO + HORA (L747-762) =====
-  lines.push({ kind: 'row', left: `ORDEN  #${input.folio}`, right: `HORA  ${formatHhMm(createdAt)}`, bold: true })
+  // Row 8/4 del Flutter: folio bold DOBLE (columna 8), HORA derecha normal.
+  lines.push({
+    kind: 'row',
+    left: `ORDEN  #${input.folio}`,
+    right: `HORA  ${formatHhMm(createdAt)}`,
+    leftBold: true,
+    leftDouble: true,
+  })
   lines.push({ kind: 'hr' })
 
   // ===== BLOQUE POR TIPO (L764-818) =====
@@ -275,8 +298,23 @@ export function buildKitchenTicket(input: KitchenTicketInput): TicketDoc {
   for (const item of input.items) {
     lines.push({ kind: 'feed', n: 1 })
     lines.push({ kind: 'text', text: `${item.quantity}x ${item.productName}`, align: 'left', bold: true, double: true })
+    // Notas parseadas (L857-860).
     for (const noteLine of noteLinesOf(item.notes)) {
       lines.push({ kind: 'text', text: noteLine, align: 'left' })
+    }
+    // Extras: SIEMPRE en cocina (L864-875), incluso si ya hay nota.
+    if (item.extras != null && item.extras.length > 0) {
+      lines.push({ kind: 'text', text: 'Extras:', align: 'left' })
+      for (const extra of item.extras) {
+        lines.push({ kind: 'text', text: `  • ${displayModifierName(extra)}`, align: 'left' })
+      }
+    }
+    // Complementos: SIEMPRE en cocina (L877-888).
+    if (item.complements != null && item.complements.length > 0) {
+      lines.push({ kind: 'text', text: 'Complementos:', align: 'left' })
+      for (const comp of item.complements) {
+        lines.push({ kind: 'text', text: `  • ${displayModifierName(comp)}`, align: 'left' })
+      }
     }
     lines.push({ kind: 'feed', n: 1 })
     lines.push({ kind: 'hr' })

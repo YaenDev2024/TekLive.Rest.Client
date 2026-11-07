@@ -60,6 +60,11 @@ export interface ClientTicketInput {
   state: ClientTicketState
 }
 
+/** Réplica _displayModifierName (L1326-1328): '_' y '-' → espacio, trim. */
+function displayModifierName(name: string): string {
+  return name.replaceAll(/[_-]/g, ' ').trim()
+}
+
 function pad(n: number): string {
   return String(n).padStart(2, '0')
 }
@@ -115,8 +120,8 @@ export function buildClientTicket(input: ClientTicketInput): TicketDoc {
   lines.push({ kind: 'hr' })
 
   // ===== INFO DEL TICKET (L1017-1056) =====
-  // Row de 3 columnas en el Flutter (4/4/4): folio centrado DOBLE en medio.
-  // En el modelo lineal: 'ORDEN  #' izquierda + FECHA derecha, folio DOBLE centrado debajo.
+  // Row de 3 columnas en el Flutter (4/4/4): 'ORDEN  #' normal, folio DOBLE
+  // bold al centro, 'FECHA ...' normal a la derecha.
   lines.push({ kind: 'row', left: 'ORDEN  #', right: `FECHA  ${formatDdMmYyyy(createdAt)}` })
   lines.push({ kind: 'text', text: `#${input.folio}`, align: 'center', bold: true, double: true })
   lines.push({
@@ -140,12 +145,20 @@ export function buildClientTicket(input: ClientTicketInput): TicketDoc {
 
     const hasNote = item.notes != null && item.notes !== ''
     if (!hasNote) {
-      // Extras/Complementos SOLO si no hay nota (L1085-1109).
+      // Extras/Complementos SOLO si no hay nota (L1085-1109), nombres limpios.
       if (item.extras != null && item.extras.length > 0) {
-        lines.push({ kind: 'text', text: `Extras: ${item.extras.join(', ')}`, align: 'left' })
+        lines.push({
+          kind: 'text',
+          text: `Extras: ${item.extras.map((e) => displayModifierName(e)).join(', ')}`,
+          align: 'left',
+        })
       }
       if (item.complements != null && item.complements.length > 0) {
-        lines.push({ kind: 'text', text: `Comp: ${item.complements.join(', ')}`, align: 'left' })
+        lines.push({
+          kind: 'text',
+          text: `Comp: ${item.complements.map((c) => displayModifierName(c)).join(', ')}`,
+          align: 'left',
+        })
       }
     }
     // Notas parseadas (OPT::/NOTE::) igual que cocina (L1112-1115).
@@ -155,9 +168,20 @@ export function buildClientTicket(input: ClientTicketInput): TicketDoc {
   }
   lines.push({ kind: 'hr' })
 
-  // ===== RESUMEN (L1120-1142): subtotal = total del backend =====
-  lines.push({ kind: 'row', left: 'Subtotal', right: `$${input.total.toFixed(2)}` })
-  lines.push({ kind: 'row', left: 'TOTAL', right: `$${input.total.toFixed(2)}`, bold: true })
+  // ===== RESUMEN (L1120-1142): texto alineado derecha con espaciado fijo
+  // ('Subtotal                 $X' / 'TOTAL                    $X'),
+  // TOTAL en DOBLE (height2+width2 L1134-1142).
+  lines.push({
+    kind: 'text',
+    text: `Subtotal                 $${input.total.toFixed(2)}`,
+    align: 'right',
+  })
+  lines.push({
+    kind: 'text',
+    text: `TOTAL                    $${input.total.toFixed(2)}`,
+    align: 'right',
+    double: true,
+  })
   lines.push({ kind: 'hr' })
 
   // ===== ESTADO / MÉTODO (L1146-1214) =====

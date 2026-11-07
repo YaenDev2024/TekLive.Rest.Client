@@ -5,9 +5,17 @@
  * columnas, @page 80mm (el original imprime PaperSize.mm80), margins 0.
  * printTicket crea un iframe oculto y manda el HTML al diálogo de impresión
  * del navegador (la impresora térmica queda como default del sistema).
+ *
+ * MEDIDAS FÍSICAS (ronda fidelidad): 48 cols deben ocupar EXACTAMENTE 80mm
+ * → font-size = 80mm / 48 / 0.6 (ancho de Courier) = 2.78mm ≈ 10.5px.
+ * Con px fijos las filas de 48 chars se desbordan del papel (bug visto en
+ * el PDF: 'TOTAL $40.00' doble salía del ticket). 'double' = 2× esa medida
+ * (réplica size2 ESC/POS). Las filas usan flex (justificación exacta sin
+ * depender del filler — nunca se desbordan).
  */
 
 import type { TicketDoc, TicketLine } from './types'
+import { TICKET_LOGO_URL } from './types'
 
 function escapeHtml(text: string): string {
   return text
@@ -17,52 +25,62 @@ function escapeHtml(text: string): string {
     .replaceAll('"', '&quot;')
 }
 
-/** Línea de texto a 48 chars con alineación (center recorta como el Flutter). */
-function renderTextLine(line: Extract<TicketLine, { kind: 'text' }>, width: number): string {
-  let text = line.text
-  if (text.length > width) text = text.substring(0, width)
-  let pad = 0
-  if (line.align === 'center') {
-    pad = Math.max(0, Math.floor((width - text.length) / 2))
-  }
-  const content = '&nbsp;'.repeat(pad) + escapeHtml(text)
+/** Estilo inline de una celda (bold/double) — réplica PosStyles por columna. */
+function cellStyle(bold?: boolean, double?: boolean): string {
   const styles: string[] = []
-  if (line.bold) styles.push('font-weight:700')
-  if (line.double) styles.push('font-size:18px;line-height:1.2')
-  const styleAttr = styles.length > 0 ? ` style="${styles.join(';')}"` : ''
-  return `<div class="tl"${styleAttr}>${content}</div>`
+  if (double) styles.push('font-size:5.56mm')
+  if (bold) styles.push('font-weight:700')
+  return styles.length > 0 ? ` style="${styles.join(';')}"` : ''
 }
 
-function renderLine(line: TicketLine, width: number): string {
+function renderTextLine(line: Extract<TicketLine, { kind: 'text' }>): string {
+  // Alineación por CSS (el pad manual con nbsp desbordaba en líneas dobles).
+  // white-space:pre conserva los espacios internos del texto.
+  const align = line.align === 'center' ? 'center' : line.align === 'right' ? 'right' : 'left'
+  const base = `text-align:${align};white-space:pre`
+  const style = cellStyle(line.bold, line.double)
+  return `<div class="tl"${style ? style.replace('style="', `style="${base};`) : ` style="${base}"`}>${escapeHtml(line.text)}</div>`
+}
+
+function renderLine(line: TicketLine): string {
   switch (line.kind) {
     case 'text':
-      return renderTextLine(line, width)
+      return renderTextLine(line)
     case 'row': {
-      // left + puntos de relleno + right (justificación monospace exacta).
-      const left = line.left.length > width ? line.left.substring(0, width) : line.left
-      let right = line.right
-      const space = width - left.length - right.length
-      if (space < 1) {
-        right = right.substring(0, Math.max(0, width - left.length - 1))
-      }
-      const filler = ' '.repeat(Math.max(1, width - left.length - right.length))
-      const styleAttr = line.bold ? ' style="font-weight:700"' : ''
-      return `<div class="tl"${styleAttr}>${escapeHtml(left + filler + right)}</div>`
+      // Flex space-between = justificación de columnas EXACTA (el filler
+      // monospace a 48 chars se desbordaba del papel de 80mm).
+      const leftStyle = cellStyle(line.leftBold ?? line.bold, line.leftDouble ?? line.double)
+      const rightStyle = cellStyle(line.rightBold ?? line.bold, line.rightDouble ?? line.double)
+      return (
+        `<div class="tl tl-row">` +
+        `<span${leftStyle}>${escapeHtml(line.left)}</span>` +
+        `<span${rightStyle}>${escapeHtml(line.right)}</span>` +
+        `</div>`
+      )
     }
     case 'hr':
-      return `<div class="tl tl-hr">${'-'.repeat(width)}</div>`
+      return `<div class="tl tl-hr">${'-'.repeat(width())}</div>`
     case 'feed':
       return '<div class="tl">&nbsp;</div>'.repeat(Math.max(0, line.n))
     case 'cut':
       return '<div class="tl tl-cut">---</div>'
+    case 'logo':
+      // Réplica generator.image(logo3.png) centrado (L944): ~384px printable
+      // de 80mm → 50mm de ancho visual.
+      return `<div class="tl tl-logo"><img src="${TICKET_LOGO_URL}" style="width:50mm" alt="logo" /></div>`
     default:
       return ''
   }
 }
 
-/** HTML completo imprimible (@page 80mm, Courier New 12px, línea 1.25). */
+/** Ancho lógico del ticket (48 cols = PaperSize.mm80). */
+function width(): number {
+  return 48
+}
+
+/** HTML completo imprimible (@page 80mm, Courier, 48 cols = 80mm exactos). */
 export function renderTicketHtml(doc: TicketDoc): string {
-  const body = doc.lines.map((l) => renderLine(l, doc.width)).join('\n')
+  const body = doc.lines.map((l) => renderLine(l)).join('\n')
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -76,20 +94,29 @@ export function renderTicketHtml(doc: TicketDoc): string {
     background: #ffffff;
     color: #000000;
     font-family: 'Courier New', Courier, monospace;
-    font-size: 12px;
+    /* 48 chars × 0.6em = 80mm → font-size 2.78mm. Nada se desborda. */
+    font-size: 2.78mm;
     line-height: 1.25;
   }
   .ticket {
     width: 80mm;
-    padding: 4mm 2mm;
+    padding: 2mm 1mm;
   }
   .tl {
-    white-space: pre;
-    font-size: 12px;
+    font-size: 2.78mm;
     line-height: 1.25;
+    white-space: pre;
   }
-  .tl-hr { color: #000; }
+  .tl-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    white-space: pre;
+  }
+  .tl-hr { color: #000; overflow: hidden; }
   .tl-cut { color: #888; }
+  .tl-logo { text-align: center; }
+  .tl-logo img { display: inline-block; max-width: 100%; }
   @media print {
     .ticket { width: auto; padding: 0; }
   }

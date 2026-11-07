@@ -57,10 +57,18 @@ function padCenter(text: string, width: number): string {
   return ' '.repeat(pad) + t
 }
 
+/** Relleno a la izquierda para align right (el ESC/POS ya posiciona, esto
+ *  normaliza el texto como hace el HTML). */
+function padRight(text: string, width: number, right: boolean): string {
+  const t = text.length > width ? text.substring(0, width) : text
+  return right ? ' '.repeat(Math.max(0, width - t.length)) + t : t
+}
+
 function renderLine(line: TicketLine, width: number): number[] {
   switch (line.kind) {
     case 'text': {
-      const content = line.align === 'center' ? padCenter(line.text, width) : line.text
+      const content =
+        line.align === 'center' ? padCenter(line.text, width) : padRight(line.text, width, line.align === 'right')
       return [
         ...setAlign(line.align),
         ...setBold(line.bold ?? false),
@@ -75,11 +83,22 @@ function renderLine(line: TicketLine, width: number): number[] {
       let right = line.right
       const space = width - line.left.length - right.length
       if (space < 1) right = right.substring(0, Math.max(0, width - line.left.length - 1))
-      const filler = ' '.repeat(Math.max(1, width - line.left.length - right.length))
+      const leftDouble = line.leftDouble ?? line.double ?? false
+      const rightDouble = line.rightDouble ?? line.double ?? false
+      // Réplica PosColumn con estilos independientes por columna: el texto
+      // derecho alinea a la derecha dentro de su bloque (como el Flutter).
       return [
         ...setAlign('left'),
-        ...setBold(line.bold ?? false),
-        ...text(line.left + filler + right),
+        ...setBold(line.leftBold ?? line.bold ?? false),
+        ...setSize(leftDouble),
+        ...text(line.left),
+        ...setSize(false),
+        ...setBold(false),
+        ...setAlign('right'),
+        ...setBold(line.rightBold ?? line.bold ?? false),
+        ...setSize(rightDouble),
+        ...text(right),
+        ...setSize(false),
         ...setBold(false),
       ]
     }
@@ -89,6 +108,10 @@ function renderLine(line: TicketLine, width: number): number[] {
       return new Array(Math.max(0, line.n)).fill(0x0a)
     case 'cut':
       return cut()
+    case 'logo':
+      // En Tauri: decodificar PNG y enviar GS v 0 (bitimage) como el Flutter
+      // (generator.image L944). Placeholder: feed para mantener altura.
+      return [0x0a]
     default:
       return []
   }
