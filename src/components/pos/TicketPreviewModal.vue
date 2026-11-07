@@ -12,6 +12,12 @@
  *
  * El botón 'Imprimir' llama printTicket(doc) (iframe + diálogo del navegador)
  * y registra el print-log (best-effort) si props.orderId existe.
+ *
+ * NOTA ronda print: la VENTA no abre este modal (impresión silenciosa vía
+ * services/ticket/sale-print.ts, réplica del original). Este preview queda
+ * para los botones ojito del carrito (réplica _TicketPreviewDialog) y para
+ * reimprimir desde Órdenes. Pestañas Cocina/Cliente: el original imprime DOS
+ * tickets por venta (kitchen:true + kitchen:false, L641-642).
  */
 import { computed, ref } from 'vue'
 import { Printer } from 'lucide-vue-next'
@@ -55,6 +61,12 @@ const props = defineProps<{
 
 const emit = defineEmits<{ close: [] }>()
 
+/**
+ * Pestañas Cocina/Cliente (el original imprime ambos por venta): default
+ * según isKitchen; el usuario puede alternar para reimprimir.
+ */
+const activeTab = ref<'kitchen' | 'client'>(props.isKitchen ? 'kitchen' : 'client')
+
 /** Nombre de cliente por tipo (réplica switch order_panel.dart L1410-1426). */
 const customerName = computed<string>(() => {
   switch (props.orderType) {
@@ -78,8 +90,8 @@ function combinedNotes(item: CartItem): string {
   return buildItemNotes(item)
 }
 
-/** TicketDoc construido con el ticket service (réplica _generatePreview). */
-const doc = computed<TicketDoc>(() => {
+/** Doc según isKitchen (réplica _generatePreview). */
+const docCurrent = computed<TicketDoc>(() => {
   if (props.isKitchen) {
     return buildKitchenTicket({
       folio: props.folio ?? 'PENDIENTE',
@@ -91,6 +103,8 @@ const doc = computed<TicketDoc>(() => {
         quantity: item.quantity,
         productName: item.productName,
         notes: combinedNotes(item),
+        extras: item.extras.map((e) => e.name),
+        complements: item.complement != null ? [item.complement.name] : [],
       })),
       total: props.total,
       createdAt: now,
@@ -125,6 +139,31 @@ const doc = computed<TicketDoc>(() => {
   })
 })
 
+/** Doc de la pestaña Cocina cuando el modal es Cliente (tabs del checkout). */
+const docKitchen = computed<TicketDoc>(() =>
+  buildKitchenTicket({
+    folio: props.folio ?? 'PENDIENTE',
+    orderType: props.orderType,
+    cashierName: 'CAJERO',
+    customerName: customerName.value,
+    platformDeliveryInfo: props.platformDeliveryInfo,
+    items: props.items.map((item) => ({
+      quantity: item.quantity,
+      productName: item.productName,
+      notes: combinedNotes(item),
+      extras: item.extras.map((e) => e.name),
+      complements: item.complement != null ? [item.complement.name] : [],
+    })),
+    total: props.total,
+    createdAt: now,
+  }),
+)
+
+/** Doc de la pestaña activa. */
+const doc = computed<TicketDoc>(() =>
+  activeTab.value === 'kitchen' && !props.isKitchen ? docKitchen.value : docCurrent.value,
+)
+
 const paperHtml = computed(() => renderTicketHtml(doc.value))
 
 const printing = ref(false)
@@ -137,10 +176,11 @@ async function onPrint(): Promise<void> {
   const success = printTicket(doc.value)
   if (!success) printFailed.value = true
 
+  const printType = activeTab.value === 'kitchen' || props.isKitchen ? 'kitchen' : 'client'
   if (props.orderId != null) {
     try {
       await logTicketPrint(props.orderId, {
-        printType: props.isKitchen ? 'kitchen' : 'client',
+        printType,
         printerName: 'browser',
         success,
         errorMessage: success ? null : 'print dialog failed',
@@ -159,6 +199,29 @@ async function onPrint(): Promise<void> {
     :width="480"
     @close="emit('close')"
   >
+    <!-- Pestañas Cocina/Cliente (el original imprime ambos por venta). -->
+    <div v-if="!isKitchen" class="tkp__tabs" role="tablist" aria-label="Tipo de ticket">
+      <button
+        type="button"
+        role="tab"
+        class="tkp__tab"
+        :class="{ 'tkp__tab--active': activeTab === 'kitchen' }"
+        :aria-selected="activeTab === 'kitchen'"
+        @click="activeTab = 'kitchen'"
+      >
+        Cocina
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="tkp__tab"
+        :class="{ 'tkp__tab--active': activeTab === 'client' }"
+        :aria-selected="activeTab === 'client'"
+        @click="activeTab = 'client'"
+      >
+        Cliente
+      </button>
+    </div>
     <div class="tkp" data-testid="ticket-preview">
       <!-- Vista EXACTA de lo impreso: el HTML del renderer (monospace 48ch) -->
       <iframe
@@ -204,6 +267,35 @@ async function onPrint(): Promise<void> {
   border-radius: 4px;
   background: #ffffff;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+/* Pestañas Cocina/Cliente (flujo autoPrint: el original imprime ambos). */
+.tkp__tabs {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.tkp__tab {
+  padding: 6px 18px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tkp__tab:hover {
+  border-color: var(--primary);
+  color: var(--text);
+}
+
+.tkp__tab--active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
 }
 
 .tkp__error {
