@@ -81,6 +81,36 @@ body {
 }
 
 /* --------------------------------------------------------------------------
+   Touch (PWA/APK en tablet del POS): sin highlight azul al tocar, sin
+   selección de texto al mantener presionado y scroll/zoom natural.
+   -------------------------------------------------------------------------- */
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  /* Texto seleccionable solo donde la app lo permita (inputs). */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea,
+select {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Botones y filas táctiles: sin retardo de doble-tap ni gestos raros. */
+button,
+[role='button'],
+[role='tab'],
+label {
+  touch-action: manipulation;
+}
+
+/* --------------------------------------------------------------------------
    Scrollbar (gris oscuro, thumb #555 — look Material dark)
    -------------------------------------------------------------------------- */
 
