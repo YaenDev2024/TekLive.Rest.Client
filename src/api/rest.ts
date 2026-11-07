@@ -20,17 +20,33 @@
  * against live responses. Error JSON uses `{ message }` (middleware + controllers).
  */
 
-import { apiGet, apiPatch, apiPost, type ApiResult } from './client'
+import { apiGet, apiPatch, apiPost, apiPut, type ApiResult } from './client'
 import type {
   Catalog,
+  CloseCashSessionPayload,
+  CloseCashSessionResponse,
   CreateOrderPayload,
   CreatedOrderResponse,
+  DollarRate,
   OrderDetail,
   PaymentMethod,
   PaymentResponse,
   PendingOrderListItem,
+  Reconciliation,
+  SaveReconciliationPayload,
+  CashSession,
+  SessionBreakdown,
+  TicketPrintLogPayload,
+  UpdateDollarRatePayload,
   UpdateOrderStatusPayload,
 } from './pos-types'
+
+/** Shape del envelope 2xx del módulo Rest (mismo que customers.ts). */
+interface Envelope<T> {
+  success: boolean
+  data: T
+  message: string
+}
 
 // ---------------------------------------------------------------------------
 // Shared DTO shapes (mirror BusinessSuite.Shared DTOs)
@@ -177,10 +193,16 @@ export function getOrderDetail(orderId: number): Promise<ApiResult<OrderDetail>>
 /**
  * POST api/rest/orders/{id}/payment — cobra una orden pendiente.
  * 409 con `{ currentStatus }` si el estado ya no es el esperado (carrera).
+ * `cashSessionId` (ronda cash) atribuye el cobro a la sesión de caja abierta.
  */
 export function payOrder(
   orderId: number,
-  body: { method: PaymentMethod; amountReceived: number; expectedStatus: string },
+  body: {
+    method: PaymentMethod
+    amountReceived: number
+    expectedStatus: string
+    cashSessionId?: number
+  },
 ): Promise<ApiResult<PaymentResponse>> {
   return apiPost<PaymentResponse>(`/api/rest/orders/${encodeURIComponent(orderId)}/payment`, body)
 }
@@ -195,6 +217,106 @@ export function updateOrderStatus(
 ): Promise<ApiResult<Record<string, never>>> {
   return apiPatch<Record<string, never>>(
     `/api/rest/orders/${encodeURIComponent(orderId)}/status`,
+    body,
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Caja (ronda cash · backend en BusinessSuite bajo api/rest/cash).
+// Envelope 2xx = { success, data, message }: mismas convenciones que
+// customers.ts — se desenrolla `data` aquí para que la UI consuma el shape.
+// ---------------------------------------------------------------------------
+
+/** GET api/rest/cash/dollar-rate → tasa | null (200 sin tasa configurada). */
+export async function getDollarRate(): Promise<ApiResult<DollarRate | null>> {
+  const { status, data } = await apiGet<Envelope<DollarRate | null>>('/api/rest/cash/dollar-rate')
+  return { status, data: data.data }
+}
+
+/** PUT api/rest/cash/dollar-rate → tasa actualizada. */
+export async function updateDollarRate(body: UpdateDollarRatePayload): Promise<ApiResult<DollarRate>> {
+  const { status, data } = await apiPut<Envelope<DollarRate>>('/api/rest/cash/dollar-rate', body)
+  return { status, data: data.data }
+}
+
+/**
+ * POST api/rest/cash/sessions/open — abre sesión de caja para planta/sucursal.
+ * 409 con message si ya hay sesión abierta (la UI muestra el message).
+ */
+export async function openCashSession(body: {
+  startingAmount: number
+  plantId: number
+  sucursalId: number
+}): Promise<ApiResult<CashSession>> {
+  const { status, data } = await apiPost<Envelope<CashSession>>('/api/rest/cash/sessions/open', body)
+  return { status, data: data.data }
+}
+
+/** GET api/rest/cash/sessions/current?plantId=&sucursalId= → sesión | null. */
+export async function getCurrentCashSession(
+  plantId: number,
+  sucursalId: number,
+): Promise<ApiResult<CashSession | null>> {
+  const query = `plantId=${encodeURIComponent(plantId)}&sucursalId=${encodeURIComponent(sucursalId)}`
+  const { status, data } = await apiGet<Envelope<CashSession | null>>(
+    `/api/rest/cash/sessions/current?${query}`,
+  )
+  return { status, data: data.data }
+}
+
+/** GET api/rest/cash/sessions/{id}/breakdown → totales por método (sistema). */
+export async function getSessionBreakdown(sessionId: number): Promise<ApiResult<SessionBreakdown>> {
+  const { status, data } = await apiGet<Envelope<SessionBreakdown>>(
+    `/api/rest/cash/sessions/${encodeURIComponent(sessionId)}/breakdown`,
+  )
+  return { status, data: data.data }
+}
+
+/** GET api/rest/cash/sessions/{id}/reconciliation → arqueo | null (sin guardar). */
+export async function getCashReconciliation(sessionId: number): Promise<ApiResult<Reconciliation | null>> {
+  const { status, data } = await apiGet<Envelope<Reconciliation | null>>(
+    `/api/rest/cash/sessions/${encodeURIComponent(sessionId)}/reconciliation`,
+  )
+  return { status, data: data.data }
+}
+
+/** PUT api/rest/cash/sessions/{id}/reconciliation → arqueo actualizado. */
+export async function saveCashReconciliation(
+  sessionId: number,
+  body: SaveReconciliationPayload,
+): Promise<ApiResult<Reconciliation>> {
+  const { status, data } = await apiPut<Envelope<Reconciliation>>(
+    `/api/rest/cash/sessions/${encodeURIComponent(sessionId)}/reconciliation`,
+    body,
+  )
+  return { status, data: data.data }
+}
+
+/**
+ * POST api/rest/cash/sessions/{id}/close — cierre definitivo. El backend
+ * recalcula esperado/diferencia; el breakdown de la respuesta es la verdad.
+ */
+export async function closeCashSession(
+  sessionId: number,
+  body: CloseCashSessionPayload,
+): Promise<ApiResult<CloseCashSessionResponse>> {
+  const { status, data } = await apiPost<Envelope<CloseCashSessionResponse>>(
+    `/api/rest/cash/sessions/${encodeURIComponent(sessionId)}/close`,
+    body,
+  )
+  return { status, data: data.data }
+}
+
+/**
+ * POST api/rest/orders/{id}/print-log — registro de impresión de tickets
+ * (kitchen/client). Best-effort: la UI ignora fallos (log no bloquea).
+ */
+export function logTicketPrint(
+  orderId: number,
+  body: TicketPrintLogPayload,
+): Promise<ApiResult<Record<string, never>>> {
+  return apiPost<Record<string, never>>(
+    `/api/rest/orders/${encodeURIComponent(orderId)}/print-log`,
     body,
   )
 }

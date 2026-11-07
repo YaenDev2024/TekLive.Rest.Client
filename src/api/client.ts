@@ -207,3 +207,8 @@ export function apiPost<T>(path: string, body?: unknown): Promise<ApiResult<T>> 
 export function apiPatch<T>(path: string, body?: unknown): Promise<ApiResult<T>> {
   return request<T>(path, { method: 'PATCH', body: body === undefined ? undefined : JSON.stringify(body) })
 }
+
+/** PUT (reemplazo completo) — mismo patrón que apiPatch (ronda cash). */
+export function apiPut<T>(path: string, body?: unknown): Promise<ApiResult<T>> {
+  return request<T>(path, { method: 'PUT', body: body === undefined ? undefined : JSON.stringify(body) })
+}

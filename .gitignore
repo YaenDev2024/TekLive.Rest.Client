@@ -34,3 +34,6 @@ ios/
 .env
 .env.development
 .env.production
+
+# VSCode local settings
+.vscode/

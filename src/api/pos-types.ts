@@ -122,7 +122,7 @@ export type OrderStatus =
   | 'cancelada'
 
 /** Catálogo cerrado de métodos de pago. */
-export type PaymentMethod = 'efectivo' | 'tarjeta' | 'ambos' | 'PENDIENTE'
+export type PaymentMethod = 'efectivo' | 'tarjeta' | 'transferencia' | 'dolares' | 'ambos' | 'PENDIENTE'
 
 /** orderType del POS Piso 1 (heredado de CrazyWings). */
 export type OrderType =
@@ -173,6 +173,12 @@ export interface OrderItemPayload {
 export interface OrderPaymentPayload {
   method: PaymentMethod
   amountReceived: number
+  /**
+   * Ronda caja (réplica order_panel.dart L598-627): SOLO para 'dolares' —
+   * USD capturado en el numpad; el backend calcula el MXN con la tasa
+   * server-side (el cliente NUNCA multiplica para el payload).
+   */
+  amountReceivedUsd?: number
 }
 
 /** POST api/rest/orders — body completo. */
@@ -307,4 +313,128 @@ export interface UpdateCustomerPayload {
   deliveryTimePreference?: string | null
   status?: string
   comments?: string | null
+}
+
+// ---------------------------------------------------------------------------
+// Caja (ronda cash · backend BusinessSuite rest/cash · envelope {success,data})
+// Espejo del cash_session_model.dart del POS CrazyWings.
+// ---------------------------------------------------------------------------
+
+/** GET sessions/current · POST sessions/open → CashSession. */
+export interface CashSession {
+  id: number
+  userId: number
+  /** ISO timestamp. */
+  startTime: string
+  endTime?: string | null
+  startingAmount: number
+  closingAmount?: number | null
+  calculatedSales?: number | null
+  difference?: number | null
+  /** Catálogo cerrado backend: OPEN | CLOSED. */
+  status: string
+  sucursalId?: number | null
+  plantId?: number | null
+  notes?: string | null
+}
+
+/** GET sessions/{id}/breakdown → totales por método (del SISTEMA). */
+export interface SessionBreakdown {
+  totalSales: number
+  cashTotal: number
+  cardTotal: number
+  transferTotal: number
+  dolaresTotal: number
+  dolaresUsdExpected: number
+  didiUberCardTotal: number
+  didiUberCashTotal: number
+  canceledTotal: number
+  unclassifiedTotal: number
+  orderCount: number
+}
+
+/** Terminal de tarjeta capturada (réplica _CardTerminalEntry del Flutter). */
+export interface CardTerminalEntry {
+  name: string
+  amount: number
+}
+
+/**
+ * Fila del desglose de efectivo (réplica _DenominationRow del Flutter).
+ * `value` = monto capturado/libre; para denominaciones fijas el total es qty*value_unit.
+ */
+export interface DenominationEntry {
+  label: string
+  qty: number
+  /** Valor unitario (0 para filas de valor libre — Guardado/Cambio). */
+  value: number
+  isUsd: boolean
+}
+
+/** GET/PUT sessions/{id}/reconciliation → arqueo persistido. */
+export interface Reconciliation {
+  sessionId: number
+  didiCash: number
+  expenses: number
+  cardTerminals: CardTerminalEntry[]
+  cardTerminalsTotal: number
+  cardTerminalsCountedTotal: number
+  transferCountedTotal: number
+  denominations: DenominationEntry[]
+  denominationsTotal: number
+  notes?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+/** PUT sessions/{id}/reconciliation — body. */
+export interface SaveReconciliationPayload {
+  didiCash: number
+  expenses: number
+  cardTerminals: CardTerminalEntry[]
+  cardTerminalsCountedTotal: number
+  transferCountedTotal: number
+  denominations: DenominationEntry[]
+  denominationsTotal: number
+  notes?: string | null
+}
+
+/** POST sessions/{id}/close → respuesta del cierre. */
+export interface CloseCashSessionResponse {
+  sessionId: number
+  status: 'CLOSED'
+  endTime: string
+  closingAmount: number
+  calculatedSales: number
+  expectedCash: number
+  difference: number
+  breakdown: SessionBreakdown
+}
+
+/** POST sessions/{id}/close — body. */
+export interface CloseCashSessionPayload {
+  denominationsTotal: number
+  notes?: string | null
+  /** Arqueo persistido en la misma transacción (opcional). */
+  reconciliation?: SaveReconciliationPayload
+}
+
+/** GET dollar-rate → { rate, updatedAt } | null (sin tasa configurada). */
+export interface DollarRate {
+  rate: number
+  updatedAt?: string | null
+}
+
+/** PUT dollar-rate — body. */
+export interface UpdateDollarRatePayload {
+  rate: number
+}
+
+/** POST api/rest/orders/{id}/print-log — log de impresión de tickets. */
+export interface TicketPrintLogPayload {
+  /** 'kitchen' | 'client'. */
+  printType: string
+  printerName?: string | null
+  success: boolean
+  errorMessage?: string | null
 }

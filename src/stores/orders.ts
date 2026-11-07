@@ -174,7 +174,7 @@ export const useOrdersStore = defineStore('orders', {
      */
     async payExistingOrder(
       orderId: number,
-      body: { method: PaymentMethod; amountReceived: number; expectedStatus: OrderStatus },
+      body: { method: PaymentMethod; amountReceived: number; expectedStatus: OrderStatus; cashSessionId?: number },
     ): Promise<PaymentResponse | null> {
       this.lastConflict = null
       try {

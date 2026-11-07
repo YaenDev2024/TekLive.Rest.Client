@@ -1,35 +1,58 @@
 <script setup lang="ts">
 /**
- * CheckoutModal · cobro del carrito (Fase 3b).
+ * CheckoutModal · cobro del carrito (Fase 3b + ronda cash/impresión).
  *
- * Réplica de cart_checkout_screen.dart:
- * - Métodos efectivo | tarjeta | ambos.
- * - Monto recibido SOLO para efectivo/ambos (tarjeta → amountReceived = total).
- * - Cambio en vivo = max(0, recibido − total), clamp ≥ 0.
- * - Validación: recibido ≥ total para efectivo/ambos (bloquea confirmar).
- * - Éxito → confirmación "Venta #folio — Cambio: $X" + imprimir (Fase 3c).
+ * Métodos réplica del POS original (order_panel.dart L104-143, diálogo
+ * 'Selecciona método de pago'): Efectivo | Tarjeta | QR/Transferencia |
+ * Dólares — grid 2x2. Método interno: efectivo|tarjeta|transferencia|dolares
+ * ('ambos' sigue existiendo en el tipo TS pero NO es botón de este modal).
+ *
+ * - Tarjeta: sin captura (amountReceived = total) — L631-633.
+ * - QR/Transferencia: sin captura, nota 'Pago con QR o transferencia' — L628-630.
+ * - Dólares: numpad USD + display 'Total: $X MXN ≈ $Y USD' (L598-627);
+ *   rate null → banner '⚠️ Precio del dólar no configurado' y bloqueo.
+ *   Envía { method:'dolares', amountReceivedUsd } — el MXN lo calcula el
+ *   backend server-side.
+ * - cashSessionId: al submit se incluye si hay sesión abierta; sin sesión en
+ *   efectivo/dólares → banner warning NO bloqueante (réplica del StateError
+ *   de pending_payments_screen.dart L616-617, aquí informativo).
+ * - Success: captura snapshot items/total/orderType ANTES de cart.clear() y
+ *   habilita 'Imprimir ticket' → TicketPreviewModal (isKitchen=false).
  */
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ApiError } from '../../api/client'
 import type { CreatedOrderResponse } from '../../api/pos-types'
-import { useCartStore, type CheckoutPaymentMethod } from '../../stores/cart'
+import { useCartStore } from '../../stores/cart'
+import { useCashStore } from '../../stores/cash'
 import { useOrdersStore } from '../../stores/orders'
 import { useToastStore } from '../../stores/toast'
 import { POS_PLANT_ID, POS_SUCURSAL_ID } from '../../stores/catalog'
 import { session } from '../../services/auth'
+import TicketPreviewModal from './TicketPreviewModal.vue'
 import { AppBanner } from '../ui'
 import AppModal from './AppModal.vue'
 
 const emit = defineEmits<{ close: [] }>()
 
 const cart = useCartStore()
+const cashStore = useCashStore()
 const ordersStore = useOrdersStore()
 const toast = useToastStore()
+
+/** Botones del modal (labels réplica del diálogo Flutter L115-137). */
+type CheckoutMethod = 'efectivo' | 'tarjeta' | 'transferencia' | 'dolares'
+
+const METHOD_LABELS: Record<CheckoutMethod, string> = {
+  efectivo: 'Efectivo',
+  tarjeta: 'Tarjeta',
+  transferencia: 'QR/Transferencia',
+  dolares: 'Dólares',
+}
 
 type Step = 'form' | 'success'
 
 const step = ref<Step>('form')
-const method = ref<CheckoutPaymentMethod>('efectivo')
+const method = ref<CheckoutMethod>('efectivo')
 /** Texto crudo del input numérico ('' = vacío, obliga a capturar). */
 const amountText = ref('')
 const submitting = ref(false)
@@ -38,10 +61,38 @@ const formError = ref<string | null>(null)
 const submitError = ref<string | null>(null)
 
 const saleResult = ref<CreatedOrderResponse | null>(null)
+/** Snapshot para imprimir tras cart.clear() (el carrito ya no tiene items). */
+interface SaleSnapshot {
+  items: typeof cart.lines
+  total: number
+  orderType: string
+  platformDeliveryInfo: string
+  orderId: number | null
+  folio: string | null
+  /** Estado PAGADO del ticket (la venta del success ya se cobró). */
+  paymentMethod: 'efectivo' | 'tarjeta' | 'transferencia' | 'dolares'
+  amountReceived: number
+  changeAmount: number
+  /** Tasa USD usada (solo dolares). */
+  dollarRate?: number
+}
+const saleSnapshot = ref<SaleSnapshot | null>(null)
+const showTicketPreview = ref(false)
 
 const total = computed(() => cart.total)
 
-/** Numpad: agrega dígito/punto al monto recibido (teclado POS). */
+onMounted(() => {
+  // cashSessionId: asegura current (fetch barato; no bloquea el modal).
+  if (cashStore.current == null) {
+    void cashStore.fetchCurrent()
+  }
+  // La tasa dólar alimenta el display '≈ $Y USD' del método Dólares.
+  if (cashStore.dollarRate == null) {
+    void cashStore.fetchDollarRate()
+  }
+})
+
+/** Numpad: agrega dígito/punto al monto (teclado POS). */
 function pressKey(key: string): void {
   if (key === 'C') {
     amountText.value = ''
@@ -66,28 +117,57 @@ const amountReceived = computed<number | null>(() => {
   return Number.isFinite(parsed) ? parsed : null
 })
 
-/** Tarjeta no captura monto: amountReceived = total (regla del dueño). */
-const effectiveAmountReceived = computed<number>(() =>
-  method.value === 'tarjeta' ? total.value : (amountReceived.value ?? 0),
+const rate = computed(() => cashStore.rate)
+
+/** ¿Método con numpad de captura? (tarjeta y transferencia van sin captura). */
+const needsCapture = computed(() => method.value === 'efectivo' || method.value === 'dolares')
+
+/** Dólares sin tasa configurada → bloqueado (réplica L601-613). */
+const dollarRateProblem = computed<boolean>(() => method.value === 'dolares' && rate.value <= 0)
+
+/**
+ * Equivalente MXN del total en dólares (display '≈ $Y USD' — L616-617:
+ * dollarsNeeded = total / rate).
+ */
+const totalUsdNeeded = computed<number>(() =>
+  rate.value > 0 ? total.value / rate.value : 0,
 )
 
 const change = computed<number>(() => {
-  if (method.value === 'tarjeta') return 0
-  return Math.max(0, (amountReceived.value ?? 0) - total.value)
+  if (method.value === 'tarjeta' || method.value === 'transferencia') return 0
+  return Math.max(0, (amountReceived.value ?? 0) - (method.value === 'dolares' ? totalUsdNeeded.value : total.value))
 })
 
-/** Falta monto o es menor al total (solo efectivo/ambos). */
+/** Falta monto o es menor al exigido (solo efectivo/dólares). */
 const amountProblem = computed<string | null>(() => {
-  if (method.value === 'tarjeta') return null
+  if (method.value === 'tarjeta' || method.value === 'transferencia') return null
+  if (dollarRateProblem.value) return null // el banner de tasa ya lo cubre
   if (amountReceived.value == null) return 'Captura el monto con el que paga el cliente.'
   if (amountReceived.value <= 0) return 'El monto debe ser mayor a 0.'
+  if (method.value === 'dolares') {
+    // Réplica order_panel.dart L312-317 adaptado a dólares: usd*rate >= total.
+    const usdNeeded = totalUsdNeeded.value
+    if (amountReceived.value < usdNeeded) {
+      return `Ingresa al menos $${usdNeeded.toFixed(2)} USD`
+    }
+    return null
+  }
   if (amountReceived.value < total.value) {
     return `El cliente pagó $${amountReceived.value.toFixed(2)} pero el total es $${total.value.toFixed(2)}.`
   }
   return null
 })
 
-const canConfirm = computed<boolean>(() => amountProblem.value == null && !submitting.value)
+/**
+ * Sin sesión de caja en métodos con efectivo físico → warning NO bloqueante
+ * (texto EXACTO de pending_payments_screen.dart L616-617 con Piso 1).
+ */
+const cashSessionWarning = computed<boolean>(() =>
+  (method.value === 'efectivo' || method.value === 'dolares') && !cashStore.hasOpenSession,
+)
+
+const canConfirm = computed<boolean>(() =>
+  amountProblem.value == null && !dollarRateProblem.value && !submitting.value)
 
 async function confirm(): Promise<void> {
   formError.value = null
@@ -96,14 +176,24 @@ async function confirm(): Promise<void> {
     formError.value = amountProblem.value
     return
   }
+  if (dollarRateProblem.value) return
+
+  // Dólares: el MXN lo calcula el backend con la tasa server-side — el
+  // cliente envía SOLO el USD capturado (ronda cash). amountReceived viaja
+  // con el equivalente para el flujo de cambio del POS.
+  const payment =
+    method.value === 'tarjeta' || method.value === 'transferencia'
+      ? { method: method.value as 'tarjeta' | 'transferencia', amountReceived: total.value }
+      : method.value === 'dolares'
+        ? {
+            method: 'dolares' as const,
+            amountReceived: (amountReceived.value ?? 0) * rate.value,
+            amountReceivedUsd: amountReceived.value ?? 0,
+          }
+        : { method: 'efectivo' as const, amountReceived: amountReceived.value ?? 0 }
 
   submitting.value = true
   try {
-    const payment =
-      method.value === 'tarjeta'
-        ? { method: 'tarjeta' as const, amountReceived: total.value }
-        : { method: method.value, amountReceived: effectiveAmountReceived.value }
-
     const created = await ordersStore.submitOrder(
       {
         plantId: POS_PLANT_ID,
@@ -114,13 +204,31 @@ async function confirm(): Promise<void> {
         ...(cart.platformDeliveryInfo !== ''
           ? { platformDeliveryInfo: cart.platformDeliveryInfo }
           : {}),
-        // cashSessionId: TODO(cash-round-2) — gate de caja abierta.
+        // Ronda cash: id de la sesión abierta (omitido si no hay caja).
+        ...(cashStore.hasOpenSession ? { cashSessionId: cashStore.sessionId } : {}),
         payment,
         items: cart.toOrderItems(),
       },
       session.displayName ?? 'Cajero',
     )
 
+    // Snapshot ANTES de cart.clear() (el success necesita items para imprimir).
+    saleSnapshot.value = {
+      items: [...cart.lines],
+      total: created.total,
+      orderType: cart.orderType,
+      platformDeliveryInfo: cart.platformDeliveryInfo,
+      orderId: created.id,
+      folio: created.dailyOrderNumber.toString(),
+      // Estado PAGADO del ticket: la venta ya se cobró (layout-client L1146+).
+      paymentMethod: payment.method,
+      amountReceived:
+        payment.method === 'dolares'
+          ? (amountReceived.value ?? 0)
+          : (payment.amountReceived ?? total.value),
+      changeAmount: created.changeAmount ?? 0,
+      dollarRate: payment.method === 'dolares' ? rate.value : undefined,
+    }
     saleResult.value = created
     step.value = 'success'
     cart.clear()
@@ -172,24 +280,45 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 
       <div class="chk__methods" role="radiogroup" aria-label="Método de pago">
         <button
-          v-for="m in (['efectivo', 'tarjeta', 'ambos'] as const)"
+          v-for="(label, m) in METHOD_LABELS"
           :key="m"
           type="button"
           class="chk__method"
           :class="{ 'chk__method--selected': method === m }"
           role="radio"
           :aria-checked="method === m"
-          @click="method = m"
+          @click="method = m as CheckoutMethod; amountText = ''"
         >
-          {{ m.charAt(0).toUpperCase() + m.slice(1) }}
+          {{ label }}
         </button>
       </div>
 
-      <template v-if="method !== 'tarjeta'">
+      <!-- Dólares sin tasa: banner bloqueante (réplica L601-613). -->
+      <AppBanner v-if="dollarRateProblem" type="warning" data-testid="dollar-rate-warning">
+        ⚠️ Precio del dólar no configurado
+      </AppBanner>
+
+      <!-- Sin caja en efectivo/dólares: warning NO bloqueante (L616-617). -->
+      <AppBanner v-else-if="cashSessionWarning" type="warning" data-testid="cash-session-warning">
+        No hay una sesión de caja abierta para el Piso 1.
+      </AppBanner>
+
+      <template v-if="needsCapture">
         <div class="chk__amount">
-          <label class="chk__amount-label" for="chk-amount">Monto recibido</label>
+          <label class="chk__amount-label" for="chk-amount">
+            {{ method === 'dolares' ? 'Monto en USD' : 'Monto recibido' }}
+          </label>
           <div class="chk__amount-display" data-testid="amount-received">
-            {{ amountText === '' ? '$0.00' : `$${amountText}` }}
+            <template v-if="method === 'dolares'">
+              {{ amountText === '' ? '$0.00' : `$${amountText}` }} USD
+            </template>
+            <template v-else>
+              {{ amountText === '' ? '$0.00' : `$${amountText}` }}
+            </template>
+          </div>
+          <!-- Display 'Total: $X MXN ≈ $Y USD' (réplica L203-208 + L616-617). -->
+          <div v-if="method === 'dolares'" class="chk__usd-total" data-testid="usd-total">
+            Total: ${{ total.toFixed(2) }} MXN ≈ ${{ totalUsdNeeded.toFixed(2) }} USD
           </div>
           <div class="chk__numpad">
             <button
@@ -207,7 +336,7 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
             <button
               type="button"
               class="chk__key chk__key--exact"
-              @click="amountText = total.toFixed(2)"
+              @click="amountText = (method === 'dolares' ? totalUsdNeeded : total).toFixed(2)"
             >
               Exacto
             </button>
@@ -215,13 +344,19 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
         </div>
 
         <div class="chk__change" data-testid="change-display" aria-live="polite">
-          <span>Cambio</span>
-          <span class="chk__change-value" :class="{ 'chk__change-value--ok': amountReceived != null && amountReceived >= total }">
-            {{ formatMoney(change) }}
+          <span>{{ change > 0 ? 'Cambio' : (method === 'dolares' ? 'Falta (MXN)' : 'Falta') }}</span>
+          <span
+            class="chk__change-value"
+            :class="{ 'chk__change-value--ok': amountReceived != null && change >= 0 && (method !== 'dolares' || amountReceived >= totalUsdNeeded) }"
+          >
+            {{ formatMoney(method === 'dolares' ? change * rate : change) }}
           </span>
         </div>
       </template>
 
+      <p v-else-if="method === 'transferencia'" class="chk__card-note">
+        Pago con QR o transferencia: se registra el total.
+      </p>
       <p v-else class="chk__card-note">
         Pago con tarjeta: no se captura monto recibido (se registra el total).
       </p>
@@ -240,7 +375,7 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
           <dt>Total cobrado</dt>
           <dd>{{ formatMoney(saleResult?.total ?? total) }}</dd>
         </div>
-        <div class="chk__result-row" v-if="method !== 'tarjeta'">
+        <div class="chk__result-row" v-if="method !== 'tarjeta' && method !== 'transferencia'">
           <dt>Cambio</dt>
           <dd data-testid="sale-change">{{ formatMoney(saleResult?.changeAmount ?? change) }}</dd>
         </div>
@@ -249,9 +384,14 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
           <dd>#{{ saleResult?.id }}</dd>
         </div>
       </dl>
-      <!-- Fase 3c: impresión de ticket (botón deshabilitado esta ronda). -->
-      <button type="button" class="chk__print" disabled title="Disponible en Fase 3c">
-        Imprimir ticket (Fase 3c)
+      <!-- Fase 3c: impresión del ticket cliente (habilitada). -->
+      <button
+        type="button"
+        class="chk__print"
+        data-testid="print-ticket"
+        @click="showTicketPreview = true"
+      >
+        Imprimir ticket
       </button>
     </div>
 
@@ -287,6 +427,25 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
       </template>
     </template>
   </AppModal>
+
+  <!-- Preview/impresión del ticket CLIENTE con la orden creada. -->
+  <TicketPreviewModal
+    v-if="showTicketPreview && saleSnapshot != null"
+    :items="saleSnapshot.items"
+    :total="saleSnapshot.total"
+    :order-type="saleSnapshot.orderType"
+    :platform-delivery-info="saleSnapshot.platformDeliveryInfo"
+    :is-kitchen="false"
+    :order-id="saleSnapshot.orderId"
+    :folio="saleSnapshot.folio"
+    :paid-state="{
+      paymentMethod: saleSnapshot.paymentMethod,
+      amountReceived: saleSnapshot.amountReceived,
+      changeAmount: saleSnapshot.changeAmount,
+      dollarRate: saleSnapshot.dollarRate,
+    }"
+    @close="showTicketPreview = false"
+  />
 </template>
 
 <style scoped>
@@ -320,9 +479,10 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   padding-top: 8px;
 }
 
+/* 4 métodos en grid 2x2 (réplica de las 4 opciones del diálogo Flutter). */
 .chk__methods {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
 }
 
@@ -371,6 +531,18 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   color: var(--text);
   text-align: right;
   min-height: 24px;
+}
+
+/* 'Total: $X MXN ≈ $Y USD' (azul info como el banner de DOLARES del Flutter). */
+.chk__usd-total {
+  padding: 8px 14px;
+  background: rgba(33, 150, 243, 0.1);
+  border: 1px solid var(--info);
+  border-radius: var(--radius);
+  color: var(--info);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-align: center;
 }
 
 .chk__numpad {
@@ -458,15 +630,22 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   font-weight: 700;
 }
 
+/* Fase 3c: impresión habilitada (estilo previo, cursor activo). */
 .chk__print {
   padding: 12px;
   background: transparent;
-  border: 1px dashed var(--border);
+  border: 1px dashed var(--primary);
   border-radius: var(--radius);
-  color: var(--text-faint);
+  color: var(--primary);
   font-family: var(--font);
   font-size: 0.9rem;
-  cursor: not-allowed;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.chk__print:hover {
+  background: rgba(255, 87, 34, 0.08);
 }
 
 .chk__btn {

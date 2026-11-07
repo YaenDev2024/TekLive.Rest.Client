@@ -48,12 +48,14 @@ import type {
   PendingOrderListItem,
 } from '../../api/pos-types'
 import { POS_PLANT_ID } from '../../stores/catalog'
+import { useCashStore } from '../../stores/cash'
 import { useOrdersStore } from '../../stores/orders'
 import { useToastStore } from '../../stores/toast'
 import { AppBanner, AppSpinner } from '../../components/ui'
 import CancelOrderModal from '../../components/pos/CancelOrderModal.vue'
 
 const ordersStore = useOrdersStore()
+const cashStore = useCashStore()
 const toast = useToastStore()
 
 // --- Filtros (réplica _filterStatus / _selectedDate / _searchController) ------
@@ -126,6 +128,8 @@ function switchFilter(filter: StatusFilter): void {
 
 onMounted(() => {
   void refresh()
+  // Gate de caja (ronda cash): asegura current para el cobro de pendientes.
+  if (cashStore.current == null) void cashStore.fetchCurrent()
   pollTimer = setInterval(() => {
     void refresh()
   }, POLL_MS)
@@ -342,6 +346,12 @@ async function confirmPay(): Promise<void> {
     return
   }
   const order = modal.value.order
+  // Gate de caja (ronda cash · réplica del StateError de
+  // pending_payments_screen.dart L616-617): sin sesión abierta NO se cobra.
+  if (!cashStore.hasOpenSession) {
+    payError.value = 'No hay una sesión de caja abierta para el Piso 1.'
+    return
+  }
   paySubmitting.value = true
   payError.value = null
   try {
@@ -351,6 +361,8 @@ async function confirmPay(): Promise<void> {
       method: payMethod.value,
       amountReceived: amount,
       expectedStatus: order.orderStatus as OrderStatus,
+      // Atribuye el cobro a la sesión de caja abierta (ronda cash).
+      ...(cashStore.hasOpenSession ? { cashSessionId: cashStore.sessionId } : {}),
     })
     if (result != null) {
       toast.success(
