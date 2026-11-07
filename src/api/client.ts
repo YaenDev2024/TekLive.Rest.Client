@@ -6,10 +6,12 @@
  *    · Authorization: Bearer <token>  — access token kept in memory only.
  *    · X-Api-Key: VITE_APP_API_KEY    — shared Rest module key (AppApiKeyMiddleware).
  * - Typed error handling: reads `{ message }` / `{ Message }` from JSON errors.
+ * - 401 → silent refresh rotation + single retry (see below).
  *
  * NOTE: the access token lives in `src/services/auth.ts` (in-memory only,
  * never persisted to localStorage).
  */
+import { getRefreshToken, applyRefreshedTokens } from '../services/auth'
 
 /** Access token holder, injected by the auth service at startup. */
 let accessToken: string | null = null
@@ -71,7 +73,77 @@ export interface ApiResult<T> {
   data: T
 }
 
-async function request<T>(path: string, init: RequestInit): Promise<ApiResult<T>> {
+// ---------------------------------------------------------------------------
+// Refresh silencioso (fix 401 "Error inesperado"): el access token dura 15 min
+// y vive en memoria; cuando expira, TODA llamada responde 401 con cuerpo sin
+// `message` (el fallback genérico confundía al usuario). En 401 intentamos
+// rotar el refresh token UNA vez (single-flight: peticiones concurrentes
+// comparten la misma promesa) y reintentamos la petición original con el token
+// nuevo. Si la rotación falla → sesión realmente terminada: error claro.
+// ---------------------------------------------------------------------------
+
+/** Refresh en curso (single-flight): las 401s concurrentes esperan la misma. */
+let refreshInFlight: Promise<boolean> | null = null
+
+/** Error de sesión terminada (refresh falló o no hay refresh token). */
+export class SessionExpiredError extends ApiError {
+  constructor() {
+    super(401, 'Tu sesión expiró. Inicia sesión de nuevo.')
+  }
+}
+
+/** Hook de logout forzado: lo registra services/auth.ts (redirect a /login). */
+let onSessionExpired: (() => void) | null = null
+
+export function setSessionExpiredHandler(handler: (() => void) | null): void {
+  onSessionExpired = handler
+}
+
+/** Rota el refresh token contra POST /api/rest/auth/refresh (una vez por racha de 401s). */
+async function refreshAccessToken(): Promise<boolean> {
+  if (refreshInFlight != null) return refreshInFlight
+
+  refreshInFlight = (async () => {
+    const current = getRefreshToken()
+    if (current == null || current.length === 0) return false
+
+    try {
+      const response = await fetch(`${BASE_URL}/api/rest/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'X-Api-Key': APP_API_KEY,
+        },
+        body: JSON.stringify({ refreshToken: current }),
+      })
+      if (!response.ok) return false
+
+      const payload = (await response.json()) as {
+        Token?: string
+        RefreshToken?: string
+        token?: string
+        refreshToken?: string
+      }
+      const newAccess = payload.Token ?? payload.token
+      const newRefresh = payload.RefreshToken ?? payload.refreshToken
+      if (newAccess == null || newAccess.length === 0) return false
+
+      applyRefreshedTokens(newAccess, newRefresh ?? current)
+      return true
+    } catch {
+      return false
+    }
+  })()
+
+  try {
+    return await refreshInFlight
+  } finally {
+    refreshInFlight = null
+  }
+}
+
+async function request<T>(path: string, init: RequestInit, allowRetry = true): Promise<ApiResult<T>> {
   const headers = new Headers(init.headers)
   headers.set('Accept', 'application/json')
   if (init.body != null && !headers.has('Content-Type')) {
@@ -105,7 +177,19 @@ async function request<T>(path: string, init: RequestInit): Promise<ApiResult<T>
   }
 
   if (!response.ok) {
-    // 401 with a live in-memory token usually means the access token expired.
+    // 401 → el access token expiró (o es inválido): rotar y reintentar UNA vez.
+    // Excluye los endpoints de auth (login no tiene sesión que rotar; evita
+    // bucles en refresh/me).
+    const isAuthCall = path.startsWith('/api/rest/auth/')
+    if (response.status === 401 && isAuthCall === false && allowRetry) {
+      const refreshed = await refreshAccessToken()
+      if (refreshed) {
+        return request<T>(path, init, false) // reintento único con el token nuevo
+      }
+      // Sesión realmente terminada: mensaje claro + logout/redirect.
+      onSessionExpired?.()
+      throw new SessionExpiredError()
+    }
     throw new ApiError(response.status, extractMessage(payload), extractReason(payload))
   }
 

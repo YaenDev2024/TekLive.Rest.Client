@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { session, restoreSession, tryResumeSession } from './services/auth'
+import { session, restoreSession } from './services/auth'
 import LoginView from './views/LoginView.vue'
 import HomeView from './views/HomeView.vue'
 import PosShellView from './views/pos/PosShellView.vue'
@@ -70,13 +70,12 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
   if (AUTH_ROUTES.has(to.name as string)) {
+    // Sin token en memoria NO se opera el POS (antes el guard dejaba pasar y
+    // cada API respondía 401 → "Error inesperado"). Tras un reload ambos
+    // tokens se pierden (memoria-only): no hay nada que rotar → login con el
+    // número de empleado prefilled desde el perfil persistido.
     if (session.accessToken != null) return true
-    // Web reload wipes memory tokens. Restore the persisted profile (used to
-    // prefill the login) and try to transparently resume; if not possible,
-    // go to login (employee number will be prefilled from the profile).
     restoreSession()
-    const resumed = await tryResumeSession()
-    if (resumed) return true
     return { name: 'login' }
   }
   if (to.name === 'login' && session.accessToken != null) {

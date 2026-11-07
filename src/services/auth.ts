@@ -113,6 +113,16 @@ export function applyTokens(accessToken: string, refreshToken: string | null): v
   setAccessToken(accessToken)
 }
 
+/** Refresh silencioso exitoso: sincroniza ambos tokens (memoria). */
+export function applyRefreshedTokens(accessToken: string, refreshToken: string): void {
+  applyTokens(accessToken, refreshToken)
+}
+
+/** Refresh token actual (memoria). Lo usa client.ts para la rotación en 401. */
+export function getRefreshToken(): string | null {
+  return session.refreshToken
+}
+
 /**
  * Restore the persisted profile (no tokens — those are memory-only):
  * employee identity for prefilling the login form after a reload.
