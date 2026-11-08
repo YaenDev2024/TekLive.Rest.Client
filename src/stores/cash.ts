@@ -67,13 +67,17 @@ export const useCashStore = defineStore('cash', {
     /**
      * Abre sesión con el monto inicial (réplica startSession del provider +
      * diálogo de module_selection_screen.dart L113-168).
+     *
+     * Fase 4: `plantId` parametrizado (default POS_PLANT_ID = piso 1 para no
+     * romper los call sites de Caja/Checkout) — el selector de módulos abre
+     * caja por piso con el plantId del card tocado.
      */
-    async openSession(startingAmount: number): Promise<CashSession> {
+    async openSession(startingAmount: number, plantId: number = POS_PLANT_ID): Promise<CashSession> {
       this.error = null
       try {
         const { data } = await openCashSession({
           startingAmount,
-          plantId: POS_PLANT_ID,
+          plantId,
           sucursalId: POS_SUCURSAL_ID,
         })
         this.current = data
@@ -86,13 +90,14 @@ export const useCashStore = defineStore('cash', {
       }
     },
 
-    /** GET current → current (null si no hay). Idempotente y barato. */
-    async fetchCurrent(): Promise<CashSession | null> {
+    /** GET current → current (null si no hay). Idempotente y barato.
+     *  Fase 4: `plantId` parametrizado (default piso 1 — ver openSession). */
+    async fetchCurrent(plantId: number = POS_PLANT_ID): Promise<CashSession | null> {
       if (this.loadingCurrent) return this.current
       this.loadingCurrent = true
       this.error = null
       try {
-        const { data } = await getCurrentCashSession(POS_PLANT_ID, POS_SUCURSAL_ID)
+        const { data } = await getCurrentCashSession(plantId, POS_SUCURSAL_ID)
         // Solo sesiones OPEN cuentan como "caja abierta".
         this.current = data != null && data.status === 'OPEN' ? data : null
         return this.current

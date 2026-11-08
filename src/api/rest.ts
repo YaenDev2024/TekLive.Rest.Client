@@ -99,6 +99,17 @@ export interface TokenRefreshResponse {
   refreshToken?: string
 }
 
+/**
+ * GET api/rest/floors — piso/planta del restaurante (Fase 4, réplica del
+ * FloorProvider de CrazyWings). Espejo de RestFloorResponse del backend
+ * (en construcción en paralelo por otro agente — BusinessSuite).
+ */
+export interface RestFloorResponse {
+  floorId: number
+  name: string
+  description: string | null
+}
+
 // ---------------------------------------------------------------------------
 // Endpoints
 // ---------------------------------------------------------------------------
@@ -226,6 +237,16 @@ export function updateOrderStatus(
 // Envelope 2xx = { success, data, message }: mismas convenciones que
 // customers.ts — se desenrolla `data` aquí para que la UI consuma el shape.
 // ---------------------------------------------------------------------------
+
+/**
+ * GET api/rest/floors — pisos/plantas de la sucursal del usuario (Fase 4).
+ * Envelope 2xx = { success, data, message }: se desenrolla `data` igual que
+ * los endpoints de caja. Devuelve [] si el backend responde lista vacía.
+ */
+export async function getFloors(): Promise<ApiResult<RestFloorResponse[]>> {
+  const { status, data } = await apiGet<Envelope<RestFloorResponse[]>>('/api/rest/floors')
+  return { status, data: data.data }
+}
 
 /** GET api/rest/cash/dollar-rate → tasa | null (200 sin tasa configurada). */
 export async function getDollarRate(): Promise<ApiResult<DollarRate | null>> {

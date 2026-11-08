@@ -3,27 +3,13 @@ import { computed } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { LogOut, ScanBarcode, Utensils } from 'lucide-vue-next'
 import { clearSession, session } from '../services/auth'
+import { roleLabel } from '../utils/role-labels'
 import { AppButton } from '../components/ui'
 
 const router = useRouter()
 
 const displayName = computed(() => session.displayName ?? 'Empleado')
-const roleLabel = computed(() => {
-  switch (session.role) {
-    case 'RestAdmin':
-      return 'Administrador'
-    case 'RestManager':
-      return 'Gerente'
-    case 'RestCashier':
-      return 'Cajero'
-    case 'RestWaiter':
-      return 'Mesero'
-    case 'RestKitchen':
-      return 'Cocina'
-    default:
-      return session.role ?? ''
-  }
-})
+const roleLabelText = computed(() => roleLabel(session.role))
 
 /** Sesión restaurada tras recarga (tryResumeSession OK con token en memoria). */
 const sessionRestored = computed(() => session.accessToken != null)
@@ -51,7 +37,7 @@ async function logout(): Promise<void> {
       <div class="home-header-user">
         <div class="home-user-meta">
           <span class="home-user-name">Bienvenido, {{ displayName }}</span>
-          <span v-if="roleLabel" class="home-user-role">{{ roleLabel }}</span>
+          <span v-if="roleLabelText" class="home-user-role">{{ roleLabelText }}</span>
         </div>
         <AppButton variant="ghost" :block="false" aria-label="Cerrar sesión" @click="logout">
           <template #icon><LogOut :size="16" /></template>

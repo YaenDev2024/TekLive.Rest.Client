@@ -1,15 +1,16 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { session, restoreSession } from './services/auth'
 import LoginView from './views/LoginView.vue'
-import HomeView from './views/HomeView.vue'
+import ModuleSelectView from './views/pos/ModuleSelectView.vue'
 import PosShellView from './views/pos/PosShellView.vue'
 import PosPiso1View from './views/pos/PosPiso1View.vue'
 import PendingOrdersView from './views/pos/PendingOrdersView.vue'
 import SettingsView from './views/admin/SettingsView.vue'
 import CashDrawerView from './views/admin/CashDrawerView.vue'
 
-/** Rutas protegidas del POS (mismo guard que /home). */
+/** Rutas protegidas del POS (mismo guard que /modules). */
 const AUTH_ROUTES = new Set([
+  'modules',
   'home',
   'pos',
   'pos-piso1',
@@ -21,9 +22,22 @@ const AUTH_ROUTES = new Set([
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', redirect: { name: 'home' } },
+    // Fase 4: el selector de módulos es la raíz (réplica module_selection_screen).
+    { path: '/', redirect: { name: 'modules' } },
     { path: '/login', name: 'login', component: LoginView },
-    { path: '/home', name: 'home', component: HomeView },
+    {
+      // Selector de módulos réplica module_selection_screen.dart (Fase 4).
+      path: '/modules',
+      name: 'modules',
+      component: ModuleSelectView,
+    },
+    {
+      // HomeView antigua (Fase 2.5): conservada temporalmente, redirige al
+      // selector réplica. NO borrada aún por si QA compara.
+      path: '/home',
+      name: 'home',
+      redirect: { name: 'modules' },
+    },
     {
       // Shell del POS (réplica desktop_home_layout): rail 80px + RouterView.
       // El rail es PERSISTENTE entre las 4 vistas (el carrito vive en Pinia
@@ -79,7 +93,7 @@ router.beforeEach(async (to) => {
     return { name: 'login' }
   }
   if (to.name === 'login' && session.accessToken != null) {
-    return { name: 'home' }
+    return { name: 'modules' }
   }
   return true
 })
