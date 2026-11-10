@@ -55,7 +55,8 @@
  * 'restmanager'] → router.replace({ name: 'modules' }).
  *
  * Mapa tile → fase futura (placeholders con badge 'Próximamente · Fase N'):
- * - Fase 6:  Gestionar Catálogo, Editar Productos, Catalogo de Categorías (CRUD catálogo)
+ * - Fase 6:  Gestionar Catálogo (REAL desde Fase 6.1 → admin-catalogo),
+ *            Editar Productos, Catalogo de Categorías (CRUD catálogo)
  * - Fase 7:  Crear Usuarios, Gestionar Usuarios
  * - Fase 8:  Asignar Meseros a Mesas
  * - Fase 9:  Crear Promociones, Configurar Dólar dedicado, Aumento de Precios
@@ -132,7 +133,7 @@ const SECTIONS: AdminSection[] = [
     title: 'Gestión de Productos',
     icon: Package,
     tiles: [
-      { label: 'Gestionar Catálogo', icon: Package, phase: 6, phaseNote: 'CRUD de catálogo' },
+      { label: 'Gestionar Catálogo', icon: Package, to: { name: 'admin-catalogo' } },
       { label: 'Editar Productos', icon: SquarePen, phase: 6, phaseNote: 'Edición de productos' },
       { label: 'Catalogo de Categorías', icon: LayoutGrid, phase: 6, phaseNote: 'Categorías del catálogo' },
     ],

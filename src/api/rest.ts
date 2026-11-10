@@ -20,7 +20,7 @@
  * against live responses. Error JSON uses `{ message }` (middleware + controllers).
  */
 
-import { apiGet, apiPatch, apiPost, apiPut, type ApiResult } from './client'
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut, type ApiResult } from './client'
 import type {
   Catalog,
   CloseCashSessionPayload,
@@ -340,4 +340,126 @@ export function logTicketPrint(
     `/api/rest/orders/${encodeURIComponent(orderId)}/print-log`,
     body,
   )
+}
+
+// ---------------------------------------------------------------------------
+// Admin · Gestionar Catálogo (Fase 6.1 — réplica manage_catalog_screen.dart).
+// CRUD de catalog_items = OPCIONES del wizard del POS (SALSA, PROTEINA,
+// COMPLEMENTO, EXTRA, BEBIDA, MODIFICADOR — p.ej. "Barbacoa"). NO son los
+// productos del menú.
+// Backend en construcción en paralelo por otro agente (BusinessSuite,
+// api/rest/catalog/admin/items). Mientras el endpoint no exista el store
+// maneja el error y la vista muestra el estado de error réplica — SIN
+// fallback de datos falsos (los datos aquí son reales del negocio).
+// ---------------------------------------------------------------------------
+
+/** Alcance de un catalog_item: 'GLOBAL' | 'SUCURSAL' | 'PLANT'. */
+export type CatalogScopeType = 'GLOBAL' | 'SUCURSAL' | 'PLANT'
+
+/** Alcances soportados — réplica scope_selector.dart L6-7. */
+export const CATALOG_SCOPE_TYPES: CatalogScopeType[] = ['GLOBAL', 'SUCURSAL', 'PLANT']
+
+/**
+ * Una fila de alcance del item (GET …/items → scopes[]). Espejo del join
+ * CAT_ITEM_SCOPES que el backend expondrá por item.
+ */
+export interface RestAdminCatalogItemScope {
+  scopeType: CatalogScopeType
+  sucursalId?: number | null
+  plantId?: number | null
+}
+
+/**
+ * GET api/rest/catalog/admin/items?sucursalId=N — item del pool de opciones
+ * del wizard. Espejo de CatalogItem (catalog_item_model.dart L1-33) + scopes.
+ */
+export interface RestAdminCatalogItem {
+  id: number
+  nombre: string
+  descripcion?: string | null
+  /** SALSA | PROTEINA | COMPLEMENTO | EXTRA | BEBIDA | MODIFICADOR */
+  tipo: string
+  precio: number
+  cantidadDisponible: number
+  activo: boolean
+  /** ISO 8601 (null-tolerante: el modelo Flutter lo marca nullable). */
+  createdAt?: string | null
+  scopes?: RestAdminCatalogItemScope[]
+}
+
+/**
+ * POST api/rest/catalog/admin/items — body. `sucursalId` va SIEMPRE (la vista
+ * admin lo manda como contexto, réplica createCatalogItem del Flutter);
+ * `plantId` solo cuando scopeType === 'PLANT'.
+ */
+export interface CreateAdminCatalogItemPayload {
+  nombre: string
+  descripcion?: string | null
+  tipo: string
+  precio: number
+  cantidadDisponible: number
+  scopeType: CatalogScopeType
+  sucursalId?: number | null
+  plantId?: number | null
+}
+
+/**
+ * PUT api/rest/catalog/admin/items/{id} — mismo body + `activo` (el switch
+ * del dialog editar, manage_catalog_screen.dart L326-332/L365).
+ */
+export type UpdateAdminCatalogItemPayload = CreateAdminCatalogItemPayload & {
+  activo: boolean
+}
+
+/** POST …/items → 201 { success, data: { id } } (solo el id). */
+export interface CreatedAdminCatalogItemResponse {
+  id: number
+}
+
+/** GET api/rest/catalog/admin/items?sucursalId=N → items[] (desenrollado). */
+export async function getAdminCatalogItems(
+  sucursalId?: number,
+): Promise<ApiResult<RestAdminCatalogItem[]>> {
+  const query = sucursalId != null ? `?sucursalId=${encodeURIComponent(sucursalId)}` : ''
+  const { status, data } = await apiGet<Envelope<RestAdminCatalogItem[]>>(
+    `/api/rest/catalog/admin/items${query}`,
+  )
+  return { status, data: data.data }
+}
+
+/** POST api/rest/catalog/admin/items → 201 con { id } (envelope desenrollado). */
+export async function createAdminCatalogItem(
+  body: CreateAdminCatalogItemPayload,
+): Promise<ApiResult<CreatedAdminCatalogItemResponse>> {
+  const { status, data } = await apiPost<Envelope<CreatedAdminCatalogItemResponse>>(
+    '/api/rest/catalog/admin/items',
+    body,
+  )
+  return { status, data: data.data }
+}
+
+/** PUT api/rest/catalog/admin/items/{id} → 200 (envelope desenrollado). */
+export async function updateAdminCatalogItem(
+  itemId: number,
+  body: UpdateAdminCatalogItemPayload,
+): Promise<ApiResult<Record<string, never>>> {
+  const { status, data } = await apiPut<Envelope<Record<string, never>>>(
+    `/api/rest/catalog/admin/items/${encodeURIComponent(itemId)}`,
+    body,
+  )
+  return { status, data: data.data }
+}
+
+/**
+ * DELETE api/rest/catalog/admin/items/{id} — SOFT delete: el item NO se
+ * elimina, solo se oculta (queda con activo=false y la lista lo muestra
+ * tachado — réplica del mensaje del confirm del Flutter L399).
+ */
+export async function deactivateAdminCatalogItem(
+  itemId: number,
+): Promise<ApiResult<Record<string, never>>> {
+  const { status, data } = await apiDelete<Envelope<Record<string, never>>>(
+    `/api/rest/catalog/admin/items/${encodeURIComponent(itemId)}`,
+  )
+  return { status, data: data.data }
 }

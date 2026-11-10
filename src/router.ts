@@ -8,12 +8,14 @@ import PendingOrdersView from './views/pos/PendingOrdersView.vue'
 import SettingsView from './views/admin/SettingsView.vue'
 import CashDrawerView from './views/admin/CashDrawerView.vue'
 import AdminDashboardView from './views/admin/AdminDashboardView.vue'
+import ManageCatalogView from './views/admin/ManageCatalogView.vue'
 
 /** Rutas protegidas del POS (mismo guard que /modules). */
 const AUTH_ROUTES = new Set([
   'modules',
   'home',
   'admin-dashboard',
+  'admin-catalogo',
   'pos',
   'pos-piso1',
   'pos-ordenes',
@@ -45,6 +47,13 @@ const router = createRouter({
       path: '/admin',
       name: 'admin-dashboard',
       component: AdminDashboardView,
+    },
+    {
+      // Fase 6.1: Gestionar Catálogo réplica manage_catalog_screen.dart
+      // (standalone, sin rail — CRUD de catalog_items/opciones del wizard).
+      path: '/admin/catalogo',
+      name: 'admin-catalogo',
+      component: ManageCatalogView,
     },
     {
       // Shell del POS (réplica desktop_home_layout): rail 80px + RouterView.
