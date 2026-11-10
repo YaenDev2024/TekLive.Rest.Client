@@ -179,9 +179,11 @@ function onGateClosed(): void {
   cashGateTitle.value = undefined
 }
 
-/** Card Administración → shell POS actual (equivalente /admin-dashboard). */
+/**
+ * Card Administración → hub admin (Fase 5): réplica admin_dashboard_home.dart.
+ */
 function openAdminModule(): void {
-  void router.push({ name: 'pos-piso1' })
+  void router.push({ name: 'admin-dashboard' })
 }
 
 // --- Descripciones de cards (L394-396) ------------------------------------------

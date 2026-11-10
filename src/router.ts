@@ -7,11 +7,13 @@ import PosPiso1View from './views/pos/PosPiso1View.vue'
 import PendingOrdersView from './views/pos/PendingOrdersView.vue'
 import SettingsView from './views/admin/SettingsView.vue'
 import CashDrawerView from './views/admin/CashDrawerView.vue'
+import AdminDashboardView from './views/admin/AdminDashboardView.vue'
 
 /** Rutas protegidas del POS (mismo guard que /modules). */
 const AUTH_ROUTES = new Set([
   'modules',
   'home',
+  'admin-dashboard',
   'pos',
   'pos-piso1',
   'pos-ordenes',
@@ -37,6 +39,12 @@ const router = createRouter({
       path: '/home',
       name: 'home',
       redirect: { name: 'modules' },
+    },
+    {
+      // Fase 5: hub admin réplica admin_dashboard_home.dart (standalone, sin rail)
+      path: '/admin',
+      name: 'admin-dashboard',
+      component: AdminDashboardView,
     },
     {
       // Shell del POS (réplica desktop_home_layout): rail 80px + RouterView.
