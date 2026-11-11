@@ -14,13 +14,13 @@
  *   Item') y refresh (tooltip 'Recargar').
  * - Panel 'Contexto de alcance' (L453-482): container margin 16/12/16/0,
  *   padding 12, borde grey[700] radius 10, título bold + ScopeSelector.
- *   ⚠️ SEMÁNTICA (comentario L51-52 de _loadItems): el scope del panel SOLO
- *   prefija los dialogs de crear/editar (L104-105 y L248-249 leen
- *   _scopeType/_selectedPlantId como initialScopeType/initialPlantId); NO
- *   filtra la carga — _loadItems SIEMPRE pide SIN plantId (L51-52: "Vista
- *   admin: SIN plantId... devuelve GLOBAL + SUCURSAL + todas las PLANT").
- *   El original re-llama _loadItems en onChanged (L468-478) pero la carga
- *   nunca dependió del scope; aquí se omite ese refetch inútil (documentado).
+ *   SEMÁNTICA (petición beta 2026-11-11): el scope PREFIJA los dialogs de
+ *   crear/editar (L104-105 y L248-249) Y TAMBIÉN FILTRA la lista
+ *   (scopedItems): Global → solo GLOBAL; Sucursal → GLOBAL + SUCURSAL;
+ *   Piso N → GLOBAL + SUCURSAL + PLANT N (jerarquía de herencia, items de
+ *   OTROS pisos no aplican). La CARGA sigue siendo una sola (GET sin
+ *   plantId trae todo — el backend ya incluye items PLANT en el listado
+ *   admin, fix 2cafb87); el filtro por alcance es client-side en la vista.
  * - Buscador (L484-513): TextField 'Buscar item...' con lupa (prefix) y X
  *   de clear (suffix, solo con texto), fill surface, radius 8. Filtra
  *   client-side nombre/descripcion case-insensitive (_applyFilter L79-84,
@@ -326,6 +326,43 @@ function clearSearch(): void {
 }
 
 const hasSearch = computed(() => store.searchQuery.length > 0)
+
+/**
+ * Filtro de lista por CONTEXTO DE ALCANCE del panel (petición beta:
+ * "aunque ponga piso específico y piso 2 no quiero ver el item de piso 1").
+ *
+ * Jerarquía de visibilidad (consistente con cómo el backend resuelve el
+ * menú del POS por (sucursal, piso)):
+ * - GLOBAL → solo items con scope GLOBAL.
+ * - SUCURSAL → GLOBAL + SUCURSAL (los pisos son de la empresa, no de una
+ *   sucursal — un item de piso no "cuelga" de ninguna sucursal).
+ * - PLANT N → GLOBAL + SUCURSAL + PLANT N (un piso hereda lo global y lo
+ *   de sucursal; items de OTROS pisos no aplican).
+ *
+ * Item sin scopes (dato huérfano) siempre visible en admin (como antes).
+ */
+const scopedItems = computed(() => {
+  const { scopeType, plantId } = scope.value
+  return store.filteredItems.filter((item) => {
+    const scopes = item.scopes ?? []
+    if (scopes.length === 0) return true // huérfano: visible en admin
+    const hasGlobal = scopes.some((s) => s.scopeType === 'GLOBAL')
+    const hasSucursal = scopes.some((s) => s.scopeType === 'SUCURSAL')
+    const hasThisPlant = scopes.some((s) => s.scopeType === 'PLANT' && s.plantId === plantId)
+    if (scopeType === 'GLOBAL') return hasGlobal
+    if (scopeType === 'SUCURSAL') return hasGlobal || hasSucursal
+    return hasGlobal || hasSucursal || hasThisPlant // PLANT
+  })
+})
+
+/** Badge de alcance del item: primera letra del scope + piso si aplica. */
+function scopeBadge(item: RestAdminCatalogItem): string {
+  const s = item.scopes?.[0]
+  if (s == null) return ''
+  if (s.scopeType === 'PLANT') return `Piso ${s.plantId ?? '?'}`
+  if (s.scopeType === 'SUCURSAL') return 'Sucursal'
+  return 'Global'
+}
 </script>
 
 <template>
@@ -451,13 +488,13 @@ const hasSearch = computed(() => store.searchQuery.length > 0)
           </button>
         </div>
 
-        <p v-else-if="store.filteredItems.length === 0" class="mc-state mc-empty" data-testid="mc-empty">
-          No hay items en el catálogo
+        <p v-else-if="scopedItems.length === 0" class="mc-state mc-empty" data-testid="mc-empty">
+          No hay items para el alcance seleccionado
         </p>
 
         <ul v-else class="mc-list" data-testid="mc-list">
           <li
-            v-for="item in store.filteredItems"
+            v-for="item in scopedItems"
             :key="item.id"
             class="mc-card"
             :data-testid="`mc-item-${item.id}`"
@@ -471,8 +508,13 @@ const hasSearch = computed(() => store.searchQuery.length > 0)
               <span class="mc-item-name" :class="{ 'mc-item-name--inactive': !item.activo }">
                 {{ item.nombre }}
               </span>
-              <!-- Subtítulo '{TIPO} • $X.XX' (L588) -->
-              <span class="mc-item-tipo">{{ item.tipo }} • ${{ item.precio.toFixed(2) }}</span>
+              <!-- Subtítulo '{TIPO} • $X.XX' + badge de alcance -->
+              <span class="mc-item-tipo">
+                {{ item.tipo }} • ${{ item.precio.toFixed(2) }}
+                <span v-if="scopeBadge(item) !== ''" class="mc-item-scope">
+                  {{ scopeBadge(item) }}
+                </span>
+              </span>
               <!-- Descripción 1 línea elipsis (L589-595) -->
               <span
                 v-if="item.descripcion != null && item.descripcion.length > 0"
@@ -947,6 +989,17 @@ const hasSearch = computed(() => store.searchQuery.length > 0)
 .mc-item-tipo {
   font-size: 13px;
   color: var(--text-muted);
+}
+
+/* Badge de alcance del item (Global / Sucursal / Piso N). */
+.mc-item-scope {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
+  font-size: 11px;
 }
 
 .mc-item-desc {
