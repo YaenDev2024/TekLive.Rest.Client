@@ -1,21 +1,21 @@
 /**
- * TekLive Rest · Keyboard store — réplica EXACTA de KeyboardProvider
- * (lib/providers/keyboard_provider.dart de CrazyWings).
+ * TekLive Rest — Keyboard store (DESKTOP únicamente).
  *
- * Teclado virtual PROPIO de la app en TODAS las plataformas (Windows
- * desktop, tablet Android, phone): el input nativo del SO NUNCA aparece
- * (readonly en touch + blur inmediato en móvil; ver VirtualKeyboard.vue).
+ * El teclado virtual PROPIO solo existe en desktop (pointer: fine), como
+ * réplica del teclado in-app de la app Flutter CrazyWings. En móvil/tablet
+ * (pointer: coarse) NO se usa: los inputs abren el teclado NATIVO del SO
+ * (iOS/Android) y los <select> el picker nativo (decisión beta iOS
+ * 2026-11-11 tras los bugs de doble teclado y selects que no tomaban la
+ * opción tocada).
  *
  * Dos layouts como el original:
  * - Numérico (keyboardType number/decimal): grid 3x4 '789/456/123/0.←',
- *   width 280, aspect 1.4, ← = backspace.
- * - Completo: 4 filas QWERTY con ñ + números arriba, shift/caps, espacio,
- *   backspace (L229-241: normalKeys/shiftKeys).
+ *   width 280, aspect 1.4, '←' = backspace.
+ * - Completo: 4 filas QWERTY con acentos + números arriba, shift/caps,
+ *   espacio, backspace.
  *
- * El original inserta un Overlay a pantalla completa; aquí el overlay es
- * un componente montado en App.vue (teleport al body) alimentado por este
- * store. show() registra el input activo; el overlay escribe en él vía
- * inserción en el caret (mismo replaceRange del original).
+ * show() registra el input activo; el overlay (VirtualKeyboard.vue,
+ * montado en App.vue) escribe vía inserción en el caret.
  */
 
 import { defineStore } from 'pinia'
@@ -30,31 +30,27 @@ export const useKeyboardStore = defineStore('keyboard', () => {
   const visible = ref(false)
 
   /**
-   * Abrir teclado para un input (réplica showKeyboard L16-61). type
-   * 'numeric' = grid 3x4; 'text' = QWERTY completo (réplica TextInputType).
+   * Abrir teclado para un input (desktop). type 'numeric' = grid 3x4;
+   * 'text' = QWERTY completo.
    */
   function show(
     input: HTMLInputElement | HTMLTextAreaElement,
     type: 'numeric' | 'text' = 'text',
   ): void {
     // Si había OTRO input activo (el foco saltó sin pasar por la X),
-    // restaurar su inputmode original para no dejarlo en 'none' residual
-    // y su readonly original (el de supresión del teclado nativo).
+    // restaurar su inputmode original para no dejarlo en 'none' residual.
     const prev = activeInput.value
     if (prev != null && prev !== input) {
       const prevOriginal = prev.dataset.vkOriginalInputmode ?? ''
       if (prevOriginal) prev.setAttribute('inputmode', prevOriginal)
       else prev.removeAttribute('inputmode')
       delete prev.dataset.vkOriginalInputmode
-      if (prev.dataset.vkOriginalReadonly === '1') prev.readOnly = true
-      else prev.readOnly = false
-      delete prev.dataset.vkOriginalReadonly
     }
     activeInput.value = input
     layout.value = type === 'numeric' ? 'numeric' : 'full'
     visible.value = true
     // Bandera global: los modales suben su CTA cuando el teclado está abierto
-    // (verificación P0: CTA clicable con teclado visible a 360x740).
+    // (verificación P0: CTA clicable con teclado visible a 1280x800 desktop).
     document.documentElement.classList.add('vk-open')
     // Guardar el inputmode original (numeric/decimal/text) para restaurarlo
     // en release() — el 'none' de supresión es temporal, no destructivo.
@@ -64,7 +60,7 @@ export const useKeyboardStore = defineStore('keyboard', () => {
     }
   }
 
-  /** Cerrar (réplica hideKeyboard L63-75: botón X o pérdida de foco). */
+  /** Cerrar (réplica hideKeyboard L63-75: botón X o Escape). */
   function hide(): void {
     visible.value = false
     activeInput.value = null
@@ -73,14 +69,9 @@ export const useKeyboardStore = defineStore('keyboard', () => {
 
   /**
    * Restaurar el input al cerrar (X del teclado / Escape): quita el
-   * inputmode='none' de supresión del teclado nativo SIN borrar el
-   * inputmode ORIGINAL (numeric/decimal) — sin esto, el siguiente tap
-   * abriría el layout equivocado (bug encontrado en prueba E2E).
-   *
-   * iOS 16+ PWA: también restaura el readonly que handlePointerDown dejó
-   * puesto para suprimir el teclado nativo durante toda la sesión de
-   * edición (el restore en rAF llegaba tarde y el teclado del SO se abría
-   * junto al virtual). blur() va después: al perder foco ya no re-abre.
+   * inputmode='none' de supresión del teclado táctil de Windows SIN borrar
+   * el inputmode ORIGINAL (numeric/decimal) — sin esto, el siguiente focus
+   * abriría el layout equivocado.
    */
   function release(): void {
     const el = activeInput.value
@@ -89,20 +80,17 @@ export const useKeyboardStore = defineStore('keyboard', () => {
       if (original) el.setAttribute('inputmode', original)
       else el.removeAttribute('inputmode')
       delete el.dataset.vkOriginalInputmode
-      if (el.dataset.vkOriginalReadonly === '1') el.readOnly = true
-      else el.readOnly = false
-      delete el.dataset.vkOriginalReadonly
       el.blur()
     }
     hide()
   }
 
   /**
-   * Inserción en el caret (réplica _onKeyPressed L243-268 / L456-476:
-   * replaceRange(start, end, key) + colapsar selección al final del texto
-   * insertado). Dispara el evento 'input' para que v-model/onInput reaccionen.
-   * Inputs type=number NO soportan selectionStart (DOMException) → fallback:
-   * append al final (el teclado numérico es el único que los toca).
+   * Inserción en el caret (réplica _onKeyPressed: replaceRange + colapsar
+   * selección al final del texto insertado). Dispara el evento 'input' para
+   * que v-model/onInput reaccionen. Inputs type=number NO soportan
+   * selectionStart (DOMException) — fallback: append al final (el teclado
+   * numérico es el único que los toca).
    */
   function insertText(text: string): void {
     const input = activeInput.value
@@ -126,7 +114,7 @@ export const useKeyboardStore = defineStore('keyboard', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }))
   }
 
-  /** Backspace en el caret (réplica _onBackspace L270-298 / L478-506). */
+  /** Backspace en el caret (réplica _onBackspace). */
   function backspace(): void {
     const input = activeInput.value
     if (input == null) return
