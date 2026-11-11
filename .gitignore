@@ -31,7 +31,9 @@ android/
 ios/
 
 # Environment: .env.example is committed, local overrides are not
+# (.env.demo is deploy/doc only — the VPS passes real values as build-args)
 .env
+.env.demo
 .env.development
 .env.production
 
