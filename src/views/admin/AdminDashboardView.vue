@@ -134,8 +134,8 @@ const SECTIONS: AdminSection[] = [
     icon: Package,
     tiles: [
       { label: 'Gestionar Catálogo', icon: Package, to: { name: 'admin-catalogo' } },
-      { label: 'Editar Productos', icon: SquarePen, phase: 6, phaseNote: 'Edición de productos' },
-      { label: 'Catalogo de Categorías', icon: LayoutGrid, phase: 6, phaseNote: 'Categorías del catálogo' },
+      { label: 'Editar Productos', icon: SquarePen, to: { name: 'admin-productos' } },
+      { label: 'Catalogo de Categorías', icon: LayoutGrid, to: { name: 'admin-categorias' } },
     ],
   },
   {

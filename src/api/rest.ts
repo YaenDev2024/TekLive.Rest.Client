@@ -463,3 +463,222 @@ export async function deactivateAdminCatalogItem(
   )
   return { status, data: data.data }
 }
+
+// ---------------------------------------------------------------------------
+// Admin · Categorías (Fase 6.2 — réplica create_categorias.dart).
+// CRUD de categorías de productos del menú con scopes (GLOBAL/SUCURSAL/PLANT).
+// Backend en construcción en paralelo por otro agente (BusinessSuite,
+// api/rest/catalog/admin/categories). Mismo envelope { success, data, message }.
+// ---------------------------------------------------------------------------
+
+/** Una fila de alcance de la categoría (mismo shape que catalog items). */
+export interface RestAdminCategoryScope {
+  scopeType: CatalogScopeType
+  sucursalId?: number | null
+  plantId?: number | null
+}
+
+/** GET api/rest/catalog/admin/categories?sucursalId=N — categoría + scopes. */
+export interface RestAdminCategory {
+  id: number
+  nombre: string
+  /** ISO 8601 (orden DESC en el store, mismo patrón que items). */
+  createdAt?: string | null
+  scopes?: RestAdminCategoryScope[]
+}
+
+/** Body compartido de POST/PUT categorías (scope elegido en ScopeSelector). */
+export interface SaveAdminCategoryPayload {
+  nombre: string
+  scopeType: CatalogScopeType
+  sucursalId?: number | null
+  plantId?: number | null
+}
+
+/** GET …/categories → categorías[] (desenrollado). */
+export async function getAdminCategories(
+  sucursalId?: number,
+): Promise<ApiResult<RestAdminCategory[]>> {
+  const query = sucursalId != null ? `?sucursalId=${encodeURIComponent(sucursalId)}` : ''
+  const { status, data } = await apiGet<Envelope<RestAdminCategory[]>>(
+    `/api/rest/catalog/admin/categories${query}`,
+  )
+  return { status, data: data.data }
+}
+
+/** POST api/rest/catalog/admin/categories → 201 con { id } (desenrollado). */
+export interface CreatedAdminCategoryResponse {
+  id: number
+}
+
+export async function createAdminCategory(
+  body: SaveAdminCategoryPayload,
+): Promise<ApiResult<CreatedAdminCategoryResponse>> {
+  const { status, data } = await apiPost<Envelope<CreatedAdminCategoryResponse>>(
+    '/api/rest/catalog/admin/categories',
+    body,
+  )
+  return { status, data: data.data }
+}
+
+/** PUT api/rest/catalog/admin/categories/{id} → 200 (desenrollado). */
+export async function updateAdminCategory(
+  categoryId: number,
+  body: SaveAdminCategoryPayload,
+): Promise<ApiResult<Record<string, never>>> {
+  const { status, data } = await apiPut<Envelope<Record<string, never>>>(
+    `/api/rest/catalog/admin/categories/${encodeURIComponent(categoryId)}`,
+    body,
+  )
+  return { status, data: data.data }
+}
+
+/** DELETE api/rest/catalog/admin/categories/{id} — SOFT delete (desenrollado). */
+export async function deleteAdminCategory(
+  categoryId: number,
+): Promise<ApiResult<Record<string, never>>> {
+  const { status, data } = await apiDelete<Envelope<Record<string, never>>>(
+    `/api/rest/catalog/admin/categories/${encodeURIComponent(categoryId)}`,
+  )
+  return { status, data: data.data }
+}
+
+// ---------------------------------------------------------------------------
+// Admin · Productos (Fase 6.3 — builder de productos del menú con grupos de
+// opciones; el POS consume optionGroups para el wizard dinámico). Backend en
+// construcción en paralelo por otro agente (BusinessSuite,
+// api/rest/catalog/admin/products). Mismo envelope { success, data, message }.
+// ---------------------------------------------------------------------------
+
+/** Un valor de opción dentro de un grupo: referencia un catalog_item. */
+export interface RestAdminProductOptionValue {
+  id: number
+  catalogItemId: number
+  catalogItemName: string
+  /** Precio adicional que suma al elegirlo (puede ser negativo). */
+  priceModifier: number
+  displayOrder: number
+  isDefault: boolean
+}
+
+/** Grupo de opciones del producto (radio = selección única, checkbox = múltiple). */
+export interface RestAdminProductOptionGroup {
+  id: number
+  groupName: string
+  /** 'radio' | 'checkbox' (el wizard del POS lo interpreta igual que Flutter). */
+  groupType: string
+  minSelections: number
+  maxSelections: number
+  displayOrder: number
+  values: RestAdminProductOptionValue[]
+}
+
+/** GET api/rest/catalog/admin/products?sucursalId=N — producto completo. */
+export interface RestAdminProduct {
+  id: number
+  name: string
+  description?: string | null
+  categoryId?: number | null
+  basePrice: number
+  imageUrl?: string | null
+  isActive: boolean
+  /** ISO 8601 (orden DESC en el store, mismo patrón que items). */
+  createdAt?: string | null
+  scopes?: RestAdminCategoryScope[]
+  optionGroups?: RestAdminProductOptionGroup[]
+}
+
+/** Valor de opción al guardar: referencia el catalog_item elegido en el picker. */
+export interface SaveProductOptionValuePayload {
+  catalogItemId: number
+  priceModifier?: number
+  displayOrder?: number
+  isDefault?: boolean
+}
+
+/** Grupo de opciones al guardar (sin ids: el backend los asigna). */
+export interface SaveProductOptionGroupPayload {
+  groupName: string
+  groupType: string
+  minSelections: number
+  maxSelections: number
+  displayOrder: number
+  values: SaveProductOptionValuePayload[]
+}
+
+/** Body de POST api/rest/catalog/admin/products. */
+export interface CreateAdminProductPayload {
+  name: string
+  description?: string | null
+  categoryId?: number | null
+  basePrice: number
+  imageUrl?: string | null
+  scopeType: CatalogScopeType
+  sucursalId?: number | null
+  plantId?: number | null
+  optionGroups: SaveProductOptionGroupPayload[]
+}
+
+/** PUT api/rest/catalog/admin/products/{id} — mismo body + isActive. */
+export type UpdateAdminProductPayload = CreateAdminProductPayload & {
+  isActive: boolean
+}
+
+/** POST/PUT …/products → { id } (envelope desenrollado). */
+export interface SavedAdminProductResponse {
+  id: number
+}
+
+/** GET …/products → productos[] (desenrollado). */
+export async function getAdminProducts(
+  sucursalId?: number,
+): Promise<ApiResult<RestAdminProduct[]>> {
+  const query = sucursalId != null ? `?sucursalId=${encodeURIComponent(sucursalId)}` : ''
+  const { status, data } = await apiGet<Envelope<RestAdminProduct[]>>(
+    `/api/rest/catalog/admin/products${query}`,
+  )
+  return { status, data: data.data }
+}
+
+/** GET …/products/{id} → producto completo (desenrollado). */
+export async function getAdminProduct(
+  productId: number,
+): Promise<ApiResult<RestAdminProduct>> {
+  const { status, data } = await apiGet<Envelope<RestAdminProduct>>(
+    `/api/rest/catalog/admin/products/${encodeURIComponent(productId)}`,
+  )
+  return { status, data: data.data }
+}
+
+/** POST …/products → 201 con { id } (desenrollado). */
+export async function createAdminProduct(
+  body: CreateAdminProductPayload,
+): Promise<ApiResult<SavedAdminProductResponse>> {
+  const { status, data } = await apiPost<Envelope<SavedAdminProductResponse>>(
+    '/api/rest/catalog/admin/products',
+    body,
+  )
+  return { status, data: data.data }
+}
+
+/** PUT …/products/{id} → 200 (desenrollado). */
+export async function updateAdminProduct(
+  productId: number,
+  body: UpdateAdminProductPayload,
+): Promise<ApiResult<Record<string, never>>> {
+  const { status, data } = await apiPut<Envelope<Record<string, never>>>(
+    `/api/rest/catalog/admin/products/${encodeURIComponent(productId)}`,
+    body,
+  )
+  return { status, data: data.data }
+}
+
+/** DELETE …/products/{id} — SOFT delete (desenrollado). */
+export async function deleteAdminProduct(
+  productId: number,
+): Promise<ApiResult<Record<string, never>>> {
+  const { status, data } = await apiDelete<Envelope<Record<string, never>>>(
+    `/api/rest/catalog/admin/products/${encodeURIComponent(productId)}`,
+  )
+  return { status, data: data.data }
+}

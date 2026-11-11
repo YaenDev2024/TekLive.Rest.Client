@@ -16,6 +16,8 @@ const AUTH_ROUTES = new Set([
   'home',
   'admin-dashboard',
   'admin-catalogo',
+  'admin-categorias',
+  'admin-productos',
   'pos',
   'pos-piso1',
   'pos-ordenes',
@@ -54,6 +56,20 @@ const router = createRouter({
       path: '/admin/catalogo',
       name: 'admin-catalogo',
       component: ManageCatalogView,
+    },
+    {
+      // Fase 6.2: Catalogo de Categorías réplica create_categorias.dart
+      // (standalone, sin rail — CRUD de categorías con scopes).
+      path: '/admin/categorias',
+      name: 'admin-categorias',
+      component: () => import('./views/admin/ManageCategoriesView.vue'),
+    },
+    {
+      // Fase 6.3: Editar Productos — builder de productos con grupos de
+      // opciones (standalone, sin rail).
+      path: '/admin/productos',
+      name: 'admin-productos',
+      component: () => import('./views/admin/ProductEditorView.vue'),
     },
     {
       // Shell del POS (réplica desktop_home_layout): rail 80px + RouterView.
