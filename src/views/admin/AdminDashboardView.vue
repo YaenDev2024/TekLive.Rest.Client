@@ -303,6 +303,17 @@ const SECTIONS: AdminSection[] = [
   padding: 24px;
 }
 
+/* PHONE: padding compacto para que los tiles respiren a 360px */
+@media (max-width: 699px) {
+  .ad-body {
+    padding: 12px;
+  }
+
+  .ad-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+}
+
 /* ===== Section (L168-210) ===== */
 .ad-section {
   display: flex;

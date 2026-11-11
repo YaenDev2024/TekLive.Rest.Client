@@ -49,6 +49,9 @@ export const useKeyboardStore = defineStore('keyboard', () => {
     activeInput.value = input
     layout.value = type === 'numeric' ? 'numeric' : 'full'
     visible.value = true
+    // Bandera global: los modales suben su CTA cuando el teclado está abierto
+    // (verificación P0: CTA clicable con teclado visible a 360x740).
+    document.documentElement.classList.add('vk-open')
     // Guardar el inputmode original (numeric/decimal/text) para restaurarlo
     // en release() — el 'none' de supresión es temporal, no destructivo.
     if (input.dataset.vkOriginalInputmode === undefined) {
@@ -61,6 +64,7 @@ export const useKeyboardStore = defineStore('keyboard', () => {
   function hide(): void {
     visible.value = false
     activeInput.value = null
+    document.documentElement.classList.remove('vk-open')
   }
 
   /**

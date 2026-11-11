@@ -191,4 +191,23 @@ async function login(): Promise<void> {
 .login-submit {
   margin-top: 20px;
 }
+
+/* PHONE @360px (verificación demo): la card 400px desborda → min(380px,
+   calc(100vw - 32px)); réplica login_screen.dart L114-117 (SingleScroll
+   padding 24 + ConstrainedBox maxWidth 380: el ancho real en phone es
+   viewport - 48). Con teclado abierto la card sube (CTA visible). */
+@media (max-width: 699px) {
+  .login-card {
+    max-width: min(380px, calc(100vw - 32px));
+  }
+
+  .login-logo {
+    height: 160px;
+  }
+}
+
+/* Teclado virtual abierto: la card sube para que el botón Ingresar quede
+   visible/clicable (~440px libres a 360x740). La regla vive en style.css
+   global porque html.vk-open no puede combinarse con el scope de este SFC. */
+
 </style>

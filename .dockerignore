@@ -1,0 +1,28 @@
+# Local build artifacts
+node_modules
+dist
+dist-ssr
+
+# Logs
+*.log
+
+# Env files (el VPS pasa los valores reales como build-args del compose)
+.env
+.env.*
+!.env.example
+
+# Local tooling / editors
+.vscode
+.git
+.gitignore
+README.md
+DEPLOY.md
+
+# Native shells (no se compilan dentro del contenedor web)
+src-tauri
+android
+ios
+
+# Docker files themselves (no context needed)
+Dockerfile
+.dockerignore

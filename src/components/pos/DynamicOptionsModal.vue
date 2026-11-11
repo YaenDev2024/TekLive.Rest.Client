@@ -45,7 +45,7 @@
  * mitades/salsas-aparte que no viven en las selecciones estructurales).
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ArrowLeft, ArrowRight, Check, CircleMinus, CirclePlus, Lightbulb, X } from 'lucide-vue-next'
+import { ArrowLeft, ArrowRight, Check, CircleMinus, CirclePlus, Lightbulb, ReceiptText, X } from 'lucide-vue-next'
 import type {
   CatalogOptionGroup,
   CatalogOptionValue,
@@ -73,6 +73,32 @@ const emit = defineEmits<{ close: [] }>()
 
 const cart = useCartStore()
 const toast = useToastStore()
+
+// --- Narrow layout (réplica DynamicProductWizardDialog L2896-2899: el .dart
+// SÍ define layout narrow <900px de ancho o <700px de alto) ---------------
+const isNarrow = ref(false)
+let narrowMq: MediaQueryList | null = null
+function onNarrowMq(e: MediaQueryListEvent | MediaQueryList): void {
+  isNarrow.value = e.matches
+  if (!e.matches) ticketExpanded.value = false
+}
+
+/** En narrow el ticket lateral se colapsa a la barra superior; esto controla
+ * el resumen desplegable (desviación documentada: el .dart muestra el resumen
+ * SIEMPRE inline al final del scroll; aquí es colapsable para no empujar el
+ * grid fuera de pantalla con teclado). */
+const ticketExpanded = ref(false)
+
+onMounted(() => {
+  narrowMq = matchMedia('(max-width: 899px), (max-height: 699px)')
+  isNarrow.value = narrowMq.matches
+  narrowMq.addEventListener('change', onNarrowMq)
+})
+
+onBeforeUnmount(() => {
+  narrowMq?.removeEventListener('change', onNarrowMq)
+  narrowMq = null
+})
 
 // ---------------------------------------------------------------------------
 // Estado (réplica L1418-1437)
@@ -977,8 +1003,56 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
       </div>
 
       <template v-else>
-        <!-- PANEL IZQUIERDO: ticket (réplica L3081-3173) -->
-        <aside class="wiz-ticket" data-testid="wiz-ticket">
+        <!-- PHONE/NARROW (<900px, réplica L2899-3067): barra compacta superior
+             con producto + Subtotal + expandir ticket; sin panel lateral -->
+        <header v-if="isNarrow" class="wiz-topbar" data-testid="wiz-topbar">
+          <button
+            type="button"
+            class="wiz-topbar__expand"
+            :aria-expanded="ticketExpanded"
+            aria-label="Ver resumen de la orden"
+            data-testid="wiz-ticket-expand"
+            @click="ticketExpanded = !ticketExpanded"
+          >
+            <ReceiptText :size="18" aria-hidden="true" />
+          </button>
+          <div class="wiz-topbar__mid">
+            <span class="wiz-topbar__product">{{ template.name }}</span>
+            <span class="wiz-topbar__subtotal">Subtotal: {{ formatMoney(unitPrice) }}</span>
+          </div>
+          <button
+            type="button"
+            class="wiz-topbar__close"
+            aria-label="Cerrar"
+            data-testid="wiz-close"
+            @click="emit('close')"
+          >
+            <X :size="24" />
+          </button>
+        </header>
+
+        <!-- Resumen desplegable (solo phone, al expandir): réplica del bloque
+             'Resumen' del narrow .dart L2986-3014 -->
+        <div v-if="isNarrow && ticketExpanded" class="wiz-summary" data-testid="wiz-summary">
+          <div class="wiz-summary__scroll">
+            <p v-if="previewBlocks.length === 0" class="wiz-summary__empty">Sin selecciones todavía</p>
+            <div v-for="(block, bi) in previewBlocks" :key="bi" class="wiz-summary__block">
+              <p v-if="block.header != null" class="wiz-summary__group">{{ block.header }}</p>
+              <div
+                v-for="(row, ri) in block.rows"
+                :key="ri"
+                class="wiz-summary__row"
+                :class="{ 'wiz-summary__row--accent': row.tone === 'accent' }"
+              >
+                <Check :size="14" class="wiz-summary__check" aria-hidden="true" />
+                <span class="wiz-summary__text">{{ row.text }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PANEL IZQUIERDO: ticket (réplica L3081-3173) — oculto en narrow -->
+        <aside v-if="!isNarrow" class="wiz-ticket" data-testid="wiz-ticket">
           <header class="wiz-ticket__header">
             <h2 class="wiz-ticket__title">Orden Actual</h2>
             <p class="wiz-ticket__product">{{ template.name }}</p>
@@ -1006,7 +1080,7 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
 
         <!-- PANEL DERECHO: wizard (réplica L3177-3356) -->
         <section class="wiz-main">
-          <header class="wiz-main__header">
+          <header v-if="!isNarrow" class="wiz-main__header">
             <button
               type="button"
               class="wiz-main__close"
@@ -1575,7 +1649,9 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
   line-height: 1.4;
 }
 
-/* Grid de cards (réplica L3649-3655: 7/6/5 cols por ancho, aspect 1.05) */
+/* Grid de cards (réplica L3649-3655: 7/6/5 cols por ancho, aspect 1.05;
+   narrow Android réplica L3649-3658: tight <420 → 2 cols aspect 0.72,
+   phone <600 → 3 cols aspect 0.80, spacing 8/10, nombre 12px 3 líneas) */
 .wiz-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -1595,7 +1671,261 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
   }
 }
 
-/* Card (réplica L3726-3856) */
+/* ================= NARROW (<900px) — réplica L2899-3067 ====================
+   Dialog inset 12h/24v radius 20, altura 85%, header compacto con nombre
+   + X, contenido scroll, footer Atrás/Siguiente. Ticket lateral → barra
+   superior compacta + resumen desplegable (desviación documentada).
+   Grid: réplica _buildOptionCards narrow L3644-3658 (Android: tight<420
+   2 cols / phone 3 cols). */
+@media (max-width: 899px), (max-height: 699px) {
+  .wiz-overlay {
+    padding: 12px 12px 24px;
+    align-items: stretch;
+  }
+
+  .wiz {
+    flex-direction: column;
+    border-radius: 20px;
+    height: 100%;
+    max-width: none;
+  }
+
+  /* Ticket lateral oculto: su contenido vive en la topbar + resumen */
+  .wiz-ticket {
+    display: none;
+  }
+
+  /* Barra superior compacta: expandir + producto/Subtotal + X */
+  .wiz-topbar {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: #101010; /* grey[950] como el ticket */
+    border-bottom: 1px solid #424242;
+  }
+
+  .wiz-topbar__expand {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    flex: none;
+    padding: 0;
+    background: rgba(255, 87, 34, 0.14);
+    border: 1px solid rgba(255, 87, 34, 0.4);
+    border-radius: 10px;
+    color: var(--primary);
+    cursor: pointer;
+  }
+
+  .wiz-topbar__mid {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .wiz-topbar__product {
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .wiz-topbar__subtotal {
+    color: var(--primary);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .wiz-topbar__close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    flex: none;
+    padding: 0;
+    background: transparent;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+  }
+
+  /* Resumen desplegable (bloque 'Resumen' del narrow .dart L2986-3014) */
+  .wiz-summary {
+    flex: none;
+    max-height: 40%;
+    overflow-y: auto;
+    padding: 12px 16px;
+    background: #101010;
+    border-bottom: 1px solid #424242;
+  }
+
+  .wiz-summary__scroll {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .wiz-summary__empty {
+    margin: 0;
+    color: #9e9e9e;
+    font-size: 12px;
+  }
+
+  .wiz-summary__block {
+    margin-bottom: 10px;
+  }
+
+  .wiz-summary__group {
+    margin: 0 0 4px;
+    color: var(--primary);
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .wiz-summary__row {
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
+    padding: 0 0 3px 10px;
+  }
+
+  .wiz-summary__check {
+    flex: none;
+    margin-top: 1px;
+    color: #9e9e9e;
+  }
+
+  .wiz-summary__text {
+    color: #e0e0e0;
+    font-size: 12px;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+  }
+
+  .wiz-summary__row--accent .wiz-summary__text {
+    color: #ffcc80;
+    font-weight: 600;
+  }
+
+  /* Wizard: paddings compactos del narrow (16h/12v L2936) */
+  .wiz-main__scroll {
+    padding: 8px 16px 16px;
+  }
+
+  .wiz-main__group-name {
+    font-size: 20px; /* titleLarge narrow */
+  }
+
+  /* Grid narrow: phone 3 cols, tight (<420px) 2 cols — réplica L3649-3655 */
+  .wiz-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  .wiz-card {
+    aspect-ratio: 0.8; /* phone 0.80 */
+    gap: 4px;
+    padding: 6px;
+  }
+
+  .wiz-card__name {
+    font-size: 12px; /* isAndroid nameFontSize */
+    -webkit-line-clamp: 3; /* nameMaxLines narrow */
+    line-height: 1.2;
+  }
+
+  .wiz-card__steppers {
+    gap: 2px;
+  }
+
+  .wiz-card__step :deep(svg),
+  .wiz-card__steppers svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .wiz-card__qty {
+    font-size: 14px;
+  }
+
+  .wiz-card__badge {
+    font-size: 10px;
+    padding: 3px 6px;
+  }
+
+  /* Footer compacto (L3019-3062): padding 12h/12v, botones Expanded flex */
+  .wiz-footer {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .wiz-btn {
+    flex: 1;
+    justify-content: center;
+    padding: 12px 16px;
+    font-size: 15px;
+  }
+
+  .wiz-btn--next {
+    padding: 12px 16px;
+  }
+
+  .wiz-footer__spacer {
+    display: none;
+  }
+
+  .wiz-footer__placeholder {
+    display: none;
+  }
+}
+
+/* Ocultar topbar/resumen en desktop (solo existen en narrow) */
+.wiz-topbar,
+.wiz-summary {
+  display: none;
+}
+
+@media (max-width: 899px), (max-height: 699px) {
+  .wiz-topbar,
+  .wiz-summary {
+    display: flex;
+  }
+
+  .wiz-summary {
+    display: block;
+  }
+}
+
+/* tight (shortestSide<420 del .dart): 2 cols aspect 0.72, spacing 8.
+   DEBE ir DESPUÉS del bloque narrow: ambas queries aplican a <420px
+   (360<419 y 360<899) y CSS resuelve por orden — si va antes, el
+   repeat(2) del tight nunca gana y phone queda en 3 cols. */
+@media (max-width: 419px) {
+  .wiz-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .wiz-card {
+    aspect-ratio: 0.72;
+  }
+}
+
+/* Card (réplica L3726-3856).
+   IMPORTANTE: esta regla base (aspect 1.05) va DESPUÉS de los bloques
+   narrow/tight a propósito — CSS resuelve por orden de aparición, así el
+   aspect 0.8/0.72 de narrow/tight (<900px/<419px) gana sobre la base.
+   El grid-template-columns de .wiz-grid NUNCA se toca aquí (no hay
+   columnas base tras narrow: repeat(5) base solo aplica >899px). */
 .wiz-card {
   position: relative;
   display: flex;
@@ -1745,6 +2075,19 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
 .wiz-btn--next:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* Sub-diálogos en narrow: quepan con teclado (max-height ya cubre) */
+@media (max-width: 899px), (max-height: 699px) {
+  .sub-overlay {
+    padding: 16px;
+    align-items: flex-end;
+  }
+
+  .sub-dialog {
+    max-width: none;
+    max-height: 82vh;
+  }
 }
 
 /* ================= SUB-DIÁLOGOS (réplica AlertDialogs L3866-4857) ========== */

@@ -154,3 +154,60 @@ label {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ==========================================================================
+   Teclado virtual abierto (html.vk-open, gestionado por stores/keyboard.ts)
+   --------------------------------------------------------------------------
+   En phone el teclado propio ocupa ~300px abajo (position:fixed). Los modales
+   centrados (AppModal) dejar�an su CTA del footer debajo del teclado. Con la
+   bandera global, el footer de AppModal sube con el teclado y el overlay
+   alinea arriba para que todo siga clicable a 360x740 (~440px libres).
+   ========================================================================== */
+
+html.vk-open .app-modal {
+  align-items: flex-start;
+  padding-top: 8px;
+}
+
+html.vk-open .app-modal__card {
+  max-height: calc(100vh - 320px);
+  min-height: 220px;
+}
+
+html.vk-open .app-modal__body {
+  padding-bottom: 12px;
+}
+
+/* Login: con teclado abierto la card sube y el CTA queda siempre visible */
+html.vk-open .login-page {
+  align-items: flex-start !important;
+  padding-top: 12px;
+}
+
+/* POS phone: con el teclado abierto, el order-panel encaja arriba del
+   teclado (740 - 304 teclado - 64 bottom-nav ≈ 372px útiles). El footer
+   con el CTA queda visible sin que el teclado lo tape. */
+html.vk-open .pos-body--phone .order-panel {
+  flex: none;
+  height: calc(100vh - 368px);
+  min-height: 300px;
+}
+
+html.vk-open .pos-body--phone .op-header {
+  display: none; /* título/toggle no esenciales mientras se escribe */
+}
+
+html.vk-open .pos-body--phone .op-items {
+  flex: 1;
+  min-height: 0;
+}
+
+html.vk-open .pos-body--phone .op-footer {
+  flex: none;
+  padding: 10px 16px 12px;
+}
+
+/* Scroll suave del body de modal al enfocar inputs (CTA visible) */
+.app-modal__body {
+  scroll-behavior: smooth;
+}

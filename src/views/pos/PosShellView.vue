@@ -5,17 +5,21 @@
  * Layout raíz de CrazyWings desktop (desktop_home_layout.dart):
  *   Row [ DesktopNavRail(80px fijo), Expanded(vista activa) ]
  *
- * - Rail PERSISTENTE entre las 4 vistas: el carrito NO se pierde al navegar
- *   (Pinia conserva el estado de cart.ts; igual que el NavigationProvider
- *   de Flutter: una sola pantalla que cambia de contenido).
- * - NavigationRail M3 (desktop_nav_rail.dart L49): bg #303030, ancho 80,
- *   labelType.all (icono 24 + label 12 SIEMPRE visible), pill indicator
- *   56×32 radius 16 deepOrange detrás del icono seleccionado.
+ * DEMO multiplataforma (beta): en PHONE (<700px) el rail desaparece y se
+ * replica el MobileHomeLayout (mobile_home_layout.dart L16-47):
+ * BottomNavigationBar fixed de 4 items — Vender/Órdenes/Caja/Ajustes,
+ * BottomNavigationBarType.fixed, bg cardTheme (#303030), item activo
+ * deepOrange (theme.colorScheme.primary), inactivo onSurface 70%.
+ * Los .dart usan point_of_sale(_outlined)/receipt_long(_outlined)/
+ * account_balance_wallet(_outlined)/settings(_outlined) — aquí sus
+ * equivalentes lucide (Store/ReceiptText/Wallet/Settings).
+ * Los índices del original difieren del rail desktop (el mobile usa
+ * 0=Vender,1=Ordenes,2=Caja,3=Ajustes) — se respeta el orden del .dart.
  * - Roles (L24-29): Administrador/RestAdmin → {0,1,2,3}; CAJERO → {0,1,3}.
  *   Click sin permiso → toast "Acceso denegado para tu rol" (SnackBar).
  * - Trailing: logout (L74-87): clearSession → /login.
  */
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, RouterView, useRouter } from 'vue-router'
 import { LogOut, ReceiptText, Settings, Store, Wallet } from 'lucide-vue-next'
 import { clearSession, session } from '../../services/auth'
@@ -23,6 +27,25 @@ import { useToastStore } from '../../stores/toast'
 
 const router = useRouter()
 const toast = useToastStore()
+
+/** Umbral phone: coincide con el CSS <700px del bottom nav. */
+const PHONE_MAX = 700
+const isPhone = ref(false)
+let mq: MediaQueryList | null = null
+function onMqChange(e: MediaQueryListEvent | MediaQueryList): void {
+  isPhone.value = e.matches
+}
+
+onMounted(() => {
+  mq = matchMedia(`(max-width: ${PHONE_MAX - 1}px)`)
+  isPhone.value = mq.matches
+  mq.addEventListener('change', onMqChange)
+})
+
+onBeforeUnmount(() => {
+  mq?.removeEventListener('change', onMqChange)
+  mq = null
+})
 
 /** Índice activo según la ruta (0 Vender · 1 Órdenes · 2 Ajustes · 3 Caja). */
 const selectedIndex = computed<number>(() => {
@@ -34,6 +57,23 @@ const selectedIndex = computed<number>(() => {
     case 'pos-ajustes':
       return 2
     case 'pos-caja':
+      return 3
+    default:
+      return 0
+  }
+})
+
+/** Índice MOBILE según el BottomNavigationBar del original: 0=Vender,
+ * 1=Ordenes, 2=Caja, 3=Ajustes (orden del .dart, distinto del rail). */
+const mobileIndex = computed<number>(() => {
+  switch (router.currentRoute.value.name) {
+    case 'pos-piso1':
+      return 0
+    case 'pos-ordenes':
+      return 1
+    case 'pos-caja':
+      return 2
+    case 'pos-ajustes':
       return 3
     default:
       return 0
@@ -67,6 +107,14 @@ const destinations: RailDestination[] = [
   { index: 3, label: 'Caja', icon: Wallet, to: { name: 'pos-caja' }, testid: 'rail-caja' },
 ]
 
+/** Ítems del BottomNavigationBar móvil (orden EXACTO del .dart L25-46). */
+const mobileDestinations: RailDestination[] = [
+  { index: 0, label: 'Vender', icon: Store, to: { name: 'pos-piso1' }, testid: 'bottom-vender' },
+  { index: 1, label: 'Órdenes', icon: ReceiptText, to: { name: 'pos-ordenes' }, testid: 'bottom-ordenes' },
+  { index: 2, label: 'Caja', icon: Wallet, to: { name: 'pos-caja' }, testid: 'bottom-caja' },
+  { index: 3, label: 'Ajustes', icon: Settings, to: { name: 'pos-ajustes' }, testid: 'bottom-ajustes' },
+]
+
 function onDestination(dest: RailDestination): void {
   if (!allowed.value.has(dest.index)) {
     // Réplica SnackBar L52-56.
@@ -84,8 +132,8 @@ async function logout(): Promise<void> {
 </script>
 
 <template>
-  <div class="pos-shell">
-    <!-- ================= DESKTOP NAV RAIL (80px) ================= -->
+  <div class="pos-shell" :class="{ 'pos-shell--phone': isPhone }">
+    <!-- ================= DESKTOP NAV RAIL (80px, oculto <700px) ================= -->
     <nav class="rail" data-testid="nav-rail" aria-label="Navegación del POS">
       <!-- Leading: logo (desktop_nav_rail.dart L63-66, height 40, vpadding 20) -->
       <RouterLink to="/home" class="rail-leading" aria-label="Ir al inicio">
@@ -130,6 +178,28 @@ async function logout(): Promise<void> {
     <div class="pos-shell-view">
       <RouterView />
     </div>
+
+    <!-- ============ BOTTOM NAV PHONE (mobile_home_layout.dart L16-47) ============ -->
+    <nav
+      v-if="isPhone"
+      class="bottom-nav"
+      data-testid="bottom-nav"
+      aria-label="Navegación móvil del POS"
+    >
+      <button
+        v-for="dest in mobileDestinations"
+        :key="dest.index"
+        type="button"
+        class="bottom-nav__item"
+        :class="{ 'bottom-nav__item--active': mobileIndex === dest.index }"
+        :data-testid="dest.testid"
+        :aria-current="mobileIndex === dest.index ? 'page' : undefined"
+        @click="onDestination(dest)"
+      >
+        <component :is="dest.icon" :size="24" class="bottom-nav__icon" aria-hidden="true" />
+        <span class="bottom-nav__label">{{ dest.label }}</span>
+      </button>
+    </nav>
   </div>
 </template>
 
@@ -152,15 +222,61 @@ async function logout(): Promise<void> {
   overflow: hidden;
 }
 
-/* NavigationRail: ancho 80 exacto, bg cardTheme (#303030), altura completa */
-.rail {
-  width: 80px;
-  flex: none;
+/* PHONE: deja espacio para el bottom nav fijo (SafeArea réplica) */
+@media (max-width: 699px) {
+  .pos-shell-view {
+    height: auto;
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* ================= BOTTOM NAV PHONE (mobile_home_layout.dart L16-47) ======
+   BottomNavigationBar type.fixed: bg cardTheme (#303030), item activo
+   deepOrange, inactivo onSurface 70%. Fijado abajo, safe-area iOS/notch. */
+.bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  display: flex;
+  align-items: stretch;
+  background: #303030; /* theme.cardTheme.color */
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  height: calc(64px + env(safe-area-inset-bottom, 0px));
+}
+
+.bottom-nav__item {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  background: #303030;
-  height: 100%;
+  justify-content: center;
+  gap: 4px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bottom-nav__icon {
+  color: rgba(255, 255, 255, 0.7); /* onSurface .7 */
+  transition: color 0.15s ease;
+}
+
+.bottom-nav__label {
+  font-size: 12px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.7);
+  transition: color 0.15s ease;
+}
+
+.bottom-nav__item--active .bottom-nav__icon,
+.bottom-nav__item--active .bottom-nav__label {
+  color: var(--primary); /* selectedItemColor deepOrange */
 }
 
 /* Leading: logo 40px con padding vertical 20 */
@@ -250,6 +366,13 @@ async function logout(): Promise<void> {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* PHONE: el rail entero se oculta (solo queda el bottom nav) */
+@media (max-width: 699px) {
+  .rail {
+    display: none;
+  }
 }
 
 .rail-logout {

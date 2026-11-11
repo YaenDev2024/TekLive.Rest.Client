@@ -40,7 +40,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import {
   Soup, Info, Search, Trash2, Utensils, CircleMinus, CirclePlus,
-  SquarePen, User, UtensilsCrossed, ReceiptText,
+  SquarePen, User, UtensilsCrossed, ReceiptText, SquareMenu,
 } from 'lucide-vue-next'
 import type { CatalogExtra, CatalogTemplate } from '../../api/pos-types'
 import { POS_PLANT_ID, POS_SUCURSAL_ID, useCatalogStore } from '../../stores/catalog'
@@ -61,6 +61,39 @@ const cart = useCartStore()
 const ordersStore = useOrdersStore()
 const toast = useToastStore()
 
+// --- Phone layout (pos_view.dart L53-82 del original Flutter) ---------------
+// En phones (!Windows && width<1000) el original NO apila: usa DefaultTabController
+// con TabBar 'Menú | Orden' a pantalla completa. Aquí el breakpoint demo es
+// <700px (donde el rail desaparece); 700-1024 conserva el stack de tablet.
+
+const isPhone = ref(false)
+let phoneMq: MediaQueryList | null = null
+function onPhoneMq(e: MediaQueryListEvent | MediaQueryList): void {
+  isPhone.value = e.matches
+}
+
+onMounted(() => {
+  void catalog.fetchCatalog(POS_PLANT_ID)
+  // Flutter mide el ancho del CONTENEDOR (LayoutBuilder), no la ventana:
+  // con panel de 290px fijo, contenedor = viewport − 290. ResizeObserver
+  // porque el wrap solo existe cuando el catálogo termina de cargar.
+  gridObserver = new ResizeObserver(onGridWrapResize)
+  // Tab phone Menú|Orden (pos_view.dart L57-82).
+  phoneMq = matchMedia('(max-width: 699px)')
+  isPhone.value = phoneMq.matches
+  phoneMq.addEventListener('change', onPhoneMq)
+})
+
+onBeforeUnmount(() => {
+  gridObserver?.disconnect()
+  gridObserver = null
+  phoneMq?.removeEventListener('change', onPhoneMq)
+  phoneMq = null
+})
+
+/** Pestaña activa del TabBar phone: 0 = Menú, 1 = Orden (TabBarView). */
+const phoneTab = ref(0)
+
 // --- Catálogo ---------------------------------------------------------------
 
 const gridWrap = ref<HTMLElement | null>(null)
@@ -70,27 +103,31 @@ function onGridWrapResize(): void {
   if (gridWrap.value != null) gridWidth.value = gridWrap.value.clientWidth
 }
 
-/** Réplica LayoutBuilder menu_content.dart: <900→3 | <1200→4 | else→5 columnas. */
+/**
+ * Réplica LayoutBuilder menu_content.dart L249-256/L283-290: NO-Windows
+ * gridWidth<700 → 2 columnas aspect 1.1 (phone); <1100 → 3; else → 4.
+ * En desktop-VENTANA (nuestro caso) se conserva 3/4/5 del rail desktop,
+ * pero cuando el TabBar phone está activo aplica la rama no-Windows.
+ */
 const gridColumns = computed<number>(() => {
+  if (isPhone.value) {
+    // Rama no-Windows del .dart (gridWidth<700 → 2; <1100 → 3; else 4).
+    if (gridWidth.value < 700) return 2
+    if (gridWidth.value < 1100) return 3
+    return 4
+  }
   if (gridWidth.value < 900) return 3
   if (gridWidth.value < 1200) return 4
   return 5
 })
 
+/** Aspect ratio réplica L256/L290: no-Windows gridWidth<500 → 1.1, else 0.95. */
+const gridAspectRatio = computed<string>(() => {
+  if (isPhone.value && gridWidth.value < 500) return '1.1'
+  return '0.95'
+})
+
 let gridObserver: ResizeObserver | null = null
-
-onMounted(() => {
-  void catalog.fetchCatalog(POS_PLANT_ID)
-  // Flutter mide el ancho del CONTENEDOR (LayoutBuilder), no la ventana:
-  // con panel de 290px fijo, contenedor = viewport − 290. ResizeObserver
-  // porque el wrap solo existe cuando el catálogo termina de cargar.
-  gridObserver = new ResizeObserver(onGridWrapResize)
-})
-
-onBeforeUnmount(() => {
-  gridObserver?.disconnect()
-  gridObserver = null
-})
 
 /** Observa el wrap cuando aparece en el DOM (v-else-if tras el fetch). */
 function onGridWrapRef(el: Element | ComponentPublicInstance | null): void {
@@ -407,10 +444,44 @@ const canSell = computed(() => cart.canSell)
       </AppButton>
     </div>
 
-    <!-- Layout raíz: Row = MenuContent(expandible) + OrderPanel(290px) -->
-    <div v-else-if="catalog.catalog" class="pos-body">
+    <!-- Layout raíz: phone → TabBar Menú|Orden (pos_view.dart L57-82);
+         desktop/tablet → Row = MenuContent(expandible) + OrderPanel(290px) -->
+    <div v-else-if="catalog.catalog" class="pos-body" :class="{ 'pos-body--phone': isPhone }">
+      <!-- TabBar phone (solo <700px): réplica Tab Flutter 'Menú' icon restaurant_menu
+           + 'Orden' icon receipt_long; bg cardTheme, indicador deepOrange -->
+      <div v-if="isPhone" class="phone-tabs" role="tablist" aria-label="Menú u Orden">
+        <button
+          type="button"
+          role="tab"
+          class="phone-tab"
+          :class="{ 'phone-tab--active': phoneTab === 0 }"
+          :aria-selected="phoneTab === 0"
+          data-testid="phone-tab-menu"
+          @click="phoneTab = 0"
+        >
+          <SquareMenu :size="18" aria-hidden="true" />
+          Menú
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="phone-tab"
+          :class="{ 'phone-tab--active': phoneTab === 1 }"
+          :aria-selected="phoneTab === 1"
+          data-testid="phone-tab-orden"
+          @click="phoneTab = 1"
+        >
+          <ReceiptText :size="18" aria-hidden="true" />
+          Orden
+        </button>
+      </div>
+
       <!-- ================= MENUCONTENT ================= -->
-      <section class="menu" aria-label="Menú">
+      <section
+        v-show="!isPhone || phoneTab === 0"
+        class="menu"
+        aria-label="Menú"
+      >
         <!-- Header: título+fecha izquierda, búsqueda derecha -->
         <header class="menu-header">
           <div class="menu-header-text">
@@ -480,7 +551,7 @@ const canSell = computed(() => cart.canSell)
           <div
             v-if="isExtrasTab"
             class="menu-grid"
-            :style="{ gridTemplateColumns: `repeat(${gridColumns}, 1fr)` }"
+            :style="{ gridTemplateColumns: `repeat(${gridColumns}, 1fr)`, gridAutoRows: `calc(100% / ${gridColumns} / ${gridAspectRatio})` }"
             data-testid="extras-grid"
           >
             <button
@@ -509,7 +580,7 @@ const canSell = computed(() => cart.canSell)
           <div
             v-else
             class="menu-grid"
-            :style="{ gridTemplateColumns: `repeat(${gridColumns}, 1fr)` }"
+            :style="{ gridTemplateColumns: `repeat(${gridColumns}, 1fr)`, gridAutoRows: `calc(100% / ${gridColumns} / ${gridAspectRatio})` }"
           >
             <div
               v-for="template in filteredTemplates"
@@ -549,8 +620,12 @@ const canSell = computed(() => cart.canSell)
         </div>
       </section>
 
-      <!-- ================= ORDER PANEL (290px) ================= -->
-      <aside class="order-panel" data-testid="order-panel">
+      <!-- ================= ORDER PANEL (290px / tab 2 phone) ================= -->
+      <aside
+        v-show="!isPhone || phoneTab === 1"
+        class="order-panel"
+        data-testid="order-panel"
+      >
         <!-- Header: título + toggle tipo + formularios condicionales
              (réplica order_panel.dart L346-405) -->
         <div class="op-header">
@@ -974,7 +1049,9 @@ const canSell = computed(() => cart.canSell)
   margin: 0 10px;
 }
 
-/* Grid responsivo por ancho de contenedor: <900→3 | <1200→4 | else→5 */
+/* Grid responsivo por ancho de contenedor: <900→3 | <1200→4 | else→5
+   (columnas + altura de fila calculadas en el script: réplica del
+   childAspectRatio Flutter — ancho/aspecto = alto de fila) */
 .menu-grid-wrap {
   flex: 1;
   overflow-y: auto;
@@ -1002,7 +1079,6 @@ const canSell = computed(() => cart.canSell)
    SIN botón Add: el click en cualquier parte del card abre el modal.
    ========================================================================== */
 .product-card {
-  aspect-ratio: 0.95;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1090,7 +1166,6 @@ const canSell = computed(() => cart.canSell)
    en CatalogExtra, solo CategoryId).
    ========================================================================== */
 .extra-card {
-  aspect-ratio: 0.95;
   display: flex;
   flex-direction: column;
   padding: 0;
@@ -1596,6 +1671,91 @@ const canSell = computed(() => cart.canSell)
 
   .menu-grid-wrap {
     padding: 8px;
+  }
+}
+
+/* ==========================================================================
+   PHONE (<700px) — pos_view.dart L53-82 del original Flutter:
+   NO apila el POS. TabBar 'Menú | Orden' arriba (Container cardTheme +
+   TabBar M3: labels+iconos, indicador deepOrange 2px abajo) y la pestaña
+   activa ocupa la pantalla completa. Grid 2 cols aspect 1.1 (rama
+   no-Windows width<700 del menu_content.dart).
+   ========================================================================== */
+.pos-body--phone {
+  flex-direction: column;
+}
+
+.phone-tabs {
+  display: none; /* solo visible <700px */
+}
+
+@media (max-width: 699px) {
+  .pos-body--phone {
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* TabBar Flutter: Container color cardTheme (#303030) full width */
+  .phone-tabs {
+    display: flex;
+    flex: none;
+    background: #303030;
+  }
+
+  /* Tab M3: label+icono 14px w500, alto 48-56, indicador 2px deepOrange
+     bajo la pestaña activa; inactivo blanco70 */
+  .phone-tab {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 48px;
+    padding: 10px 8px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: rgba(255, 255, 255, 0.7);
+    font-family: var(--font);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .phone-tab--active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+  }
+
+  /* La pestaña visible llena la pantalla (TabBarView): el menú ya es
+     flex:1 del column; el order-panel pasa a ancho completo */
+  .order-panel {
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+    border-top: none;
+  }
+
+  /* Menú 2 columnas: el spacing del grid pasa a 8 (isNarrow L262-263) */
+  .menu-grid {
+    gap: 8px;
+  }
+
+  .menu-grid-wrap {
+    padding: 8px;
+  }
+
+  /* Header compacto en phone: la búsqueda ocupa el resto (170px fijo
+     desborda a 360px) */
+  .menu-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .menu-search {
+    width: min(170px, 100%);
   }
 }
 </style>

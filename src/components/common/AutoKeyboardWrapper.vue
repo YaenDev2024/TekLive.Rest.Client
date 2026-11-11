@@ -26,6 +26,23 @@ import VirtualKeyboard from './VirtualKeyboard.vue'
 
 const kb = useKeyboardStore()
 
+/**
+ * visualViewport: en phone el navegador puede encoger el viewport cuando el
+ * teclado del SO aparece (aunque aquí el teclado es propio, Android WebView/
+ * Chrome puede reservar espacio en algunos flujos). Medimos el espacio libre
+ * y, si el input activo queda tapado, lo traemos a la vista para que su CTA
+ * siga clicable (verificación demo P0: Checkout/StartSession/Catálogo/Login).
+ */
+let vv: VisualViewport | null = null
+function onViewportChange(): void {
+  if (vv == null) return
+  const freeBottom = window.innerHeight - (vv.height + vv.offsetTop)
+  if (freeBottom > 80) {
+    // Teclado nativo visible: asegurar que el input activo siga visible.
+    kb.activeInput?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }
+}
+
 const isCoarse = (): boolean => matchMedia('(pointer: coarse)').matches
 
 function isEditable(target: EventTarget | null): HTMLInputElement | HTMLTextAreaElement | null {
@@ -88,12 +105,17 @@ function handleKeydownGlobal(event: KeyboardEvent): void {
   document.addEventListener('pointerdown', handlePointerDown, true)
   document.addEventListener('focusin', handleFocusIn, true)
   document.addEventListener('keydown', handleKeydownGlobal)
+  // visualViewport resize (teclado SO en phone): mantener el input visible.
+  vv = window.visualViewport ?? null
+  vv?.addEventListener('resize', onViewportChange)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', handlePointerDown, true)
   document.removeEventListener('focusin', handleFocusIn, true)
   document.removeEventListener('keydown', handleKeydownGlobal)
+  vv?.removeEventListener('resize', onViewportChange)
+  vv = null
 })
 </script>
 
