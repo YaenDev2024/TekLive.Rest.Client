@@ -63,13 +63,23 @@ const hasNoFloors = computed(
 )
 
 /**
- * Réplica _notify (L71-76): plantId solo cuenta con scopeType PLANT.
- * Emite update:modelValue + change (el original llama onChanged).
+ * Normaliza (plantId solo cuenta con scopeType PLANT), escribe el model y
+ * notifica (réplica _notify L71-76 + L105-108).
+ *
+ * ⚠️ NO releer model.value después de escribirlo en el mismo tick:
+ * defineModel no sincroniza el valor local hasta el round-trip del padre
+ * (el set solo EMITE) — una relectura devuelve el valor STALE y re-emite
+ * el valor viejo, pisando el nuevo (bug: "el dropdown vuelve a Global").
+ * Todo se calcula desde `next` explícito, leyendo model.value solo ANTES
+ * de la primera escritura.
  */
-function notify(): void {
-  const plantId = model.value.scopeType === 'PLANT' ? model.value.plantId : null
-  model.value = { scopeType: model.value.scopeType, plantId }
-  emit('change', model.value.scopeType, plantId)
+function setScope(next: ScopeValue): void {
+  const normalized: ScopeValue = {
+    scopeType: next.scopeType,
+    plantId: next.scopeType === 'PLANT' ? next.plantId : null,
+  }
+  model.value = normalized
+  emit('change', normalized.scopeType, normalized.plantId)
 }
 
 /** v-model del AppSelect de alcance: escribe scopeType y notifica. */
@@ -77,11 +87,7 @@ const scopeModel = computed<CatalogScopeType>({
   get: () => model.value.scopeType,
   set: (value) => {
     // Réplica L105-108: al cambiar de alcance se limpia plantId si != PLANT.
-    model.value = {
-      scopeType: value,
-      plantId: value === 'PLANT' ? model.value.plantId : null,
-    }
-    notify()
+    setScope({ scopeType: value, plantId: model.value.plantId })
   },
 })
 
@@ -94,8 +100,7 @@ const floorOptions = computed(() =>
 const plantModel = computed<number | null>({
   get: () => (showPlantDropdown.value ? (model.value.plantId ?? null) : null),
   set: (value) => {
-    model.value = { ...model.value, plantId: value }
-    notify()
+    setScope({ scopeType: model.value.scopeType, plantId: value })
   },
 })
 </script>
