@@ -85,7 +85,7 @@ import type { FunctionalComponent } from 'vue'
 import AppModal from '../../components/pos/AppModal.vue'
 import ScopeSelector from '../../components/admin/ScopeSelector.vue'
 import type { ScopeValue } from '../../components/admin/ScopeSelector.vue'
-import { AppSpinner } from '../../components/ui'
+import { AppSpinner, AppSelect } from '../../components/ui'
 import { session } from '../../services/auth'
 import { useAdminCatalogStore, CATALOG_ITEM_TIPOS } from '../../stores/adminCatalog'
 import { useToastStore } from '../../stores/toast'
@@ -516,16 +516,16 @@ const hasSearch = computed(() => store.searchQuery.length > 0)
       @close="closeDialog"
     >
       <form class="mc-form" @submit.prevent="submitForm">
-        <!-- Tipo dropdown SIN 'TODOS' (L116-129) -->
+        <!-- Tipo dropdown SIN 'TODOS' (L116-129) — AppSelect propio (picker
+             nativo de iOS PWA no confirma la opción tocada) -->
         <div class="mc-field">
           <label class="mc-label" for="mc-f-tipo">Tipo</label>
-          <div class="mc-select-wrap">
-            <select id="mc-f-tipo" v-model="form.tipo" class="mc-select" data-testid="mc-f-tipo">
-              <option v-for="tipo in CATALOG_ITEM_TIPOS.filter((t) => t !== 'TODOS')" :key="tipo" :value="tipo">
-                {{ tipo }}
-              </option>
-            </select>
-          </div>
+          <AppSelect
+            v-model="form.tipo"
+            :options="CATALOG_ITEM_TIPOS.filter((t) => t !== 'TODOS').map((t) => ({ value: t, label: t }))"
+            testid="mc-f-tipo"
+            aria-label="Tipo"
+          />
         </div>
 
         <!-- ScopeSelector (L131-140) -->

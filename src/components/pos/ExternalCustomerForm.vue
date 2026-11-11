@@ -25,6 +25,7 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Search, CheckCircle2, X, Pencil, User, Store } from 'lucide-vue-next'
+import { AppSelect } from '../ui'
 import {
   createCustomer,
   getFrequentCustomers,
@@ -381,11 +382,16 @@ const submitLabel = computed(() => (isEditingSelected.value ? 'Actualizar' : 'Cr
         <input id="ecf-contact" v-model="contactPerson" type="text" class="ecf__input" data-testid="customer-contact" />
         <label class="ecf__label" for="ecf-company">Nombre de empresa</label>
         <input id="ecf-company" v-model="companyName" type="text" class="ecf__input" data-testid="customer-company" />
-        <label class="ecf__label" for="ecf-type">Tipo</label>
-        <select id="ecf-type" v-model="customerType" class="ecf__input" data-testid="customer-type">
-          <option value="INDIVIDUAL">INDIVIDUAL</option>
-          <option value="EMPRESA">EMPRESA</option>
-        </select>
+        <label class="ecf__label">Tipo</label>
+        <AppSelect
+          v-model="customerType"
+          :options="[
+            { value: 'INDIVIDUAL', label: 'INDIVIDUAL' },
+            { value: 'EMPRESA', label: 'EMPRESA' },
+          ]"
+          testid="customer-type"
+          aria-label="Tipo"
+        />
         <label class="ecf__label" for="ecf-time">Horario de entrega preferido</label>
         <input id="ecf-time" v-model="deliveryTime" type="text" class="ecf__input" data-testid="customer-time" />
         <label class="ecf__label" for="ecf-comments">Comentarios</label>

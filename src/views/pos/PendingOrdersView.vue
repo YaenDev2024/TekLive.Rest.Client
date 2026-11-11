@@ -51,7 +51,7 @@ import { POS_PLANT_ID } from '../../stores/catalog'
 import { useCashStore } from '../../stores/cash'
 import { useOrdersStore } from '../../stores/orders'
 import { useToastStore } from '../../stores/toast'
-import { AppBanner, AppSpinner } from '../../components/ui'
+import { AppBanner, AppSelect, AppSpinner } from '../../components/ui'
 import CancelOrderModal from '../../components/pos/CancelOrderModal.vue'
 import { printPendingKitchenTicket, printSaleTickets } from '../../services/ticket'
 
@@ -126,6 +126,12 @@ function switchFilter(filter: StatusFilter): void {
   expandedId.value = null // el detalle cacheado no aplica al cambiar de filtro
   void refresh()
 }
+
+/** v-model del AppSelect de estatus: el setter dispara la recarga. */
+const filterModel = computed<StatusFilter>({
+  get: () => activeFilter.value,
+  set: (value) => switchFilter(value),
+})
 
 onMounted(() => {
   void refresh()
@@ -509,17 +515,18 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
         >
           <Receipt :size="18" aria-hidden="true" />
         </button>
-        <select
-          v-model="activeFilter as string"
-          class="po-status-select"
+        <!-- Filtro estatus: AppSelect propio (picker nativo de iOS PWA no
+             confirma la opción tocada); setter dispara la recarga -->
+        <AppSelect
+          v-model="filterModel"
+          :options="[
+            { value: 'Pendiente', label: 'Pendientes' },
+            { value: 'Entregadas', label: 'Entregadas' },
+            { value: 'Todas', label: 'Todas' },
+          ]"
+          testid="orders-status"
           aria-label="Filtrar por estatus"
-          data-testid="orders-status"
-          @change="switchFilter(($event.target as HTMLSelectElement).value as StatusFilter)"
-        >
-          <option value="Pendiente">Pendientes</option>
-          <option value="Entregadas">Entregadas</option>
-          <option value="Todas">Todas</option>
-        </select>
+        />
       </div>
     </div>
 
@@ -957,26 +964,6 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 
 .po-today-btn--active {
   color: var(--text); /* blanco si es hoy (L302-304) */
-}
-
-/* Dropdown de estatus (DropdownButton underline grey[700], texto 12 blanco) */
-.po-status-select {
-  flex: 1;
-  min-width: 140px;
-  padding: 8px 6px;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid var(--border); /* underline grey[700] */
-  color: var(--text);
-  font-family: var(--font);
-  font-size: 12px;
-  cursor: pointer;
-  outline: none;
-}
-
-.po-status-select option {
-  background: var(--bg-surface); /* dropdownColor grey[850] */
-  color: var(--text);
 }
 
 /* ================= LISTA (ListView padding 16) ================= */

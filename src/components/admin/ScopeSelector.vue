@@ -24,9 +24,9 @@
  * v-model: { scopeType, plantId } (update:modelValue en cada cambio).
  */
 import { computed, onMounted, ref } from 'vue'
-import { ChevronDown } from 'lucide-vue-next'
 import { useFloorsStore } from '../../stores/floors'
 import { POS_SUCURSAL_ID } from '../../stores/catalog'
+import { AppSelect } from '../ui'
 import type { CatalogScopeType } from '../../api/rest'
 
 export interface ScopeValue {
@@ -72,43 +72,46 @@ function notify(): void {
   emit('change', model.value.scopeType, plantId)
 }
 
-function onScopeChange(event: Event): void {
-  const value = (event.target as HTMLSelectElement).value as CatalogScopeType
-  // Réplica L105-108: al cambiar de alcance se limpia plantId si != PLANT.
-  model.value = {
-    scopeType: value,
-    plantId: value === 'PLANT' ? model.value.plantId : null,
-  }
-  notify()
-}
+/** v-model del AppSelect de alcance: escribe scopeType y notifica. */
+const scopeModel = computed<CatalogScopeType>({
+  get: () => model.value.scopeType,
+  set: (value) => {
+    // Réplica L105-108: al cambiar de alcance se limpia plantId si != PLANT.
+    model.value = {
+      scopeType: value,
+      plantId: value === 'PLANT' ? model.value.plantId : null,
+    }
+    notify()
+  },
+})
 
-function onPlantChange(event: Event): void {
-  const raw = (event.target as HTMLSelectElement).value
-  model.value = { ...model.value, plantId: raw === '' ? null : Number(raw) }
-  notify()
-}
+/** Opciones del dropdown de piso: '{name} (#{id})' (L135 réplica). */
+const floorOptions = computed(() =>
+  floorsStore.floors.map((f) => ({ value: f.floorId, label: `${f.name} (#${f.floorId})` })),
+)
+
+/** v-model del AppSelect de piso: null = sin seleccionar. */
+const plantModel = computed<number | null>({
+  get: () => (showPlantDropdown.value ? (model.value.plantId ?? null) : null),
+  set: (value) => {
+    model.value = { ...model.value, plantId: value }
+    notify()
+  },
+})
 </script>
 
 <template>
   <div class="scope" :data-testid="`scope-${model.scopeType.toLowerCase()}`">
-    <!-- Dropdown Alcance (L88-112): filled grey[900], label 'Alcance' -->
+    <!-- Dropdown Alcance (L88-112): AppSelect propio (picker nativo de iOS
+         PWA no confirma la opción tocada) -->
     <div class="scope-field">
       <label class="scope-label" for="scope-type">Alcance</label>
-      <div class="scope-select-wrap">
-        <select
-          id="scope-type"
-          class="scope-select"
-          :value="model.scopeType"
-          aria-label="Alcance"
-          data-testid="scope-type"
-          @change="onScopeChange"
-        >
-          <option v-for="opt in SCOPE_OPTIONS" :key="opt.value" :value="opt.value">
-            {{ opt.label }}
-          </option>
-        </select>
-        <ChevronDown :size="18" class="scope-caret" aria-hidden="true" />
-      </div>
+      <AppSelect
+        v-model="scopeModel"
+        :options="SCOPE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))"
+        testid="scope-type"
+        aria-label="Alcance"
+      />
     </div>
 
     <!-- 'Sucursal actual: N' (L114) — constante POS_SUCURSAL_ID -->
@@ -116,26 +119,17 @@ function onPlantChange(event: Event): void {
       Sucursal actual: {{ POS_SUCURSAL_ID }}
     </p>
 
-    <!-- Dropdown Piso SOLO en PLANT (L115-151) -->
+    <!-- Dropdown Piso SOLO en PLANT (L115-151) — AppSelect propio -->
     <template v-if="showPlantDropdown">
       <div class="scope-field">
         <label class="scope-label" for="scope-plant">Piso</label>
-        <div class="scope-select-wrap">
-          <select
-            id="scope-plant"
-            class="scope-select"
-            :value="model.plantId ?? ''"
-            aria-label="Piso"
-            data-testid="scope-plant"
-            @change="onPlantChange"
-          >
-            <option :value="''" disabled>Selecciona un piso</option>
-            <option v-for="f in floorsStore.floors" :key="f.floorId" :value="f.floorId">
-              {{ f.name }} (#{{ f.floorId }})
-            </option>
-          </select>
-          <ChevronDown :size="18" class="scope-caret" aria-hidden="true" />
-        </div>
+        <AppSelect
+          v-model="plantModel"
+          :options="floorOptions"
+          placeholder="Selecciona un piso"
+          testid="scope-plant"
+          aria-label="Piso"
+        />
         <!-- Hint rojo 12px (L139-150) -->
         <p v-if="model.plantId == null" class="scope-plant-hint" data-testid="scope-plant-hint">
           {{
@@ -169,47 +163,6 @@ function onPlantChange(event: Event): void {
 .scope-label {
   font-size: 12px;
   color: var(--text-faint);
-}
-
-.scope-select-wrap {
-  position: relative;
-}
-
-/* DropdownButtonFormField: filled grey[900] (#212121 → var(--bg)), outline
-   grey[700] radius 12 (main.dart L117-119), texto blanco 15px */
-.scope-select {
-  width: 100%;
-  height: 44px;
-  padding: 0 36px 0 12px;
-  appearance: none;
-  background: var(--bg); /* fillColor Colors.grey[900] (L94) */
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text);
-  font-family: var(--font);
-  font-size: 15px;
-  outline: none;
-  cursor: pointer;
-  transition: border-color 0.15s ease;
-}
-
-.scope-select:focus {
-  border-color: var(--primary); /* focusedBorder deepOrange (main L121-125) */
-}
-
-.scope-select option {
-  background: var(--bg-surface); /* dropdownColor del tema oscuro */
-  color: var(--text);
-}
-
-/* Caret custom (el original dibuja la flecha del DropdownButton) */
-.scope-caret {
-  position: absolute;
-  top: 50%;
-  right: 12px;
-  transform: translateY(-50%);
-  color: var(--text-faint);
-  pointer-events: none;
 }
 
 /* 'Sucursal actual: N' (L114): texto del cuerpo, blanco normal */
