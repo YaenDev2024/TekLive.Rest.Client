@@ -9,8 +9,11 @@
  * Flutter L23/L54/L63):
  * - TOUCH (pointer coarse): pointerdown en captura hace preventDefault
  *   (el SO nunca ve la intención de editar) + focus PROGRAMÁTICO con el
- *   input readonly durante 1 frame → Android/iOS/Windows-tablet no abren
- *   su teclado. La edición va 100% por VirtualKeyboard.
+ *   input readonly DURANTE TODA la sesión de edición (iOS 16+ decide abrir
+ *   el teclado nativo después del touchend: el toggle en rAF llegaba tarde
+ *   y se abrían ambos teclados). El restore lo hace kb.release()/show().
+ *   Android/iOS/Windows-tablet no abren su teclado. La edición va 100% por
+ *   VirtualKeyboard.
  * - DESKTOP/mouse: al focusin se fuerza inputmode='none' (el teclado
  *   táctil de Windows no aparece; el teclado físico sigue funcionando
  *   normal con caret real).
@@ -47,7 +50,11 @@ const isCoarse = (): boolean => matchMedia('(pointer: coarse)').matches
 
 function isEditable(target: EventTarget | null): HTMLInputElement | HTMLTextAreaElement | null {
   if (target instanceof HTMLInputElement) {
-    if (target.disabled || target.readOnly) return null
+    // readOnly NO descalifica: el wrapper pone readonly persistente en touch
+    // para suprimir el teclado nativo (iOS 16+) y el focusin posterior debe
+    // registrar igualmente el input en el store (kb.insertText escribe vía
+    // .value programático, permitido con readonly). disabled sí bloquea.
+    if (target.disabled) return null
     const t = target.type
     if (t === 'checkbox' || t === 'radio' || t === 'file' || t === 'button' || t === 'submit' || t === 'range' || t === 'color' || t === 'date') return null
     return target
@@ -70,19 +77,40 @@ function isNumericInput(el: HTMLInputElement | HTMLTextAreaElement): boolean {
 /**
  * TOUCH: intercepta el tap ANTES del foco nativo. preventDefault evita el
  * focus del SO (y su teclado); luego enfocamos programáticamente con
- * readonly → el navegador no muestra teclado. Restore en rAF+100ms.
+ * readonly → el navegador no muestra teclado.
+ *
+ * iOS 16+ PWA: el toggle readonly en rAF NO alcanza — iOS decide abrir el
+ * teclado en la activación del gesto y, con el input editable de nuevo
+ * antes de esa decisión, el teclado NATIVO aparece junto al virtual (bug
+ * reportado: "se abren ambos" + saltos de foco tipo "Enter"). El readonly
+ * persiste durante TODA la sesión de edición y lo restaura kb.release()
+ * (X del teclado) o kb.show() del siguiente input: escribir vía
+ * kb.insertText() funciona igual (setear .value programáticamente no está
+ * bloqueado por readonly y el evento 'input' se dispara igual).
  */
 function handlePointerDown(event: PointerEvent): void {
   if (!isCoarse()) return
-  const el = isEditable(event.target)
+  const target = event.target
+  // iOS PWA: el tap sobre la <option> del picker nativo burbujea como
+  // pointerdown antes del commit; un preventDefault aquí rompe el 'change'
+  // y el select vuelve al valor anterior (bug reportado en iPhone). El
+  // picker del SO no es DOM: cualquier elemento dentro de un <select> (o el
+  // propio select/option/optgroup) debe recibir el gesto SIN interferencia.
+  if (
+    target instanceof HTMLSelectElement ||
+    target instanceof HTMLOptionElement ||
+    target instanceof HTMLOptGroupElement ||
+    (target instanceof Element && target.closest('select') != null)
+  ) {
+    return
+  }
+  const el = isEditable(target)
   if (el == null) return
   event.preventDefault()
   const wasReadonly = el.readOnly
+  el.dataset.vkOriginalReadonly = wasReadonly ? '1' : '0'
   el.readOnly = true
   el.focus({ preventScroll: false })
-  requestAnimationFrame(() => {
-    el.readOnly = wasReadonly
-  })
 }
 
 /** MOUSE/TOUCH común: registra el input en el store + abre el overlay. */

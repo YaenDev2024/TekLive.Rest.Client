@@ -38,13 +38,17 @@ export const useKeyboardStore = defineStore('keyboard', () => {
     type: 'numeric' | 'text' = 'text',
   ): void {
     // Si había OTRO input activo (el foco saltó sin pasar por la X),
-    // restaurar su inputmode original para no dejarlo en 'none' residual.
+    // restaurar su inputmode original para no dejarlo en 'none' residual
+    // y su readonly original (el de supresión del teclado nativo).
     const prev = activeInput.value
     if (prev != null && prev !== input) {
       const prevOriginal = prev.dataset.vkOriginalInputmode ?? ''
       if (prevOriginal) prev.setAttribute('inputmode', prevOriginal)
       else prev.removeAttribute('inputmode')
       delete prev.dataset.vkOriginalInputmode
+      if (prev.dataset.vkOriginalReadonly === '1') prev.readOnly = true
+      else prev.readOnly = false
+      delete prev.dataset.vkOriginalReadonly
     }
     activeInput.value = input
     layout.value = type === 'numeric' ? 'numeric' : 'full'
@@ -72,6 +76,11 @@ export const useKeyboardStore = defineStore('keyboard', () => {
    * inputmode='none' de supresión del teclado nativo SIN borrar el
    * inputmode ORIGINAL (numeric/decimal) — sin esto, el siguiente tap
    * abriría el layout equivocado (bug encontrado en prueba E2E).
+   *
+   * iOS 16+ PWA: también restaura el readonly que handlePointerDown dejó
+   * puesto para suprimir el teclado nativo durante toda la sesión de
+   * edición (el restore en rAF llegaba tarde y el teclado del SO se abría
+   * junto al virtual). blur() va después: al perder foco ya no re-abre.
    */
   function release(): void {
     const el = activeInput.value
@@ -80,6 +89,9 @@ export const useKeyboardStore = defineStore('keyboard', () => {
       if (original) el.setAttribute('inputmode', original)
       else el.removeAttribute('inputmode')
       delete el.dataset.vkOriginalInputmode
+      if (el.dataset.vkOriginalReadonly === '1') el.readOnly = true
+      else el.readOnly = false
+      delete el.dataset.vkOriginalReadonly
       el.blur()
     }
     hide()
