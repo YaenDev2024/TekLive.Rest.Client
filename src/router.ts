@@ -18,6 +18,8 @@ const AUTH_ROUTES = new Set([
   'admin-catalogo',
   'admin-categorias',
   'admin-productos',
+  'admin-usuarios',
+  'admin-usuarios-crear',
   'pos',
   'pos-piso1',
   'pos-ordenes',
@@ -70,6 +72,20 @@ const router = createRouter({
       path: '/admin/productos',
       name: 'admin-productos',
       component: () => import('./views/admin/ProductEditorView.vue'),
+    },
+    {
+      // Fase 7 PARTE A: Crear Usuarios — réplica user_settings_screen.dart
+      // (standalone, sin rail — alta de usuarios Rest con rol + estado).
+      path: '/admin/usuarios/crear',
+      name: 'admin-usuarios-crear',
+      component: () => import('./views/admin/CreateUsersView.vue'),
+    },
+    {
+      // Fase 7 PARTE B+C: Gestionar Usuarios — réplica manage_users_screen.dart
+      // (standalone, sin rail — CRUD + búsqueda + pisos por usuario).
+      path: '/admin/usuarios',
+      name: 'admin-usuarios',
+      component: () => import('./views/admin/ManageUsersView.vue'),
     },
     {
       // Shell del POS (réplica desktop_home_layout): rail 80px + RouterView.

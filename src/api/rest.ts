@@ -682,3 +682,171 @@ export async function deleteAdminProduct(
   )
   return { status, data: data.data }
 }
+
+// ---------------------------------------------------------------------------
+// Admin · Usuarios (Fase 7 — réplica user_settings_screen.dart +
+// manage_users_screen.dart). CRUD de usuarios Rest (public."AUTH" con
+// NUMERO_EMPLEADO no-null + Role Rest*) y asignaciones piso/sucursal
+// (rest.employee_floor_assignments). Backend implementado (BusinessSuite
+// commit f477599, api/rest/users/admin): guard SOLO RestAdmin/SuperAdmin;
+// email + numeroEmpleado únicos GLOBALES (400 descriptivo); PASSWORD_HASH
+// jamás en responses. Mismo envelope { success, data, message }.
+// ---------------------------------------------------------------------------
+
+/** GET …/roles — catálogo de roles disponibles (RestRoles.AllRoles). */
+export interface RestRoleCatalogItem {
+  /** Valor EXACTO a enviar en Role (ej. 'RestWaiter'). */
+  id: string
+  /** Etiqueta corta en español (ej. 'Mesero'). */
+  name: string
+  /** Descripción corta en español. */
+  desc: string
+}
+
+/**
+ * GET …/users — usuario Rest para el CRUD admin. Espejo de
+ * RestUserAdminResponse: NUNCA expone PASSWORD_HASH (backend).
+ */
+export interface RestAdminUser {
+  id: number
+  firstName: string
+  lastName: string
+  email: string
+  /** Llave del login Rest — única GLOBAL (todas las empresas). */
+  numeroEmpleado: string
+  /** RestAdmin | RestManager | RestCashier | RestWaiter | RestKitchen */
+  role: string
+  isActive: boolean
+  /** ISO 8601 (nullable). */
+  lastLogin?: string | null
+  /** ISO 8601 (nullable). */
+  dateRegistered?: string | null
+}
+
+/** POST …/users — body de alta (RestCreateUserAdminRequest). */
+export interface CreateAdminUserPayload {
+  firstName: string
+  lastName: string
+  email: string
+  numeroEmpleado: string
+  password: string
+  role: string
+  /** Default true en el backend; el form siempre lo manda explícito. */
+  isActive: boolean
+}
+
+/**
+ * PUT …/users/{id} — body de edición (RestUpdateUserAdminRequest).
+ * numeroEmpleado NO es editable (no existe en el DTO del backend — si se
+ * manda el binder lo ignora); password null/'' = no cambiar.
+ */
+export interface UpdateAdminUserPayload {
+  firstName: string
+  lastName: string
+  email: string
+  role: string
+  isActive: boolean
+  /** Opcional: null/vacío = NO cambiar la contraseña. */
+  password?: string | null
+}
+
+/** POST …/users → 201 con { id } (envelope desenrollado). */
+export interface CreatedAdminUserResponse {
+  id: number
+}
+
+/** Una asignación piso/sucursal (rest.employee_floor_assignments). */
+export interface RestFloorAssignment {
+  id: number
+  sucursalId: number
+  plantId: number
+  isActive: boolean
+}
+
+/** GET …/users/{id}/floors → { assignments: [...] }. */
+export interface RestUserFloorsResponse {
+  assignments: RestFloorAssignment[]
+}
+
+/** PUT …/users/{id}/floors — reemplazo completo (upsert por par). */
+export interface ReplaceUserFloorsPayload {
+  assignments: Array<{ sucursalId: number; plantId: number }>
+}
+
+/** GET …/roles → roles[] (desenrollado). */
+export async function getAdminRoles(): Promise<ApiResult<RestRoleCatalogItem[]>> {
+  const { status, data } = await apiGet<Envelope<RestRoleCatalogItem[]>>(
+    '/api/rest/users/admin/roles',
+  )
+  return { status, data: data.data }
+}
+
+/**
+ * GET …/users?soloActivos= → usuarios[] (desenrollado). Default del backend:
+ * soloActivos=false (lista TODO y la UI marca inactivos — réplica Flutter).
+ */
+export async function getAdminUsers(soloActivos = false): Promise<ApiResult<RestAdminUser[]>> {
+  const query = `?soloActivos=${soloActivos}`
+  const { status, data } = await apiGet<Envelope<RestAdminUser[]>>(
+    `/api/rest/users/admin/users${query}`,
+  )
+  return { status, data: data.data }
+}
+
+/** POST …/users → 201 con { id } (desenrollado). */
+export async function createAdminUser(
+  body: CreateAdminUserPayload,
+): Promise<ApiResult<CreatedAdminUserResponse>> {
+  const { status, data } = await apiPost<Envelope<CreatedAdminUserResponse>>(
+    '/api/rest/users/admin/users',
+    body,
+  )
+  return { status, data: data.data }
+}
+
+/** PUT …/users/{id} → 200 (desenrollado). */
+export async function updateAdminUser(
+  userId: number,
+  body: UpdateAdminUserPayload,
+): Promise<ApiResult<Record<string, never>>> {
+  const { status, data } = await apiPut<Envelope<Record<string, never>>>(
+    `/api/rest/users/admin/users/${encodeURIComponent(userId)}`,
+    body,
+  )
+  return { status, data: data.data }
+}
+
+/**
+ * DELETE …/users/{id} — SOFT: isActive=false + floors desactivados (NUNCA
+ * borra la fila AUTH).
+ */
+export async function deleteAdminUser(
+  userId: number,
+): Promise<ApiResult<Record<string, never>>> {
+  const { status, data } = await apiDelete<Envelope<Record<string, never>>>(
+    `/api/rest/users/admin/users/${encodeURIComponent(userId)}`,
+  )
+  return { status, data: data.data }
+}
+
+/** GET …/users/{id}/floors → { assignments } (desenrollado). */
+export async function getAdminUserFloors(
+  userId: number,
+): Promise<ApiResult<RestUserFloorsResponse>> {
+  const { status, data } = await apiGet<Envelope<RestUserFloorsResponse>>(
+    `/api/rest/users/admin/users/${encodeURIComponent(userId)}/floors`,
+  )
+  return { status, data: data.data }
+}
+
+/** PUT …/users/{id}/floors — reemplazo completo (desenrollado). */
+export async function replaceAdminUserFloors(
+  userId: number,
+  body: ReplaceUserFloorsPayload,
+): Promise<ApiResult<Record<string, never>>> {
+  const { status, data } = await apiPut<Envelope<Record<string, never>>>(
+    `/api/rest/users/admin/users/${encodeURIComponent(userId)}/floors`,
+    body,
+  )
+  return { status, data: data.data }
+}

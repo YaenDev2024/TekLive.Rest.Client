@@ -57,7 +57,8 @@
  * Mapa tile → fase futura (placeholders con badge 'Próximamente · Fase N'):
  * - Fase 6:  Gestionar Catálogo (REAL desde Fase 6.1 → admin-catalogo),
  *            Editar Productos, Catalogo de Categorías (CRUD catálogo)
- * - Fase 7:  Crear Usuarios, Gestionar Usuarios
+ * - Fase 7:  Crear Usuarios, Gestionar Usuarios (REALES desde Fase 7 →
+ *            admin-usuarios-crear / admin-usuarios)
  * - Fase 8:  Asignar Meseros a Mesas
  * - Fase 9:  Crear Promociones, Configurar Dólar dedicado, Aumento de Precios
  * - Fase 10: Crear Nomina, Resumen de Caja
@@ -149,8 +150,9 @@ const SECTIONS: AdminSection[] = [
     title: 'Usuarios',
     icon: Users,
     tiles: [
-      { label: 'Crear Usuarios', icon: UserPlus, phase: 7, phaseNote: 'Alta de usuarios' },
-      { label: 'Gestionar Usuarios', icon: UserCog, phase: 7, phaseNote: 'Administración de usuarios' },
+      // Fase 7: tiles reales — alta y administración de usuarios Rest.
+      { label: 'Crear Usuarios', icon: UserPlus, to: { name: 'admin-usuarios-crear' } },
+      { label: 'Gestionar Usuarios', icon: UserCog, to: { name: 'admin-usuarios' } },
     ],
   },
   {
