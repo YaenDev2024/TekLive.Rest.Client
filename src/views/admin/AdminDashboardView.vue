@@ -60,8 +60,11 @@
  * - Fase 7:  Crear Usuarios, Gestionar Usuarios (REALES desde Fase 7 →
  *            admin-usuarios-crear / admin-usuarios)
  * - Fase 8:  Asignar Meseros a Mesas
- * - Fase 9:  Crear Promociones, Configurar Dólar dedicado, Aumento de Precios
- * - Fase 10: Crear Nomina, Resumen de Caja
+ * - Fase 9:  Crear Promociones (REAL desde Fase admin → admin-promociones),
+ *            Configurar Dólar dedicado, Aumento de Precios (REAL desde
+ *            Fase admin → admin-precio-aumento)
+ * - Fase 10: Crear Nomina (REAL desde Fase admin → admin-nomina),
+ *            Resumen de Caja (REAL desde Fase admin → admin-resumen-caja)
  * Tiles REALES ya navegables: Corte de Caja → { name: 'pos-caja' } (la
  * CashDrawerView réplica ya existe) y Configurar Dólar → { name:
  * 'pos-ajustes' } (el modal dólar ya vive ahí; tooltip 'Se abre en Ajustes').
@@ -143,7 +146,8 @@ const SECTIONS: AdminSection[] = [
     title: 'Promociones y Ofertas',
     icon: Megaphone,
     tiles: [
-      { label: 'Crear Promociones', icon: Tag, phase: 9, phaseNote: 'Promociones y ofertas' },
+      // Fase admin M1: tile real — CRUD de promociones (create_promo.dart).
+      { label: 'Crear Promociones', icon: Tag, to: { name: 'admin-promociones' } },
     ],
   },
   {
@@ -161,8 +165,9 @@ const SECTIONS: AdminSection[] = [
     tiles: [
       // Tile real: la CashDrawerView réplica ya existe bajo el shell POS.
       { label: 'Corte de Caja', icon: Wallet, to: { name: 'pos-caja' } },
-      { label: 'Resumen de Caja', icon: FileBarChart, phase: 10, phaseNote: 'Resumen administrativo de caja' },
-      { label: 'Crear Nomina', icon: ReceiptText, phase: 10, phaseNote: 'Generación de nómina' },
+      // Fase admin M3+M4: tiles reales — resumen y nómina (réplicas .dart).
+      { label: 'Resumen de Caja', icon: FileBarChart, to: { name: 'admin-resumen-caja' } },
+      { label: 'Crear Nomina', icon: ReceiptText, to: { name: 'admin-nomina' } },
     ],
   },
   {
@@ -171,7 +176,8 @@ const SECTIONS: AdminSection[] = [
     tiles: [
       // Tile real: el modal dólar ya vive en Ajustes (réplica settings.dart).
       { label: 'Configurar Dólar', icon: DollarSign, to: { name: 'pos-ajustes' } },
-      { label: 'Aumento de Precios', icon: TrendingUp, phase: 9, phaseNote: 'Incremento porcentual de precios' },
+      // Fase admin M2: tile real — upsert de aumento por alcance.
+      { label: 'Aumento de Precios', icon: TrendingUp, to: { name: 'admin-precio-aumento' } },
       { label: 'Asignar Meseros a Mesas', icon: UserCheck, phase: 8, phaseNote: 'Meseros por mesa' },
     ],
   },

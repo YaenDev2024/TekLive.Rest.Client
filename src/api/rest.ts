@@ -906,3 +906,345 @@ export async function replaceAdminUserFloors(
   )
   return { status, data: data.data }
 }
+
+// ---------------------------------------------------------------------------
+// Admin · Fase admin (backend BusinessSuite commit 7ffe922, contratos
+// congelados): M1 Promociones (api/rest/promotions), M2 Aumento de Precios
+// (api/rest/price-increase), M3 Resumen de Caja (GET api/rest/cash/summary)
+// y M4 Nómina (api/rest/payroll). Mismo envelope { success, data, message }.
+// Lectura RestOperator; escritura RestAdmin/RestManager/SuperAdmin (403
+// envelope). CompanyId SIEMPRE del JWT (nunca en el body).
+// ---------------------------------------------------------------------------
+
+// --- M1 · Promociones -------------------------------------------------------
+
+/** GET api/rest/promotions — promoción (rest.promotions). */
+export interface RestPromotion {
+  id: number
+  nombre: string
+  descripcion?: string | null
+  precio: number
+  /** La lista trae TODAS (activas e inactivas) con el flag. */
+  activo: boolean
+  /** ISO 8601. */
+  fechaCreacion: string
+}
+
+/** POST/PUT api/rest/promotions — body (RestSavePromotionRequest). */
+export interface SavePromotionPayload {
+  nombre: string
+  descripcion?: string | null
+  precio: number
+  /** Solo PUT: estado activo (en POST se ignora: nace activa). */
+  activo: boolean
+}
+
+/** POST/PUT …/promotions → { id } (envelope desenrollado). */
+export interface SavedPromotionResponse {
+  id: number
+}
+
+/** GET api/rest/promotions → TODAS, Id DESC (desenrollado). */
+export async function getPromotions(): Promise<ApiResult<RestPromotion[]>> {
+  const { status, data } = await apiGet<Envelope<RestPromotion[]>>('/api/rest/promotions')
+  return { status, data: data.data }
+}
+
+/** POST api/rest/promotions → 201 con { id } (desenrollado). */
+export async function createPromotion(
+  body: SavePromotionPayload,
+): Promise<ApiResult<SavedPromotionResponse>> {
+  const { status, data } = await apiPost<Envelope<SavedPromotionResponse>>(
+    '/api/rest/promotions',
+    body,
+  )
+  return { status, data: data.data }
+}
+
+/** PUT api/rest/promotions/{id} → 200 (desenrollado). */
+export async function updatePromotion(
+  promotionId: number,
+  body: SavePromotionPayload,
+): Promise<ApiResult<Record<string, never>>> {
+  const { status, data } = await apiPut<Envelope<Record<string, never>>>(
+    `/api/rest/promotions/${encodeURIComponent(promotionId)}`,
+    body,
+  )
+  return { status, data: data.data }
+}
+
+/** DELETE api/rest/promotions/{id} — SOFT (activo=false) (desenrollado). */
+export async function deletePromotion(
+  promotionId: number,
+): Promise<ApiResult<Record<string, never>>> {
+  const { status, data } = await apiDelete<Envelope<Record<string, never>>>(
+    `/api/rest/promotions/${encodeURIComponent(promotionId)}`,
+  )
+  return { status, data: data.data }
+}
+
+// --- M2 · Aumento de Precios ------------------------------------------------
+
+/** GET api/rest/price-increase — config de aumento (rest.price_increase_config). */
+export interface RestPriceIncreaseConfig {
+  id: number
+  /** 'GLOBAL' | 'SUCURSAL' | 'PLANT'. */
+  scopeType: CatalogScopeType
+  sucursalId?: number | null
+  plantId?: number | null
+  /** 0-999. SOLO se configura: la aplicación al catálogo es otra fase. */
+  percentage: number
+  isActive: boolean
+  /** ISO 8601. */
+  updatedAt: string
+}
+
+/**
+ * POST api/rest/price-increase — body (RestUpsertPriceIncreaseRequest).
+ * SEMÁNTICA UPSERT: si ya existe una config ACTIVA con el mismo
+ * (scopeType, sucursalId, plantId) el backend actualiza percentage (no
+ * duplica fila).
+ */
+export interface UpsertPriceIncreasePayload {
+  scopeType: CatalogScopeType
+  sucursalId?: number | null
+  plantId?: number | null
+  /** 0-999. */
+  percentage: number
+}
+
+/** GET api/rest/price-increase → TODAS, Id DESC (desenrollado). */
+export async function getPriceIncreaseConfigs(): Promise<ApiResult<RestPriceIncreaseConfig[]>> {
+  const { status, data } = await apiGet<Envelope<RestPriceIncreaseConfig[]>>(
+    '/api/rest/price-increase',
+  )
+  return { status, data: data.data }
+}
+
+/** POST api/rest/price-increase → 201 con { id } (upsert; desenrollado). */
+export async function upsertPriceIncrease(
+  body: UpsertPriceIncreasePayload,
+): Promise<ApiResult<SavedPromotionResponse>> {
+  const { status, data } = await apiPost<Envelope<SavedPromotionResponse>>(
+    '/api/rest/price-increase',
+    body,
+  )
+  return { status, data: data.data }
+}
+
+/** DELETE api/rest/price-increase/{id} — SOFT (isActive=false) (desenrollado). */
+export async function deletePriceIncrease(
+  configId: number,
+): Promise<ApiResult<Record<string, never>>> {
+  const { status, data } = await apiDelete<Envelope<Record<string, never>>>(
+    `/api/rest/price-increase/${encodeURIComponent(configId)}`,
+  )
+  return { status, data: data.data }
+}
+
+// --- M3 · Resumen de Caja (GET api/rest/cash/summary) ------------------------
+
+/**
+ * GET api/rest/cash/summary?date=yyyy-MM-dd&scopeType=&sucursalId=&plantId=
+ * — resumen por fecha de NEGOCIO (UTC-6, RestBusinessClock) + alcance.
+ * Métodos desde orders_header pagado por cashSessionId (misma fuente que
+ * el arqueo). 'ambos' cuenta como efectivo completo; desconocido/null a
+ * otros. GranTotal = efectivo + tarjeta + transferencia + dolares + otros.
+ */
+export interface RestCashSummarySession {
+  id: number
+  userId: number
+  /** FIRST_NAME || ' ' || LAST_NAME del AUTH (fallback '#userId'). */
+  userName: string
+  /** 'OPEN' | 'CLOSED'. */
+  status: string
+  /** ISO 8601 (nullable). */
+  startTime?: string | null
+  /** ISO 8601 (nullable). */
+  endTime?: string | null
+  startingAmount: number
+  closingAmount?: number | null
+  calculatedSales?: number | null
+  difference?: number | null
+  plantId?: number | null
+  sucursalId?: number | null
+}
+
+/** Totales por método de pago del resumen. */
+export interface RestCashSummaryTotals {
+  efectivo: number
+  tarjeta: number
+  transferencia: number
+  dolares: number
+  otros: number
+  granTotal: number
+  /** Total vendido por usuario en las sesiones (ya viene ordenado DESC). */
+  porUsuario: Array<{
+    userId: number
+    userName: string
+    total: number
+    sesiones: number
+  }>
+}
+
+/** GET …/cash/summary → { sessions, totals } (desenrollado). */
+export interface RestCashSummary {
+  sessions: RestCashSummarySession[]
+  totals: RestCashSummaryTotals
+}
+
+/**
+ * GET api/rest/cash/summary — params opcionales (el backend defaultea date
+ * a HOY negocio y scope GLOBAL). `sucursalId` solo se manda cuando el
+ * alcance NO es GLOBAL (réplica admin_summary_screen.dart L49-51);
+ * `plantId` solo con PLANT.
+ */
+export async function getCashSummary(params: {
+  date: string
+  scopeType: CatalogScopeType
+  sucursalId?: number
+  plantId?: number | null
+}): Promise<ApiResult<RestCashSummary>> {
+  const query = new URLSearchParams({ date: params.date, scopeType: params.scopeType })
+  if (params.sucursalId != null) query.set('sucursalId', String(params.sucursalId))
+  if (params.plantId != null) query.set('plantId', String(params.plantId))
+  const { status, data } = await apiGet<Envelope<RestCashSummary>>(
+    `/api/rest/cash/summary?${query.toString()}`,
+  )
+  return { status, data: data.data }
+}
+
+// --- M4 · Nómina (api/rest/payroll) ------------------------------------------
+
+/** GET api/rest/payroll/employees — empleado ACTIVO (rest.employees). */
+export interface RestPayrollEmployee {
+  id: number
+  nombre: string
+  apellidoPaterno: string
+  apellidoMaterno?: string | null
+  numeroEmpleado?: string | null
+  puesto?: string | null
+  salarioDiario: number
+  salarioBase: number
+  rfc: string
+  curp: string
+  numeroSeguroSocial?: string | null
+}
+
+/** Concepto de percepción/deducción (body del POST). */
+export interface PayrollConceptoPayload {
+  concepto: string
+  cantidad: number
+}
+
+/**
+ * POST api/rest/payroll/records — body (RestCreatePayrollRecordRequest).
+ * El SERVER calcula TotalPercepciones/TotalDeducciones/NetoPagar y
+ * serializa los JSONs (camelCase). Datos del empleado denormalizados:
+ * el form autocompleta del picker y el usuario puede editar (legacy).
+ */
+export interface CreatePayrollRecordPayload {
+  /** Empleado de rest.employees (> 0 — 400 si no). */
+  empleadoId: number
+  /** Nombre completo (máx 200). */
+  nombreEmpleado: string
+  /** Requerido (máx 40). */
+  rfc: string
+  /** Requerido (máx 40). */
+  curp: string
+  numeroSeguroSocial?: string | null
+  puesto?: string | null
+  salarioDiario: number
+  salarioBase: number
+  /** Free-text máx 100 (la UI envía yyyy-MM-dd). */
+  periodoInicio: string
+  periodoFin: string
+  /** 1-31. */
+  diasTrabajados: number
+  percepciones: PayrollConceptoPayload[]
+  deducciones: PayrollConceptoPayload[]
+}
+
+/** POST …/records → 201 { id, netoPagar } (SERVER recalcula el neto). */
+export interface CreatedPayrollRecordResponse {
+  id: number
+  netoPagar: number
+}
+
+/**
+ * GET api/rest/payroll/records — registro de nómina (rest.payroll_records).
+ * percepcionesJson/deduccionesJson son STRINGS JSON camelCase
+ * '[{"concepto":"X","cantidad":1}]' (o '[]') — se parsean en el cliente.
+ */
+export interface RestPayrollRecord {
+  id: number
+  empleadoId: number
+  nombreEmpleado: string
+  rfc: string
+  curp: string
+  numeroSeguroSocial?: string | null
+  puesto?: string | null
+  salarioDiario: number
+  salarioBase: number
+  /** Free-text del form (yyyy-MM-dd). */
+  periodoInicio: string
+  periodoFin: string
+  diasTrabajados: number
+  totalPercepciones: number
+  totalDeducciones: number
+  /** Puede ser negativo (válido). */
+  netoPagar: number
+  percepcionesJson?: string | null
+  deduccionesJson?: string | null
+  /** ISO 8601. */
+  fechaCreacion: string
+}
+
+/** GET api/rest/payroll/employees → activos, alfabético (desenrollado). */
+export async function getPayrollEmployees(): Promise<ApiResult<RestPayrollEmployee[]>> {
+  const { status, data } = await apiGet<Envelope<RestPayrollEmployee[]>>(
+    '/api/rest/payroll/employees',
+  )
+  return { status, data: data.data }
+}
+
+/**
+ * GET api/rest/payroll/records?employeeId=&startDate=&endDate= — filtros
+ * opcionales (yyyy-MM-dd sobre FechaCreacion), orden FechaCreacion DESC.
+ */
+export async function getPayrollRecords(params?: {
+  employeeId?: number
+  startDate?: string
+  endDate?: string
+}): Promise<ApiResult<RestPayrollRecord[]>> {
+  const query = new URLSearchParams()
+  if (params?.employeeId != null) query.set('employeeId', String(params.employeeId))
+  if (params?.startDate != null) query.set('startDate', params.startDate)
+  if (params?.endDate != null) query.set('endDate', params.endDate)
+  const qs = query.toString()
+  const { status, data } = await apiGet<Envelope<RestPayrollRecord[]>>(
+    `/api/rest/payroll/records${qs.length > 0 ? `?${qs}` : ''}`,
+  )
+  return { status, data: data.data }
+}
+
+/** POST api/rest/payroll/records → 201 con { id, netoPagar } (desenrollado). */
+export async function createPayrollRecord(
+  body: CreatePayrollRecordPayload,
+): Promise<ApiResult<CreatedPayrollRecordResponse>> {
+  const { status, data } = await apiPost<Envelope<CreatedPayrollRecordResponse>>(
+    '/api/rest/payroll/records',
+    body,
+  )
+  return { status, data: data.data }
+}
+
+/** DELETE api/rest/payroll/records/{id} — HARD delete (desenrollado). */
+export async function deletePayrollRecord(
+  recordId: number,
+): Promise<ApiResult<Record<string, never>>> {
+  const { status, data } = await apiDelete<Envelope<Record<string, never>>>(
+    `/api/rest/payroll/records/${encodeURIComponent(recordId)}`,
+  )
+  return { status, data: data.data }
+}

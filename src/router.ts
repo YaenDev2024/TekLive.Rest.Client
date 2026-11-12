@@ -20,6 +20,10 @@ const AUTH_ROUTES = new Set([
   'admin-productos',
   'admin-usuarios',
   'admin-usuarios-crear',
+  'admin-promociones',
+  'admin-precio-aumento',
+  'admin-resumen-caja',
+  'admin-nomina',
   'pos',
   'pos-piso1',
   'pos-ordenes',
@@ -86,6 +90,34 @@ const router = createRouter({
       path: '/admin/usuarios',
       name: 'admin-usuarios',
       component: () => import('./views/admin/ManageUsersView.vue'),
+    },
+    {
+      // Fase admin M1: Crear Promociones — réplica create_promo.dart
+      // (standalone, sin rail — CRUD de promociones con badge activa/inactiva).
+      path: '/admin/promociones',
+      name: 'admin-promociones',
+      component: () => import('./views/admin/CreatePromotionsView.vue'),
+    },
+    {
+      // Fase admin M2: Aumento de Precios — réplica price_increase_config_screen
+      // (standalone, sin rail — upsert por alcance + lista de configs).
+      path: '/admin/aumento-precios',
+      name: 'admin-precio-aumento',
+      component: () => import('./views/admin/PriceIncreaseView.vue'),
+    },
+    {
+      // Fase admin M3: Resumen de Caja — réplica admin_summary_screen.dart
+      // (standalone, sin rail — read-only por fecha + alcance).
+      path: '/admin/resumen-caja',
+      name: 'admin-resumen-caja',
+      component: () => import('./views/admin/AdminSummaryView.vue'),
+    },
+    {
+      // Fase admin M4: Crear Nómina — réplica create_nom.dart
+      // (standalone, sin rail — form + historial de records).
+      path: '/admin/nomina',
+      name: 'admin-nomina',
+      component: () => import('./views/admin/PayrollView.vue'),
     },
     {
       // Shell del POS (réplica desktop_home_layout): rail 80px + RouterView.
