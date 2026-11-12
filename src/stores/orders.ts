@@ -14,16 +14,20 @@
 import { defineStore } from 'pinia'
 import { ApiError } from '../api/client'
 import {
+  addOrderItem,
   createOrder,
   getOrderDetail,
   getOrders,
   payOrder,
+  removeOrderItem,
+  updateOrderItemQuantity,
   updateOrderStatus,
 } from '../api/rest'
 import type {
   CreatedOrderResponse,
   CreateOrderPayload,
   OrderDetail,
+  OrderItemPayload,
   OrderStatus,
   PaymentMethod,
   PaymentResponse,
@@ -80,23 +84,30 @@ export const useOrdersStore = defineStore('orders', {
      * SIN filtro (réplica del dropdown "Todas" de pending_orders_screen.dart
      * L96-98: statusFilter = null). 'pagado' replica el filtro "Entregadas".
      */
-    async fetchOrdersByStatus(plantId: number, date: string, statuses: string[] | null): Promise<void> {
+    async fetchOrdersByStatus(plantId: number, date: string, statuses: string | string[] | null): Promise<void> {
       if (this.loading) return
       this.loading = true
       this.error = null
       try {
+        // Fase 1-P1 (backend 53604e0): `status` acepta UN string simple —
+        // 'pendiente'/'pagado' exactos, o 'activas' = IN pre-pago
+        // (pendiente|preparando|listo|entregado, réplica del filtro
+        // "En curso" del Flutter). Los call sites con string[] siguen
+        // soportados: cada elemento va en SU propia llamada.
+        const statusList: string[] =
+          statuses == null ? [] : Array.isArray(statuses) ? statuses : [statuses]
         if (USE_MOCK) {
           await new Promise((resolve) => setTimeout(resolve, 200))
-          const wanted = statuses != null ? new Set(statuses) : null
+          const wanted = statusList.length > 0 ? new Set(statusList) : null
           this.pendingOrders = listMockOrders().filter(
             (o) => wanted == null || wanted.has(o.orderStatus),
           )
         } else {
           const results =
-            statuses == null
+            statusList.length === 0
               ? [await getOrders({ plantId, date })]
               : await Promise.all(
-                  statuses.map((status) => getOrders({ plantId, date, status })),
+                  statusList.map((status) => getOrders({ plantId, date, status })),
                 )
           const byId = new Map<number, PendingOrderListItem>()
           for (const { data } of results) {
@@ -220,6 +231,52 @@ export const useOrdersStore = defineStore('orders', {
         }
         throw err
       }
+    },
+
+    /**
+     * Fase 1-P1 · POST /orders/{id}/items — agrega un item a una orden
+     * PENDIENTE (edición del mesero, backend 53604e0). 200 → reemplaza el
+     * cache del detalle con la respuesta del server (items/total frescos,
+     * VERDAD absoluta — nunca aritmética local) y devuelve el OrderDetail.
+     * 400/404/409 → throw (la vista maneja el ApiError).
+     */
+    async addOrderItem(orderId: number, body: OrderItemPayload): Promise<OrderDetail> {
+      const { data } = await addOrderItem(orderId, body)
+      this.detailCache[orderId] = data
+      return data
+    },
+
+    /**
+     * Fase 1-P1 · DELETE /orders/{id}/items/{itemId} — quita un item.
+     * 200 → cache del detalle reemplazado con la respuesta del server.
+     */
+    async removeOrderItem(orderId: number, itemId: number): Promise<OrderDetail> {
+      const { data } = await removeOrderItem(orderId, itemId)
+      this.detailCache[orderId] = data
+      return data
+    },
+
+    /**
+     * Fase 1-P1 · PATCH /orders/{id}/items/{itemId} — cambia la cantidad
+     * (1-999; 0 → 400 del backend, para quitar es DELETE). 200 → cache
+     * reemplazado con la respuesta del server.
+     */
+    async updateOrderItemQuantity(
+      orderId: number,
+      itemId: number,
+      quantity: number,
+    ): Promise<OrderDetail> {
+      const { data } = await updateOrderItemQuantity(orderId, itemId, quantity)
+      this.detailCache[orderId] = data
+      return data
+    },
+
+    /**
+     * Fase 1-P1 · invalida el cache del detalle de una orden (tras un 409 de
+     * edición o un cambio externo): la próxima expansión re-pide el detalle.
+     */
+    invalidateDetailCache(orderId: number): void {
+      delete this.detailCache[orderId]
     },
 
     /** 403 en cancelación (rol sin permiso) — el caller la maneja. */

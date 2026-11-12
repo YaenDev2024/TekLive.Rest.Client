@@ -1,24 +1,32 @@
 <script setup lang="ts">
 /**
- * PendingOrdersView · pantalla ÓRDENES del rail (Fase 3 ronda 2).
+ * PendingOrdersView · pantalla ÓRDENES del rail (Fase 3 ronda 2 + Fase 1-P1).
  *
  * Réplica de pending_orders_screen.dart + widgets/desktop/pending_order_card.dart:
  * - Screen bg grey[900] (#212121), AppBar grey[850] "Órdenes Pendientes" con
  *   botón refresh. El botón Badge de cuentas por cobrar se OMITE (Fase 4).
  * - Barra filtros (bg #303030, padding 12): buscador + icono calendario +
  *   botón fecha + botón "Hoy" + Dropdown de estatus.
- *   El dropdown replica 1:1 las 3 opciones del Flutter (L311-333) mapeadas al
- *   status real del backend Rest: Pendientes → pendiente, Entregadas → pagado,
- *   Todas → sin status (el backend Rest compara ORDER_STATUS exacto; "Todas"
- *   hace una llamada sin filtro y filtra client-side pagadas/canceladas).
+ *   4 opciones réplica Flutter (L364-369): Pendientes → 'pendiente',
+ *   En curso → 'activas' (Fase 1-P1 backend: IN pre-pago), Entregadas →
+ *   'pagado', Todas → sin status (filtra client-side pagadas/canceladas).
  * - PendingOrderCard: bg #303030 radius 12 elev 4 borde 2px (grey #616161
  *   siempre: en Rest no hay EXTERNO/DIDI/UBER aún; _getBorderColor queda listo
  *   con umbral 20 min verde/rojo para cuando exista tipoDeOrden).
  *   Header expandible (chevron + Orden #folio + badge tipo + cajero + fecha +
  *   badge total esquina verde/gris). Timer MM:SS solo si tipo externo existe.
- *   Contenido: items con qty +/- (deuda backend: edición no disponible) y
- *   total verde; botones Agregar/Tickets (deuda) + Cancelar (funcional) +
- *   Cobrar (funcional → POST payment con cambio).
+ *   Contenido: items + total verde; botones Agregar/Tickets + Cancelar +
+ *   Cobrar.
+ * - Fase 1-P1 (édición de pendientes, backend 53604e0): las cards con status
+ *   'pendiente' son EDITABLES (réplica pending_order_card.dart) —
+ *   qty stepper − /+ por item (− disabled en 1; PATCH quantity; el detalle/
+ *   total SIEMPRE de la respuesta del server), botón eliminar (confirm +
+ *   DELETE), botón 'Agregar' abre OrderProductPicker (→ POST items; templates
+ *   con optionGroups pasan por el MISMO wizard DynamicOptionsModal).
+ *   Estados ≠ 'pendiente' quedan read-only (el backend rechazaría con 409).
+ *   409 de cualquier edición → toast error + refresh (card pasa a read-only).
+ *   editingOrderId deshabilita los steppers de ESA card mientras vuela una
+ *   edición (mismo patrón que printingOrderId).
  * - Polling 15s (clearInterval en onBeforeUnmount).
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
@@ -39,9 +47,11 @@ import {
   Search,
   Soup,
   Timer,
+  Trash2,
 } from 'lucide-vue-next'
 import { ApiError } from '../../api/client'
 import type {
+  OrderDetail,
   OrderDetailItem,
   OrderStatus,
   PaymentMethod,
@@ -53,6 +63,7 @@ import { useOrdersStore } from '../../stores/orders'
 import { useToastStore } from '../../stores/toast'
 import { AppBanner, AppSelect, AppSpinner } from '../../components/ui'
 import CancelOrderModal from '../../components/pos/CancelOrderModal.vue'
+import OrderProductPicker from '../../components/pos/OrderProductPicker.vue'
 import { printPendingKitchenTicket, printSaleTickets } from '../../services/ticket'
 
 const ordersStore = useOrdersStore()
@@ -61,17 +72,23 @@ const toast = useToastStore()
 
 // --- Filtros (réplica _filterStatus / _selectedDate / _searchController) ------
 
-/** Opciones EXACTAS del Dropdown Flutter (L315-319). */
-type StatusFilter = 'Pendiente' | 'Entregadas' | 'Todas'
+/** Opciones EXACTAS del Dropdown Flutter (L364-369, orden incluido). */
+type StatusFilter = 'Pendiente' | 'En curso' | 'Entregadas' | 'Todas'
 
-const FILTER_STATUS: Record<StatusFilter, string[] | null> = {
-  // Flutter: 'Pendiente' → statusFilter backend 'Pendiente' (es-MX mayúscula).
-  // Rest compara ORDER_STATUS exacto en minúsculas → 'pendiente'.
-  Pendiente: ['pendiente'],
-  // Flutter: 'Entregadas' → 'pagado' (las cobradas).
-  Entregadas: ['pagado'],
-  // Flutter: Todas → null (sin filtro). En Rest, GET /orders sin status
-  // devuelve TODAS (incluye pagadas/canceladas): igual que el Flutter.
+/**
+ * Mapeo réplica _loadOrders (L104-116): 'Pendiente' → 'pendiente',
+ * 'Entregadas' → 'pagado', 'En curso' → 'activas' (backend Fase 1-P1: status
+ * IN (pendiente|preparando|listo|entregado)), resto → null (sin filtro).
+ * El backend Rest acepta UN string simple (compara exacto o 'activas') —
+ * no listas: el tipo cambia de string[] | null a string | null.
+ */
+const FILTER_STATUS: Record<StatusFilter, string | null> = {
+  Pendiente: 'pendiente',
+  // Fase 1-P1: 'activas' = pre-pago IN (pendiente, preparando, listo, entregado).
+  'En curso': 'activas',
+  Entregadas: 'pagado',
+  // Todas → null: GET /orders sin status devuelve TODAS (incluye pagadas/
+  // canceladas): igual que el Flutter.
   Todas: null,
 }
 
@@ -224,9 +241,28 @@ function orderTypeBadge(order: PendingOrderListItem): { label: string; className
   return { label: 'LOCAL', className: 'local' }
 }
 
-// --- Detalle expandible (API real con caché, F5) -------------------------------
+// ===========================================================================
+// Fase 1-P1 · Edición de items (réplica pending_order_card.dart):
+// SOLO órdenes 'pendiente'. Toda operación usa la respuesta del server como
+// VERDAD (items/total del OrderDetail completo que devuelve el endpoint —
+// nunca aritmética local). 409 → toast con message del backend + refresh
+// (la card pasa a read-only). editingOrderId bloquea los steppers de ESA
+// card mientras vuela una edición (mismo patrón que printingOrderId).
+// ===========================================================================
 
+/** true si la card es editable: expandida + status 'pendiente'. */
+function isEditable(order: PendingOrderListItem): boolean {
+  return order.orderStatus === 'pendiente'
+}
+
+/** Id de la orden con una edición en vuelo (steppers de ESA card disabled). */
+const editingOrderId = ref<number | null>(null)
+
+/** Id de la fila expandida (detalle visible). */
 const expandedId = ref<number | null>(null)
+
+/** Estado local del detalle expandido (items + total del server). */
+const expandedDetail = ref<OrderDetail | null>(null)
 const expandedItems = ref<OrderDetailItem[] | null>(null)
 const expandLoading = ref(false)
 const expandError = ref<string | null>(null)
@@ -235,6 +271,7 @@ async function toggleExpand(orderId: number): Promise<void> {
   if (expandedId.value === orderId) {
     expandedId.value = null
     expandedItems.value = null
+    expandedDetail.value = null
     expandError.value = null
     return
   }
@@ -242,10 +279,12 @@ async function toggleExpand(orderId: number): Promise<void> {
   expandError.value = null
   const cached = ordersStore.detailCache[orderId]
   if (cached != null) {
+    expandedDetail.value = cached
     expandedItems.value = cached.items
     return
   }
   expandedItems.value = null
+  expandedDetail.value = null
   expandLoading.value = true
   const detail = await ordersStore.fetchOrderDetail(orderId)
   expandLoading.value = false
@@ -255,7 +294,147 @@ async function toggleExpand(orderId: number): Promise<void> {
     expandError.value = ordersStore.detailError ?? 'No se pudo cargar el detalle.'
     return
   }
+  expandedDetail.value = detail
   expandedItems.value = detail.items
+}
+
+/** Total mostrado en la card: el del server tras cada edición (o el de lista). */
+function displayTotal(order: PendingOrderListItem): number {
+  if (expandedDetail.value != null && expandedId.value === order.id) {
+    return expandedDetail.value.total
+  }
+  return order.total
+}
+
+/** Manejo centralizado de errores de edición (400/404/409/red). */
+function editErrorToast(err: unknown, action: string): void {
+  if (err instanceof ApiError && err.status === 409) {
+    // Carrera: la orden dejó de ser 'pendiente' (la cobraron/avanzaron).
+    toast.error(err.message !== '' ? err.message : `No se pudo ${action}: la orden ya no está pendiente.`)
+    // Invalida el cache y refresca: la card pasará a read-only.
+    if (expandedId.value != null) ordersStore.invalidateDetailCache(expandedId.value)
+    void refresh()
+    return
+  }
+  if (err instanceof ApiError && err.status !== 0) {
+    toast.error(`${err.message}`)
+    return
+  }
+  toast.error(`No se pudo conectar con el servidor. Verifica tu conexión.`)
+}
+
+/**
+ * Réplica _updateQuantity (L1140): PATCH quantity; el backend responde el
+ * detalle completo actualizado → reemplaza items/total. Optimista en el
+ * sentido de UI: la card se actualiza al 200 con la respuesta del server.
+ */
+async function updateQuantity(
+  order: PendingOrderListItem,
+  item: OrderDetailItem,
+  newQuantity: number,
+): Promise<void> {
+  if (!isEditable(order)) return
+  if (newQuantity < 1) return // − en qty 1 está disabled; quitar es DELETE
+  if (editingOrderId.value != null) return
+  editingOrderId.value = order.id
+  try {
+    const detail = await ordersStore.updateOrderItemQuantity(order.id, item.id, newQuantity)
+    applyDetail(detail)
+  } catch (err) {
+    editErrorToast(err, 'actualizar la cantidad')
+  } finally {
+    editingOrderId.value = null
+  }
+}
+
+/** Reemplaza el estado local del detalle con la respuesta del server. */
+function applyDetail(detail: OrderDetail): void {
+  expandedDetail.value = detail
+  expandedItems.value = detail.items
+  // Refleja el nuevo total en la fila de la lista (la fila cambia de total).
+  const row = ordersStore.pendingOrders.find((o) => o.id === detail.id)
+  if (row != null) {
+    row.total = detail.total
+    row.orderStatus = detail.orderStatus
+  }
+}
+
+// --- Eliminar item (réplica _removeItem L1202: AlertDialog confirm) -----------
+
+type ModalState =
+  | { kind: 'none' }
+  | { kind: 'cancel'; order: PendingOrderListItem }
+  | { kind: 'pay'; order: PendingOrderListItem }
+  | { kind: 'remove-item'; order: PendingOrderListItem; item: OrderDetailItem }
+
+const modal = ref<ModalState>({ kind: 'none' })
+
+const removingItem = ref(false)
+
+async function confirmRemoveItem(): Promise<void> {
+  if (modal.value.kind !== 'remove-item') return
+  const { order, item } = modal.value
+  if (!isEditable(order)) {
+    modal.value = { kind: 'none' }
+    return
+  }
+  removingItem.value = true
+  try {
+    const detail = await ordersStore.removeOrderItem(order.id, item.id)
+    applyDetail(detail)
+    toast.success('Producto eliminado de la orden')
+    modal.value = { kind: 'none' }
+  } catch (err) {
+    editErrorToast(err, 'eliminar el producto')
+    modal.value = { kind: 'none' }
+  } finally {
+    removingItem.value = false
+  }
+}
+
+// --- Agregar producto (réplica _addProductToPendingOrder L249) ----------------
+
+/** Orden a la que se le está agregando un producto (picker abierto). */
+const pickerOrderId = ref<number | null>(null)
+
+function openAddProduct(order: PendingOrderListItem): void {
+  if (!isEditable(order)) return
+  pickerOrderId.value = order.id
+}
+
+function closePicker(): void {
+  pickerOrderId.value = null
+}
+
+const addingItem = ref(false)
+
+/** POST items con el payload armado por el picker (posible tras el wizard). */
+async function onPickerAdded(
+  payload: import('../../api/pos-types').OrderItemPayload,
+  productName: string,
+): Promise<void> {
+  void productName // el toast usa mensaje fijo (réplica '✅ Producto agregado')
+  const orderId = pickerOrderId.value
+  if (orderId == null) return
+  const order = ordersStore.pendingOrders.find((o) => o.id === orderId)
+  if (order == null || !isEditable(order)) {
+    closePicker()
+    return
+  }
+  addingItem.value = true
+  try {
+    const detail = await ordersStore.addOrderItem(orderId, payload)
+    applyDetail(detail)
+    toast.success('Producto agregado')
+    closePicker()
+    // Refresca el listado: la fila puede cambiar de total/orden de sort.
+    void refresh()
+  } catch (err) {
+    editErrorToast(err, 'agregar el producto')
+    closePicker()
+  } finally {
+    addingItem.value = false
+  }
 }
 
 /** Nota legible del item (OPT::/NOTE:: prefijos fuera, separadores → líneas). */
@@ -275,10 +454,14 @@ function itemNoteLines(notes: string | null | undefined): string[] {
   return parts.map((p) => p.trim()).filter((p) => p.length > 0)
 }
 
-// --- Deudas backend (editar detalle / impresión): toast informativo ------------
+// --- Deuda backend: edición de opciones por item (pencil) — toast informativo
 
+/** El pencil del .dart reabre el wizard en modo edición (sincroniza precio/
+ * opciones). Ronda 1: los items se ajustan por qty/eliminar/agregar; editar
+ * opciones de un item existente queda como deuda (requiere backend que
+ * retorne selectedOptions estructurales en el detalle — hoy solo notas). */
 function todoEditOrder(): void {
-  toast.info('Edición de órdenes disponible próximamente')
+  toast.info('Edición de opciones por item disponible próximamente')
 }
 
 /**
@@ -340,13 +523,7 @@ async function printOrderTickets(
 }
 
 // --- Cancelar (funcional: rol cajero/admin + nota) ------------------------------
-
-type ModalState =
-  | { kind: 'none' }
-  | { kind: 'cancel'; order: PendingOrderListItem }
-  | { kind: 'pay'; order: PendingOrderListItem }
-
-const modal = ref<ModalState>({ kind: 'none' })
+// ModalState vive arriba (sección de edición: cancel/pay/remove-item).
 
 // --- Cobro (réplica _showAmountReceivedDialog de order_panel.dart L167-320) ----
 
@@ -516,11 +693,13 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
           <Receipt :size="18" aria-hidden="true" />
         </button>
         <!-- Filtro estatus: AppSelect propio (picker nativo de iOS PWA no
-             confirma la opción tocada); setter dispara la recarga -->
+             confirma la opción tocada); setter dispara la recarga.
+             4 opciones réplica Flutter L364-369 (orden exacto). -->
         <AppSelect
           v-model="filterModel"
           :options="[
             { value: 'Pendiente', label: 'Pendientes' },
+            { value: 'En curso', label: 'En curso' },
             { value: 'Entregadas', label: 'Entregadas' },
             { value: 'Todas', label: 'Todas' },
           ]"
@@ -584,14 +763,15 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
               </span>
               <span class="po-created">{{ formatDateTime(order.createdAt) }}</span>
             </span>
-            <!-- Badge del total en la esquina (verde si pendiente, gris si no) -->
+            <!-- Badge del total en la esquina (verde si pendiente, gris si no).
+                 Muestra el total del server tras cada edición. -->
             <span
               class="po-total-badge"
               :class="{ 'po-total-badge--pending': order.orderStatus === 'pendiente' }"
               :data-testid="`order-total-${order.id}`"
             >
               <DollarSign :size="18" aria-hidden="true" />
-              {{ order.total.toFixed(2) }}
+              {{ displayTotal(order).toFixed(2) }}
             </span>
           </button>
 
@@ -609,14 +789,19 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
             </p>
             <ul v-else class="po-items">
               <li v-for="item in expandedItems" :key="item.id" class="po-item">
-                <!-- Columna qty: remove rojo / cantidad / add teal -->
-                <span class="po-item-qty-col">
+                <!-- Columna qty: remove rojo / cantidad / add teal.
+                     Editable SOLO si la orden está 'pendiente' (réplica
+                     !widget.readOnly && status == pending del .dart L769):
+                     − disabled en qty 1 (quitar = botón eliminar), + aumenta.
+                     Deshabilitados mientras vuela una edición de ESA card. -->
+                <span v-if="isEditable(order)" class="po-item-qty-col">
                   <button
                     type="button"
                     class="po-item-qty-btn po-item-qty-btn--remove"
                     :aria-label="`Reducir ${item.productName}`"
                     :data-testid="`item-minus-${item.id}`"
-                    @click="todoEditOrder"
+                    :disabled="item.quantity <= 1 || editingOrderId === order.id"
+                    @click="updateQuantity(order, item, item.quantity - 1)"
                   >
                     <CircleMinus :size="22" aria-hidden="true" />
                   </button>
@@ -626,10 +811,16 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
                     class="po-item-qty-btn po-item-qty-btn--add"
                     :aria-label="`Aumentar ${item.productName}`"
                     :data-testid="`item-plus-${item.id}`"
-                    @click="todoEditOrder"
+                    :disabled="editingOrderId === order.id"
+                    @click="updateQuantity(order, item, item.quantity + 1)"
                   >
                     <CirclePlus :size="22" aria-hidden="true" />
                   </button>
+                </span>
+                <!-- Read-only (preparando/listo/entregado/pagado/cancelada):
+                     solo la cantidad, como hoy. -->
+                <span v-else class="po-item-qty-col po-item-qty-col--readonly">
+                  <span class="po-item-qty">{{ item.quantity }}×</span>
                 </span>
 
                 <span class="po-item-info">
@@ -643,7 +834,7 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
                   </span>
                 </span>
 
-                <span class="po-item-actions">
+                <span v-if="isEditable(order)" class="po-item-actions">
                   <button
                     type="button"
                     class="po-item-edit"
@@ -651,6 +842,18 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
                     @click="todoEditOrder"
                   >
                     <Pencil :size="20" aria-hidden="true" />
+                  </button>
+                  <!-- Eliminar (réplica delete_outline rojo L887-891): confirm
+                       antes del DELETE (réplica AlertDialog L1203-1207). -->
+                  <button
+                    type="button"
+                    class="po-item-delete"
+                    :aria-label="`Eliminar ${item.productName}`"
+                    :data-testid="`item-delete-${item.id}`"
+                    :disabled="editingOrderId === order.id"
+                    @click="modal = { kind: 'remove-item', order, item }"
+                  >
+                    <Trash2 :size="20" aria-hidden="true" />
                   </button>
                 </span>
               </li>
@@ -666,7 +869,8 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
                   type="button"
                   class="po-btn po-btn--add"
                   :data-testid="`order-add-${order.id}`"
-                  @click="todoEditOrder"
+                  :disabled="editingOrderId === order.id || addingItem"
+                  @click="openAddProduct(order)"
                 >
                   <Plus :size="18" aria-hidden="true" />
                   Agregar
@@ -694,7 +898,7 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
               </span>
               <span v-if="order.orderStatus === 'pendiente'" class="po-actions-right">
                 <span class="po-total" :data-testid="`order-sum-${order.id}`">
-                  {{ formatMoney(order.total) }}
+                  {{ formatMoney(displayTotal(order)) }}
                 </span>
                 <button
                   type="button"
@@ -727,6 +931,45 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
       :order="modal.order"
       @close="modal = { kind: 'none' }"
       @cancelled="refresh"
+    />
+
+    <!-- Confirm de eliminar item (réplica AlertDialog L1203-1207) -->
+    <AppModal
+      v-if="modal.kind === 'remove-item'"
+      title="Eliminar Producto"
+      :width="420"
+      :dismissible="!removingItem"
+      @close="modal = { kind: 'none' }"
+    >
+      <p class="po-remove-text" data-testid="remove-item-text">
+        ¿Eliminar {{ modal.item.productName }} (x{{ modal.item.quantity }}) de la orden?
+      </p>
+      <template #footer>
+        <button
+          type="button"
+          class="pay-btn pay-btn--ghost"
+          :disabled="removingItem"
+          @click="modal = { kind: 'none' }"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          class="pay-btn pay-btn--danger"
+          :disabled="removingItem"
+          data-testid="confirm-remove-item"
+          @click="confirmRemoveItem"
+        >
+          {{ removingItem ? 'Eliminando…' : 'Eliminar' }}
+        </button>
+      </template>
+    </AppModal>
+
+    <!-- Picker de productos (Fase 1-P1: réplica _ProductPickerDialog + wizard) -->
+    <OrderProductPicker
+      v-if="pickerOrderId != null"
+      @close="closePicker"
+      @added="onPickerAdded"
     />
 
     <!-- Modal de pago (réplica _showAmountReceivedDialog) -->
@@ -1194,6 +1437,13 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   border-radius: 8px;
 }
 
+/* Acciones del item (pencil + trash): fila derecha */
+.po-item-actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
 .po-item-qty-col {
   display: flex;
   flex-direction: column;
@@ -1280,6 +1530,60 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 
 .po-item-edit:hover {
   color: var(--info);
+}
+
+/* Eliminar item (Fase 1-P1): delete_outline rojo L887-891 */
+.po-item-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: 8px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  color: #e53935; /* red.shade600 */
+  cursor: pointer;
+}
+
+.po-item-delete:hover:not(:disabled) {
+  color: var(--error);
+}
+
+.po-item-delete:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Columna qty read-only (estados ≠ pendiente): sin steppers */
+.po-item-qty-col--readonly {
+  justify-content: center;
+  min-width: 28px;
+}
+
+/* Botón rojo del confirm de eliminación */
+.pay-btn--danger {
+  background: var(--error);
+  color: #ffffff;
+}
+
+.pay-btn--danger:hover:not(:disabled) {
+  background: #e53935;
+}
+
+.pay-btn--danger:disabled {
+  background: #616161;
+  color: #bdbdbd;
+  cursor: not-allowed;
+}
+
+.po-remove-text {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.5;
 }
 
 .po-divider {

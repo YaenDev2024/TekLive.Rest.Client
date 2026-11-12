@@ -29,6 +29,7 @@ import type {
   CreatedOrderResponse,
   DollarRate,
   OrderDetail,
+  OrderItemPayload,
   PaymentMethod,
   PaymentResponse,
   PendingOrderListItem,
@@ -229,6 +230,61 @@ export function updateOrderStatus(
   return apiPatch<Record<string, never>>(
     `/api/rest/orders/${encodeURIComponent(orderId)}/status`,
     body,
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Fase 1-P1 · Edición de items de orden PENDIENTE (backend BusinessSuite
+// commit 53604e0). Los 3 endpoints devuelven 200 con el RestOrderDetailResponse
+// COMPLETO actualizado (mismo shape que GET orders/{id}: items + total) —
+// SIN envelope (Ok(detail) directo, como GET /orders/{id}).
+// Errores: 400 { message } (validación), 404 { message }, 409
+// { currentStatus, message } si la orden ya no está 'pendiente' (carrera:
+// alguien la cobró/avanzó mientras tanto). ApiError expone status + message;
+// para leer currentStatus del 409 usa readConflictStatus del orders store.
+// ---------------------------------------------------------------------------
+
+/**
+ * POST api/rest/orders/{id}/items — agrega un item a una orden PENDIENTE.
+ * Body IGUAL al item de crear orden (RestAddOrderItemRequest hereda de
+ * RestOrderItemRequest): productId (null/omitido para extras standalone),
+ * quantity 1-999, notes?, extras [{extraId}], complements number[],
+ * selectedOptions [{groupId, valueIds}]. El backend recalcula el precio con
+ * la MISMA lógica del create (el precio del cliente es solo display).
+ */
+export function addOrderItem(
+  orderId: number,
+  body: OrderItemPayload,
+): Promise<ApiResult<OrderDetail>> {
+  return apiPost<OrderDetail>(`/api/rest/orders/${encodeURIComponent(orderId)}/items`, body)
+}
+
+/**
+ * DELETE api/rest/orders/{id}/items/{itemId} — quita un item (y sus extras)
+ * de una orden PENDIENTE. 200 con el detalle completo actualizado.
+ */
+export function removeOrderItem(
+  orderId: number,
+  itemId: number,
+): Promise<ApiResult<OrderDetail>> {
+  return apiDelete<OrderDetail>(
+    `/api/rest/orders/${encodeURIComponent(orderId)}/items/${encodeURIComponent(itemId)}`,
+  )
+}
+
+/**
+ * PATCH api/rest/orders/{id}/items/{itemId} — cambia la cantidad (1-999;
+ * 0 → 400: para quitar usa removeOrderItem). El unitario NUNCA se re-precia:
+ * total del renglón = UNIT_PRICE congelado × quantity.
+ */
+export function updateOrderItemQuantity(
+  orderId: number,
+  itemId: number,
+  quantity: number,
+): Promise<ApiResult<OrderDetail>> {
+  return apiPatch<OrderDetail>(
+    `/api/rest/orders/${encodeURIComponent(orderId)}/items/${encodeURIComponent(itemId)}`,
+    { quantity },
   )
 }
 

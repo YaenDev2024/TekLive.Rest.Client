@@ -23,6 +23,8 @@ import type {
   PaymentMethod,
   RestCustomer,
 } from '../api/pos-types'
+import { POS_PLANT_ID } from './catalog'
+import { useCashStore } from './cash'
 
 // ---------------------------------------------------------------------------
 // Tipos internos del carrito
@@ -149,6 +151,24 @@ export const useCartStore = defineStore('cart', {
      */
     lines(state): CartItem[] {
       return state.items
+    },
+
+    /**
+     * Gate de caja abierta (Fase 1-P1, réplica _canSell del order_provider
+     * que consulta CashSessionProvider): true SOLO si hay sesión de caja
+     * ABIERTA para el piso 1 (POS_PLANT_ID). El store de caja se consulta
+     * lazy dentro del getter (Pinia lo permite fuera de componentes) para
+     * evitar dependencias circulares en tiempo de import. La vista PosPiso1
+     * garantiza que la sesión esté cargada (fetchCurrent al montar).
+     * ⚠️ El gate SOLO aplica al botón de pago LOCAL ('Proceder al Pago');
+     * guardar pendiente/EXTERNO/UBER/DIDI NO requiere caja (el backend hace
+     * CashSessionId opcional).
+     * NOTA: método normal (NO `get x()`): los accessors rompen la inferencia
+     * de DefineGetters/DefineActions de Pinia (option store).
+     */
+    canSell(): boolean {
+      const cash = useCashStore()
+      return cash.hasOpenSession && cash.current?.plantId === POS_PLANT_ID
     },
   },
 
@@ -346,15 +366,6 @@ export const useCartStore = defineStore('cart', {
       this.customer = null
       this.platformDeliveryInfo = ''
       this.placing = false
-    },
-
-    /**
-     * Gate de caja abierta — TODO(cash-round-2): aquí se enchufará el check
-     * de sesión de caja (useCashSessionStore.currentSession != null) para
-     * bloquear venta/pendiente sin sesión. Ronda 1: siempre permite vender.
-     */
-    get canSell(): boolean {
-      return true // TODO(cash-round-2): gate real con sesión de caja
     },
 
     /**

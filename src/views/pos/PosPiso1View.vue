@@ -45,6 +45,7 @@ import {
 import type { CatalogExtra, CatalogTemplate } from '../../api/pos-types'
 import { POS_PLANT_ID, POS_SUCURSAL_ID, useCatalogStore } from '../../stores/catalog'
 import { cartItemUnitPrice, useCartStore, type CartItem } from '../../stores/cart'
+import { useCashStore } from '../../stores/cash'
 import { useOrdersStore } from '../../stores/orders'
 import { useToastStore } from '../../stores/toast'
 import { session } from '../../services/auth'
@@ -58,6 +59,7 @@ import ExternalCustomerForm from '../../components/pos/ExternalCustomerForm.vue'
 
 const catalog = useCatalogStore()
 const cart = useCartStore()
+const cashStore = useCashStore()
 const ordersStore = useOrdersStore()
 const toast = useToastStore()
 
@@ -74,6 +76,13 @@ function onPhoneMq(e: MediaQueryListEvent | MediaQueryList): void {
 
 onMounted(() => {
   void catalog.fetchCatalog(POS_PLANT_ID)
+  // Gate de caja (Fase 1-P1): asegura la sesión del piso 1 para que
+  // cart.canSell sea preciso (réplica del gate _openPosForFloor — si el
+  // usuario entró directo por router sin pasar por el selector de módulos,
+  // el cash store estaría vacío y bloquearía la venta LOCAL injustamente).
+  if (cashStore.current == null || cashStore.current.plantId !== POS_PLANT_ID) {
+    void cashStore.fetchCurrent(POS_PLANT_ID)
+  }
   // Flutter mide el ancho del CONTENEDOR (LayoutBuilder), no la ventana:
   // con panel de 290px fijo, contenedor = viewport − 290. ResizeObserver
   // porque el wrap solo existe cuando el catálogo termina de cargar.
@@ -425,8 +434,12 @@ function formatMoney(amount: number): string {
   return `$${amount.toFixed(2)}`
 }
 
-/** Gate de caja: TODO(cash-round-2) — cart.canSell enchufará la sesión. */
+/** Gate de caja (Fase 1-P1): canSell real = sesión OPEN del piso 1.
+ *  SOLO bloquea el pago LOCAL; guardar pendiente/externo NO (el backend hace
+ *  CashSessionId opcional). */
 const canSell = computed(() => cart.canSell)
+/** Banner discreto: sin caja + carrito con items. */
+const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
 </script>
 
 <template>
@@ -676,6 +689,17 @@ const canSell = computed(() => cart.canSell)
         </div>
 
         <div class="op-divider" aria-hidden="true"></div>
+
+        <!-- Banner gate de caja (Fase 1-P1): sin sesión OPEN del piso 1 el
+             pago LOCAL está bloqueado; guardar pendiente/externo sigue vivo. -->
+        <AppBanner
+          v-if="showCashGateBanner"
+          type="warning"
+          class="op-cash-banner"
+          data-testid="cash-gate-banner"
+        >
+          Inicia sesión de caja para vender
+        </AppBanner>
 
         <!-- Lista de items (réplica OrderListItem L946-1192) -->
         <div v-if="cart.isEmpty" class="op-empty">
@@ -1556,6 +1580,13 @@ const canSell = computed(() => cart.canSell)
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+/* Banner gate de caja (Fase 1-P1): compacto sobre el panel */
+.op-cash-banner {
+  margin: 0 16px 4px;
+  font-size: 0.82rem;
+  padding: 8px 10px;
 }
 
 .op-total {
