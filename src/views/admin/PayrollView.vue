@@ -10,13 +10,13 @@
  * - Sección empleado (L684-756): picker de empleados (Dropdown → AppSelect
  *   con nombre completo + puesto; aquí + número, brief) que AUTOCOMPLETA
  *   RFC/CURP/NSS/Puesto/Salarios EDITABLES después (_selectEmployee
- *   L173-189). Si GET employees trae [] → banner warning 'No hay empleados
- *   dados de alta' + form manual completo habilitado (captura libre).
- *   NOTA contrato backend: POST records exige empleadoId > 0 pero NO valida
- *   que exista en rest.employees (tabla puede estar vacía) — la captura
- *   manual manda empleadoId = 0 → 400 'El empleado es requerido.' → el
- *   error del backend se muestra en toast (NO se inventa un id: Reporte
- *   coordinador — pendiente BACKEND para alta de empleados).
+ *   L173-189). Gestión ligera de empleados (backend f9ad45f — NO estaba en
+ *   el legacy): botón 'Dar de alta otro' abre modal POST employees; por
+ *   empleado seleccionado: desactivar (DELETE soft con confirm) y recargar
+ *   lista. Si GET employees trae [] → banner + CTA 'Dar de alta empleado'
+ *   (la captura manual con empleadoId=0 fue REMOVIDA: el backend la
+ *   rechaza con 400 'El empleado es requerido.' — el flujo SIEMPRE viaja
+ *   con empleadoId real).
  * - Periodo (L937-1019): periodoInicio/periodoFin (date inputs, envía
  *   yyyy-MM-dd) + Días trabajados (1-31, input numérico — el legacy lo
  *   derivaba del rango; el brief pide input directo).
@@ -51,6 +51,7 @@ import {
   Plus,
   RefreshCw,
   Trash2,
+  UserPlus,
 } from 'lucide-vue-next'
 import AppModal from '../../components/pos/AppModal.vue'
 import AppSelect from '../../components/ui/AppSelect.vue'
@@ -60,7 +61,11 @@ import { session } from '../../services/auth'
 import { useAdminPayrollStore } from '../../stores/adminPayroll'
 import { useToastStore } from '../../stores/toast'
 import { ApiError } from '../../api/client'
-import type { PayrollConceptoPayload, RestPayrollRecord } from '../../api/rest'
+import type {
+  PayrollConceptoPayload,
+  RestPayrollRecord,
+  SavePayrollEmployeePayload,
+} from '../../api/rest'
 
 const router = useRouter()
 const store = useAdminPayrollStore()
@@ -194,6 +199,187 @@ function onSelectEmployee(employeeId: string | number | null): void {
   }
 }
 
+// --- Alta de empleados (modal) — backend f9ad45f POST/DELETE employees ---------
+// El flujo de nómina SIEMPRE viaja con empleadoId real: el usuario primero da
+// de alta o selecciona un empleado (captura manual con empleadoId=0 removida —
+// el backend la rechaza con 400 'El empleado es requerido.').
+
+const showEmployeeModal = ref(false)
+
+const employeeForm = ref({
+  nombre: '',
+  apellidoPaterno: '',
+  apellidoMaterno: '',
+  numeroEmpleado: '',
+  puesto: '',
+  salarioDiario: '',
+  salarioBase: '',
+  rfc: '',
+  curp: '',
+  numeroSeguroSocial: '',
+})
+
+const savingEmployee = ref(false)
+
+function openEmployeeModal(): void {
+  employeeForm.value = {
+    nombre: '',
+    apellidoPaterno: '',
+    apellidoMaterno: '',
+    numeroEmpleado: '',
+    puesto: '',
+    salarioDiario: '',
+    salarioBase: '',
+    rfc: '',
+    curp: '',
+    numeroSeguroSocial: '',
+  }
+  showEmployeeModal.value = true
+}
+
+function closeEmployeeModal(): void {
+  if (savingEmployee.value) return
+  showEmployeeModal.value = false
+}
+
+/** Sanitize decimal para los salarios del form de alta (mismo patrón). */
+function sanitizeEmployeeAmount(key: 'salarioDiario' | 'salarioBase'): void {
+  const cleaned = employeeForm.value[key].replace(/[^\d.]/g, '')
+  const dot = cleaned.indexOf('.')
+  employeeForm.value[key] =
+    dot === -1
+      ? cleaned
+      : cleaned.slice(0, dot + 1) + cleaned.slice(dot + 1).replace(/\./g, '').slice(0, 2)
+}
+
+/** Autoselecciona en el picker + autocompleta el form de nómina (L173-189). */
+function selectNewEmployee(employeeId: number): void {
+  selectedEmployeeId.value = employeeId
+  onSelectEmployee(employeeId)
+}
+
+/**
+ * POST employees → toast 'Empleado dado de alta' → recarga (hecha por el
+ * store) → autoselecciona el nuevo para continuar la nómina con
+ * empleadoId real. Validaciones 400 del backend replicadas en toasts.
+ */
+async function submitEmployee(): Promise<void> {
+  if (savingEmployee.value) return
+  const f = employeeForm.value
+  if (f.nombre.trim().length === 0) {
+    toast.warning('El nombre del empleado es requerido.') // backend exacto
+    return
+  }
+  if (f.apellidoPaterno.trim().length === 0) {
+    toast.warning('El apellido paterno es requerido.') // backend exacto
+    return
+  }
+  if (f.rfc.trim().length === 0) {
+    toast.warning('El RFC es requerido.') // backend exacto
+    return
+  }
+  if (f.curp.trim().length === 0) {
+    toast.warning('La CURP es requerida.') // backend exacto
+    return
+  }
+  const salarioDiario = parseAmount(f.salarioDiario)
+  const salarioBase = parseAmount(f.salarioBase)
+  if (salarioDiario < 0 || salarioBase < 0) {
+    toast.warning('Los salarios no pueden ser negativos.') // backend exacto
+    return
+  }
+  const body: SavePayrollEmployeePayload = {
+    nombre: f.nombre.trim(),
+    apellidoPaterno: f.apellidoPaterno.trim(),
+    apellidoMaterno: f.apellidoMaterno.trim().length > 0 ? f.apellidoMaterno.trim() : null,
+    numeroEmpleado: f.numeroEmpleado.trim().length > 0 ? f.numeroEmpleado.trim() : null,
+    puesto: f.puesto.trim().length > 0 ? f.puesto.trim() : null,
+    salarioDiario,
+    salarioBase,
+    rfc: f.rfc.trim(),
+    curp: f.curp.trim(),
+    numeroSeguroSocial:
+      f.numeroSeguroSocial.trim().length > 0 ? f.numeroSeguroSocial.trim() : null,
+    email: null,
+  }
+  savingEmployee.value = true
+  try {
+    const newId = await store.createEmployee(body)
+    toast.success('Empleado dado de alta')
+    showEmployeeModal.value = false
+    selectNewEmployee(newId)
+  } catch (err) {
+    // 400 backend (duplicado numeroEmpleado, etc.) sube con su message exacto.
+    toast.error(
+      err instanceof ApiError && err.status !== 0
+        ? `Error: ${err.message}`
+        : 'Error: No se pudo conectar con el servidor. Verifica tu conexión.',
+    )
+  } finally {
+    savingEmployee.value = false
+  }
+}
+
+// --- Desactivar empleado (DELETE employees/{id} — SOFT) ------------------------
+
+const confirmingEmployee = ref<RestPayrollEmployeeLite | null>(null)
+const deletingEmployee = ref(false)
+
+interface RestPayrollEmployeeLite {
+  id: number
+  nombre: string
+  apellidoPaterno: string
+}
+
+function askDeactivateEmployee(): void {
+  if (selectedEmployeeId.value == null) return
+  const employee = store.employees.find((e) => e.id === selectedEmployeeId.value)
+  if (employee == null) return
+  confirmingEmployee.value = {
+    id: employee.id,
+    nombre: employee.nombre,
+    apellidoPaterno: employee.apellidoPaterno,
+  }
+}
+
+function cancelDeactivateEmployee(): void {
+  if (deletingEmployee.value) return
+  confirmingEmployee.value = null
+}
+
+/** DELETE soft → recarga + limpia el form si el activo era el desactivado. */
+async function confirmDeactivateEmployee(): Promise<void> {
+  if (confirmingEmployee.value == null || deletingEmployee.value) return
+  deletingEmployee.value = true
+  try {
+    const deactivatedId = confirmingEmployee.value.id
+    await store.deleteEmployee(deactivatedId)
+    toast.success('Empleado desactivado')
+    confirmingEmployee.value = null
+    if (selectedEmployeeId.value === deactivatedId) {
+      selectedEmployeeId.value = null
+      form.value = {
+        ...form.value,
+        nombre: '',
+        rfc: '',
+        curp: '',
+        nss: '',
+        puesto: '',
+        salarioDiario: '',
+        salarioBase: '',
+      }
+    }
+  } catch (err) {
+    toast.error(
+      err instanceof ApiError && err.status !== 0
+        ? `Error: ${err.message}`
+        : 'Error: No se pudo conectar con el servidor. Verifica tu conexión.',
+    )
+  } finally {
+    deletingEmployee.value = false
+  }
+}
+
 // --- Percepciones / Deducciones (listas dinámicas L1022-1137 + L1271-1344) -----
 
 interface ConceptoDraft {
@@ -273,6 +459,12 @@ function resetForm(): void {
 async function submitSave(): Promise<void> {
   if (saving.value) return
   // Validaciones (réplica L243-266 + contratos backend 400):
+  // empleadoId SIEMPRE real: alta/selección obligatoria (captura manual con
+  // empleadoId=0 removida — el backend la rechaza con 400).
+  if (selectedEmployeeId.value == null) {
+    toast.warning('Selecciona un empleado o dálo de alta primero')
+    return
+  }
   if (form.value.nombre.trim().length === 0) {
     toast.warning('Completa al menos Nombre y RFC')
     return
@@ -305,11 +497,10 @@ async function submitSave(): Promise<void> {
 
   saving.value = true
   try {
-    // ⚠️ empleadoId: el picker lo trae de rest.employees. Captura manual
-    // (tabla vacía) manda 0 → el backend responde 400 'El empleado es
-    // requerido.' y el toast muestra el message (sin inventar ids).
+    // empleadoId SIEMPRE real del picker (rest.employees) — el flujo manual
+    // con 0 fue removido junto con el banner de captura libre.
     const { netoPagar: netoServer } = await store.createRecord({
-      empleadoId: selectedEmployeeId.value ?? 0,
+      empleadoId: selectedEmployeeId.value,
       nombreEmpleado: form.value.nombre.trim(),
       rfc: form.value.rfc.trim(),
       curp: form.value.curp.trim(),
@@ -424,28 +615,72 @@ async function confirmDelete(): Promise<void> {
         {{ store.employeesError }}
       </AppBanner>
 
-      <!-- ===== Banner tabla vacía (brief): form manual completo ===== -->
-      <AppBanner
+      <!-- ===== Sin empleados: banner + CTA alta (backend f9ad45f) ===== -->
+      <div
         v-if="!store.employeesLoading && store.employeesError == null && !hasEmployees"
-        type="warning"
+        class="py-empty-employees"
         data-testid="py-no-employees"
       >
-        No hay empleados dados de alta — captura manual habilitada
-      </AppBanner>
+        <AppBanner type="warning">
+          No hay empleados dados de alta — da de alta uno para crear la nómina
+        </AppBanner>
+        <button
+          type="button"
+          class="py-btn py-btn--primary py-add-employee-btn"
+          data-testid="py-open-employee-modal"
+          @click="openEmployeeModal"
+        >
+          <UserPlus :size="18" aria-hidden="true" />
+          Dar de alta empleado
+        </button>
+      </div>
 
-      <!-- ===== Sección empleado: picker + autocompletado ===== -->
-      <section v-if="hasEmployees" class="py-card" data-testid="py-picker-card">
-        <h2 class="py-card-title">Seleccionar Empleado</h2>
+      <!-- ===== Sección empleado: picker + gestión ligera ===== -->
+      <section class="py-card" data-testid="py-picker-card">
+        <div class="py-card-head">
+          <h2 class="py-card-title">Seleccionar Empleado</h2>
+          <button
+            type="button"
+            class="py-add-btn py-add-btn--percepcion"
+            data-testid="py-picker-add-employee"
+            @click="openEmployeeModal"
+          >
+            <UserPlus :size="16" aria-hidden="true" />
+            Dar de alta otro
+          </button>
+        </div>
         <div class="py-field">
           <span class="py-label">Empleado Existente</span>
           <AppSelect
             v-model="selectedEmployeeId"
             :options="employeeOptions"
-            placeholder="Sin empleado seleccionado (captura manual)"
+            :disabled="!hasEmployees"
+            placeholder="Sin empleado seleccionado"
             testid="py-employee-picker"
             aria-label="Empleado Existente"
             @update:model-value="onSelectEmployee"
           />
+        </div>
+        <div v-if="hasEmployees" class="py-picker-actions">
+          <button
+            type="button"
+            class="py-picker-action py-picker-action--danger"
+            data-testid="py-deactivate-employee"
+            :disabled="selectedEmployeeId == null"
+            @click="askDeactivateEmployee"
+          >
+            <Trash2 :size="14" aria-hidden="true" />
+            Desactivar empleado
+          </button>
+          <button
+            type="button"
+            class="py-picker-action"
+            data-testid="py-reload-employees"
+            @click="store.loadEmployees(true)"
+          >
+            <RefreshCw :size="14" aria-hidden="true" />
+            Recargar lista
+          </button>
         </div>
       </section>
 
@@ -867,6 +1102,202 @@ async function confirmDelete(): Promise<void> {
           @click="confirmDelete"
         >
           Eliminar
+        </button>
+      </template>
+    </AppModal>
+
+    <!-- ===== Modal alta de empleado (POST employees, backend f9ad45f) ===== -->
+    <AppModal
+      v-if="showEmployeeModal"
+      title="Dar de alta empleado"
+      :width="480"
+      @close="closeEmployeeModal"
+    >
+      <div class="py-field">
+        <label class="py-label" for="py-emp-nombre">Nombre *</label>
+        <input
+          id="py-emp-nombre"
+          v-model="employeeForm.nombre"
+          type="text"
+          class="py-input"
+          data-testid="py-emp-nombre"
+          autocomplete="off"
+          maxlength="200"
+        />
+      </div>
+      <div class="py-row">
+        <div class="py-field">
+          <label class="py-label" for="py-emp-apellido-paterno">Apellido paterno *</label>
+          <input
+            id="py-emp-apellido-paterno"
+            v-model="employeeForm.apellidoPaterno"
+            type="text"
+            class="py-input"
+            data-testid="py-emp-apellido-paterno"
+            autocomplete="off"
+            maxlength="200"
+          />
+        </div>
+        <div class="py-field">
+          <label class="py-label" for="py-emp-apellido-materno">Apellido materno</label>
+          <input
+            id="py-emp-apellido-materno"
+            v-model="employeeForm.apellidoMaterno"
+            type="text"
+            class="py-input"
+            data-testid="py-emp-apellido-materno"
+            autocomplete="off"
+            maxlength="200"
+          />
+        </div>
+      </div>
+      <div class="py-row">
+        <div class="py-field">
+          <label class="py-label" for="py-emp-numero">Número de empleado</label>
+          <input
+            id="py-emp-numero"
+            v-model="employeeForm.numeroEmpleado"
+            type="text"
+            class="py-input"
+            data-testid="py-emp-numero"
+            autocomplete="off"
+            maxlength="100"
+          />
+        </div>
+        <div class="py-field">
+          <label class="py-label" for="py-emp-puesto">Puesto</label>
+          <input
+            id="py-emp-puesto"
+            v-model="employeeForm.puesto"
+            type="text"
+            class="py-input"
+            data-testid="py-emp-puesto"
+            autocomplete="off"
+            maxlength="200"
+          />
+        </div>
+      </div>
+      <div class="py-row">
+        <div class="py-field">
+          <label class="py-label" for="py-emp-salario-diario">Salario diario</label>
+          <input
+            id="py-emp-salario-diario"
+            v-model="employeeForm.salarioDiario"
+            type="text"
+            class="py-input"
+            data-testid="py-emp-salario-diario"
+            inputmode="decimal"
+            autocomplete="off"
+            placeholder="0.00"
+            @input="sanitizeEmployeeAmount('salarioDiario')"
+          />
+        </div>
+        <div class="py-field">
+          <label class="py-label" for="py-emp-salario-base">Salario base</label>
+          <input
+            id="py-emp-salario-base"
+            v-model="employeeForm.salarioBase"
+            type="text"
+            class="py-input"
+            data-testid="py-emp-salario-base"
+            inputmode="decimal"
+            autocomplete="off"
+            placeholder="0.00"
+            @input="sanitizeEmployeeAmount('salarioBase')"
+          />
+        </div>
+      </div>
+      <div class="py-row">
+        <div class="py-field">
+          <label class="py-label" for="py-emp-rfc">RFC *</label>
+          <input
+            id="py-emp-rfc"
+            v-model="employeeForm.rfc"
+            type="text"
+            class="py-input"
+            data-testid="py-emp-rfc"
+            autocomplete="off"
+            maxlength="40"
+          />
+        </div>
+        <div class="py-field">
+          <label class="py-label" for="py-emp-curp">CURP *</label>
+          <input
+            id="py-emp-curp"
+            v-model="employeeForm.curp"
+            type="text"
+            class="py-input"
+            data-testid="py-emp-curp"
+            autocomplete="off"
+            maxlength="40"
+          />
+        </div>
+      </div>
+      <div class="py-field">
+        <label class="py-label" for="py-emp-nss">Número de seguro social</label>
+        <input
+          id="py-emp-nss"
+          v-model="employeeForm.numeroSeguroSocial"
+          type="text"
+          class="py-input"
+          data-testid="py-emp-nss"
+          autocomplete="off"
+          maxlength="40"
+        />
+      </div>
+      <p class="py-modal-note">* Campos requeridos. El empleado nace activo.</p>
+      <template #footer>
+        <button
+          type="button"
+          class="py-btn py-btn--ghost"
+          data-testid="py-emp-cancel"
+          :disabled="savingEmployee"
+          @click="closeEmployeeModal"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          class="py-btn py-btn--primary"
+          data-testid="py-emp-save"
+          :disabled="savingEmployee"
+          @click="submitEmployee"
+        >
+          <AppSpinner v-if="savingEmployee" :size="16" tone="light" />
+          Dar de alta
+        </button>
+      </template>
+    </AppModal>
+
+    <!-- ===== Confirm desactivar empleado (DELETE employees — SOFT) ===== -->
+    <AppModal
+      v-if="confirmingEmployee != null"
+      title="Desactivar empleado"
+      :width="420"
+      @close="cancelDeactivateEmployee"
+    >
+      <p class="py-confirm-text" data-testid="py-emp-confirm-text">
+        ¿Desactivar a {{ confirmingEmployee.nombre }} {{ confirmingEmployee.apellidoPaterno }}? El
+        empleado dejará de aparecer en la lista y no podrá seleccionarse para nuevas nóminas.
+      </p>
+      <template #footer>
+        <button
+          type="button"
+          class="py-btn py-btn--ghost"
+          data-testid="py-emp-confirm-cancel"
+          :disabled="deletingEmployee"
+          @click="cancelDeactivateEmployee"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          class="py-btn py-btn--danger"
+          data-testid="py-emp-confirm-ok"
+          :disabled="deletingEmployee"
+          @click="confirmDeactivateEmployee"
+        >
+          Desactivar
         </button>
       </template>
     </AppModal>
@@ -1410,5 +1841,65 @@ async function confirmDelete(): Promise<void> {
   .py-field--narrow {
     max-width: none;
   }
+}
+
+/* ===== Alta/gestión de empleados (backend f9ad45f) ============================ */
+
+.py-empty-employees {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.py-add-employee-btn {
+  margin: 0; /* override del margin lateral del --primary */
+}
+
+.py-picker-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.py-picker-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.py-picker-action:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--text-faint);
+}
+
+.py-picker-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.py-picker-action--danger {
+  color: var(--error);
+  border-color: rgba(255, 82, 82, 0.4);
+}
+
+.py-picker-action--danger:hover:not(:disabled) {
+  color: var(--error);
+  border-color: var(--error);
+}
+
+.py-modal-note {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--text-faint);
 }
 </style>

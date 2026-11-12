@@ -13,13 +13,16 @@
 
 import { defineStore } from 'pinia'
 import {
+  createPayrollEmployee,
   createPayrollRecord,
+  deletePayrollEmployee,
   deletePayrollRecord,
   getPayrollEmployees,
   getPayrollRecords,
   type CreatePayrollRecordPayload,
   type RestPayrollEmployee,
   type RestPayrollRecord,
+  type SavePayrollEmployeePayload,
 } from '../api/rest'
 import { ApiError } from '../api/client'
 
@@ -92,6 +95,24 @@ export const useAdminPayrollStore = defineStore('adminPayroll', {
     async deleteRecord(recordId: number): Promise<void> {
       await deletePayrollRecord(recordId)
       await this.loadRecords(true)
+    },
+
+    /**
+     * POST employees (alta; nace activo) + recarga de la lista.
+     * Devuelve el id creado para autoseleccionarlo en el picker.
+     * Errores 400 (rfc/curp vacíos, salarios negativos, numeroEmpleado
+     * duplicado entre activos) NO se tragan: suben a la vista para el toast.
+     */
+    async createEmployee(body: SavePayrollEmployeePayload): Promise<number> {
+      const { data } = await createPayrollEmployee(body)
+      await this.loadEmployees(true)
+      return data.id
+    },
+
+    /** DELETE employees/{id} — SOFT (deja de aparecer en GET employees). */
+    async deleteEmployee(employeeId: number): Promise<void> {
+      await deletePayrollEmployee(employeeId)
+      await this.loadEmployees(true)
     },
   },
 })

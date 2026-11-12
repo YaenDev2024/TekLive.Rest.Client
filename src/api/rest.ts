@@ -1248,3 +1248,67 @@ export async function deletePayrollRecord(
   )
   return { status, data: data.data }
 }
+
+// --- M4b · Alta/gestión de empleados (api/rest/payroll/employees) -------------
+// Backend commit f9ad45f (RestPayrollController): POST/PUT/DELETE employees.
+// POST nace Activo=true; PUT aplica body + Activo tal cual (reactiva);
+// DELETE es SOFT (Activo=false — deja de aparecer en GET employees).
+// numeroEmpleado: único ENTRE ACTIVOS de la empresa → 400 si duplicado.
+
+/** Body de POST/PUT api/rest/payroll/employees (RestCreateEmployeeRequest). */
+export interface SavePayrollEmployeePayload {
+  /** Requerido (máx 200). */
+  nombre: string
+  /** Requerido (máx 200). */
+  apellidoPaterno: string
+  apellidoMaterno?: string | null
+  /** Opcional (máx 100); único entre activos de la empresa. */
+  numeroEmpleado?: string | null
+  puesto?: string | null
+  /** >= 0. */
+  salarioDiario: number
+  /** >= 0. */
+  salarioBase: number
+  /** Requerido (máx 40). */
+  rfc: string
+  /** Requerido (máx 40). */
+  curp: string
+  numeroSeguroSocial?: string | null
+  email?: string | null
+}
+
+/** POST api/rest/payroll/employees → 201 { id } (desenrollado). */
+export async function createPayrollEmployee(
+  body: SavePayrollEmployeePayload,
+): Promise<ApiResult<{ id: number }>> {
+  const { status, data } = await apiPost<Envelope<{ id: number }>>(
+    '/api/rest/payroll/employees',
+    body,
+  )
+  return { status, data: data.data }
+}
+
+/**
+ * PUT api/rest/payroll/employees/{id} — body + activo (reactivación
+ * incluida). 200; 404 si no existe/ajeno; 400 validación.
+ */
+export async function updatePayrollEmployee(
+  employeeId: number,
+  body: SavePayrollEmployeePayload & { activo: boolean },
+): Promise<ApiResult<Record<string, never>>> {
+  const { status, data } = await apiPut<Envelope<Record<string, never>>>(
+    `/api/rest/payroll/employees/${encodeURIComponent(employeeId)}`,
+    body,
+  )
+  return { status, data: data.data }
+}
+
+/** DELETE api/rest/payroll/employees/{id} — SOFT delete (desenrollado). */
+export async function deletePayrollEmployee(
+  employeeId: number,
+): Promise<ApiResult<Record<string, never>>> {
+  const { status, data } = await apiDelete<Envelope<Record<string, never>>>(
+    `/api/rest/payroll/employees/${encodeURIComponent(employeeId)}`,
+  )
+  return { status, data: data.data }
+}
