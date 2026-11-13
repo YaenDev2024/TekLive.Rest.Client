@@ -10,8 +10,16 @@
 //! probe TCP 9100 del Flutter (printer_probe_service.dart — el scan de red y
 //! validatePrinterReadiness usan connect_timeout al 9100).
 //!
+//! Cuarto comando `print_tcp` (ronda robustez RED): socket TCP directo a
+//! ip:9100 con los bytes ESC/POS — el camino REAL de esc_pos_printer_plus del
+//! Flutter (printing_service.dart L437-465: Socket.connect → add → flush →
+//! delay → destroy). NO pasa por el spooler de Windows ni exige impresora
+//! instalada: solo conectividad IP. Réplica del drain del socket Dart: el
+//! stream vive ~250ms tras el flush leyendo la respuesta antes de cerrar.
+//!
 //! Limpieza en todos los caminos de error (mirror de los `finally` del C#):
-//! ClosePrinter siempre; EndDocPrinter siempre tras un StartDoc OK.
+//! ClosePrinter siempre; EndDocPrinter siempre tras un StartDoc OK; el
+//! TcpStream se cierra por Drop en TODOS los caminos de print_tcp.
 
 use serde::Serialize;
 
@@ -72,6 +80,102 @@ pub fn probe_printer(ip: String, port: u16, timeout_ms: u64) -> Result<bool, Str
         }
         Err(e) => Err(format!("Sin respuesta de {ip}:{port}: {e}")),
     }
+}
+
+/// Envía bytes ESC/POS por socket TCP DIRECTO a una impresora de red
+/// (camino real de esc_pos_printer_plus: NO usa el spooler de Windows ni
+/// exige impresora instalada — solo conectividad IP:9100).
+///
+/// Réplica del flujo del Dart (printing_service.dart L437-465 /
+/// _sendRawBytesToNetworkPrinter L646-656):
+///   Socket.connect(ip, 9100, timeout) → add(bytes) → flush → esperar
+///   procesamiento → socket.destroy().
+///
+/// El "flush + esperar" del Dart se replica como: write_all + flush +
+/// shutdown(Write) + drain de lectura ~250ms (set_read_timeout 250ms hasta
+/// WouldBlock/TimedOut/EOF). El drain deja a la térmica terminar de procesar
+/// antes de cerrar (el Dart hacía `Future.delayed(300-1000ms)` en el socket).
+///
+/// `timeout_ms` aplica a connect Y a write (set_write/read_timeout).
+#[tauri::command]
+pub fn print_tcp(
+    ip: String,
+    port: u16,
+    data: Vec<u8>,
+    timeout_ms: u64,
+) -> Result<(), String> {
+    use std::io::Write;
+    use std::net::{IpAddr, Shutdown, SocketAddr, TcpStream, ToSocketAddrs};
+    use std::time::Duration;
+
+    let ip_trim = ip.trim().to_string();
+    if ip_trim.is_empty() {
+        return Err("Dirección IP vacía.".to_string());
+    }
+    if data.is_empty() {
+        return Err("No hay datos de ticket que enviar.".to_string());
+    }
+
+    // La UI manda IPs literalmente; también acepta hostname resolviéndolo
+    // (mismo criterio que probe_printer).
+    let addr: SocketAddr = if let Ok(ip_addr) = ip_trim.parse::<IpAddr>() {
+        SocketAddr::new(ip_addr, port)
+    } else {
+        let mut candidates = match (ip_trim.as_str(), port).to_socket_addrs() {
+            Ok(addrs) => addrs.collect::<Vec<_>>(),
+            Err(e) => return Err(format!("No se pudo resolver '{ip_trim}': {e}")),
+        };
+        match candidates.pop() {
+            Some(addr) => addr,
+            None => return Err(format!("No se pudo resolver '{ip_trim}'.")),
+        }
+    };
+
+    let timeout = Duration::from_millis(timeout_ms);
+
+    // connect_timeout exige SocketAddr (ya resuelto arriba). Error descriptivo
+    // con destino + causa (mirror del mensaje del probe).
+    let mut stream = TcpStream::connect_timeout(&addr, timeout).map_err(|e| {
+        format!("Sin respuesta de {ip_trim}:{port}: {e} (verifica que esté encendida y en la red)")
+    })?;
+
+    // Timeouts de E/S: write y read acotados por el mismo timeout_ms.
+    stream
+        .set_write_timeout(Some(timeout))
+        .map_err(|e| format!("No se pudo configurar el timeout de escritura: {e}"))?;
+    stream
+        .set_read_timeout(Some(Duration::from_millis(250)))
+        .map_err(|e| format!("No se pudo configurar el timeout de lectura: {e}"))?;
+
+    // write_all + flush: todos los bytes al buffer del socket.
+    if let Err(e) = stream.write_all(&data) {
+        return Err(format!("Error enviando datos a {ip_trim}:{port}: {e}"));
+    }
+    if let Err(e) = stream.flush() {
+        return Err(format!("Error enviando datos a {ip_trim}:{port}: {e}"));
+    }
+
+    // shutdown(Write): señal EOF a la impresora (el Dart cerraba el socket
+    // tras el delay; shutdown permite drenar mientras ella procesa).
+    if let Err(e) = stream.shutdown(Shutdown::Write) {
+        // No fatal: algunas térmicas ya cerraron su lado.
+        let _ = e;
+    }
+
+    // Drain ~250ms: leer la respuesta de la impresora (status bytes, ACKs)
+    // hasta timeout/EOF — réplica del socket Dart que vivía 300-1000ms tras
+    // el flush. Sin este delay una térmica lenta puede perder el tail.
+    let mut sink = [0u8; 512];
+    loop {
+        match std::io::Read::read(&mut stream, &mut sink) {
+            Ok(0) => break,   // EOF: la impresora cerró.
+            Ok(_) => {}       // Bytes de estado: descartados.
+            Err(_) => break,  // TimedOut/WouldBlock/interrumpido: fin del drain.
+        }
+    }
+
+    // Drop del stream: cierre garantizado en todos los caminos.
+    Ok(())
 }
 
 #[cfg(windows)]

@@ -52,6 +52,7 @@ import {
   isTauri,
   listPrinters,
   printRawEscPos,
+  printTcpEscPos,
   probePrinter,
   type TauriPrinter,
 } from '../../services/printing/tauri-bridge'
@@ -151,7 +152,9 @@ async function sendTestTicket(): Promise<void> {
         toast.warning('Configura primero la impresora principal.')
         return
       }
-      await printRawEscPos(target, ticketToEscPosBytes(doc))
+      // Ronda robustez RED: la principal se guarda como red (probe 9100) →
+      // socket TCP directo, mismo transporte del flujo de venta.
+      await printTcpEscPos(target, 9100, ticketToEscPosBytes(doc), 2500)
       toast.success('Ticket de prueba enviado.')
     } else {
       const ok = printTicket(doc)
@@ -294,7 +297,13 @@ async function testArea(area: PrintArea): Promise<void> {
       state: { kind: 'pending' },
     })
     if (desktop) {
-      await printRawEscPos(value, ticketToEscPosBytes(doc))
+      // Mismo transporte por tipo que el flujo de venta (ronda robustez
+      // RED): USB → spooler por nombre; red → socket TCP directo.
+      if (row.isUsb) {
+        await printRawEscPos(value, ticketToEscPosBytes(doc))
+      } else {
+        await printTcpEscPos(value, 9100, ticketToEscPosBytes(doc), 2500)
+      }
     } else {
       printTicket(doc)
     }

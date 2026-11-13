@@ -32,6 +32,7 @@ import {
 } from './index'
 import { logTicketPrint, type TicketConfig } from '../../api/rest'
 import { useAdminTicketConfigStore } from '../../stores/adminTicketConfig'
+import { useToastStore } from '../../stores/toast'
 import { isTauri } from '../printing/tauri-bridge'
 import {
   buildClientDocTauri,
@@ -233,8 +234,10 @@ async function logBoth(orderId: number | null | undefined, printerName: string):
  * abre previews ni modales.
  *
  * - Tauri: cocina por áreas (keywords → impresoras) + cliente (área CLIENTE
- *   o principal) vía print_raw; devuelve true si AMBOS flujos tuvieron al
- *   menos un destino OK (o el canal no requería destino).
+ *   o principal) vía socket TCP (red) / print_raw (USB); devuelve true si
+ *   AMBOS flujos tuvieron al menos un destino OK (o el canal no requería
+ *   destino). Los fallos por impresora suben como toast warning (ronda
+ *   robustez RED — NUNCA crash silencioso).
  * - Web: 1 diálogo del navegador con todos los tickets; true si se lanzó.
  */
 export function printSaleTickets(input: SaleTicketInput): boolean {
@@ -250,40 +253,64 @@ export function printSaleTickets(input: SaleTicketInput): boolean {
   return ok
 }
 
+/**
+ * Toast de fallos por impresora (ronda robustez RED): NUNCA crash silencioso.
+ * El resultado { ok, failures } de route-print ya propaga el error por
+ * destino — aquí se sube como toast warning con CADA impresora que falló
+ * (el toast es multilínea: white-space pre-line, réplica del '✓ Orden
+ * procesada\n💵 Cambio' del checkout). El éxito NO toastea aquí: el caller
+ * ya manda su toast de venta/pendiente.
+ */
+function toastPrintFailures(context: string, result: { ok: boolean; failures: string[] }): void {
+  if (result.failures.length === 0) return
+  try {
+    useToastStore().warning(`${context}\n${result.failures.join('\n')}`)
+  } catch {
+    // Fuera de contexto Pinia (tests/unit): sin toast disponible, el fallo
+    // queda en result.failures para el caller.
+  }
+}
+
 /** Flujo Tauri real (async): cocina por áreas + cliente. */
 async function printSaleTicketsTauri(input: SaleTicketInput): Promise<void> {
   const cfg = effectiveTicketConfig()
   const customerName = customerNameFor(input.orderType, input.platformDeliveryInfo)
-  try {
-    await printKitchenOrderByArea({
-      doc: buildPendingKitchenDocTauri({
-        folio: input.folio,
-        orderType: input.orderType,
-        platformDeliveryInfo: input.platformDeliveryInfo,
-        customerName,
-        customerPhone: input.customerPhone,
-        items: input.items,
-        total: input.total,
-        config: cfg,
-      }),
+  const kitchen = await printKitchenOrderByArea({
+    doc: buildPendingKitchenDocTauri({
+      folio: input.folio,
+      orderType: input.orderType,
+      platformDeliveryInfo: input.platformDeliveryInfo,
+      customerName,
+      customerPhone: input.customerPhone,
       items: input.items,
-    })
-  } catch { /* el resultado por destino ya se captura dentro */ }
-  try {
-    await printClientTicketTauri(
-      buildClientDocTauri({
-        folio: input.folio,
-        orderType: input.orderType,
-        platformDeliveryInfo: input.platformDeliveryInfo,
-        customerName,
-        customerPhone: input.customerPhone,
-        items: input.items,
-        total: input.total,
-        config: cfg,
-        paidState: input.paidState,
-      }),
-    )
-  } catch { /* idem */ }
+      total: input.total,
+      config: cfg,
+    }),
+    items: input.items,
+  }).catch((e: unknown) => ({
+    ok: false,
+    messages: [e instanceof Error ? e.message : String(e)],
+    failures: [e instanceof Error ? e.message : String(e)],
+  }))
+  toastPrintFailures('🖨️ Cocina:', kitchen)
+  const client = await printClientTicketTauri(
+    buildClientDocTauri({
+      folio: input.folio,
+      orderType: input.orderType,
+      platformDeliveryInfo: input.platformDeliveryInfo,
+      customerName,
+      customerPhone: input.customerPhone,
+      items: input.items,
+      total: input.total,
+      config: cfg,
+      paidState: input.paidState,
+    }),
+  ).catch((e: unknown) => ({
+    ok: false,
+    messages: [e instanceof Error ? e.message : String(e)],
+    failures: [e instanceof Error ? e.message : String(e)],
+  }))
+  toastPrintFailures('🖨️ Ticket cliente:', client)
   void logBoth(input.orderId, 'tauri')
 }
 
@@ -298,20 +325,23 @@ export function printPendingKitchenTicket(input: {
 }): boolean {
   if (isTauri()) {
     void (async () => {
-      try {
-        await printKitchenOrderByArea({
-          doc: buildPendingKitchenDocTauri({
-            folio: input.folio,
-            orderType: input.orderType,
-            platformDeliveryInfo: input.platformDeliveryInfo,
-            customerName: customerNameFor(input.orderType, input.platformDeliveryInfo),
-            items: input.items,
-            total: input.total,
-            config: effectiveTicketConfig(),
-          }),
+      const result = await printKitchenOrderByArea({
+        doc: buildPendingKitchenDocTauri({
+          folio: input.folio,
+          orderType: input.orderType,
+          platformDeliveryInfo: input.platformDeliveryInfo,
+          customerName: customerNameFor(input.orderType, input.platformDeliveryInfo),
           items: input.items,
-        })
-      } catch { /* resultado por destino capturado dentro */ }
+          total: input.total,
+          config: effectiveTicketConfig(),
+        }),
+        items: input.items,
+      }).catch((e: unknown) => ({
+        ok: false,
+        messages: [e instanceof Error ? e.message : String(e)],
+        failures: [e instanceof Error ? e.message : String(e)],
+      }))
+      toastPrintFailures('🖨️ Cocina:', result)
       if (input.orderId != null) {
         try {
           await logTicketPrint(input.orderId, { printType: 'kitchen', printerName: 'tauri', success: true, errorMessage: null })

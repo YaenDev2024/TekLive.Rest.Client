@@ -61,3 +61,21 @@ export async function printRawEscPos(printerName: string, data: Uint8Array): Pro
 export async function probePrinter(ip: string, port = 9100, timeoutMs = 3000): Promise<boolean> {
   return invoke<boolean>('probe_printer', { ip, port, timeoutMs })
 }
+
+/**
+ * Socket TCP DIRECTO a ip:port con bytes ESC/POS (ronda robustez RED) — el
+ * camino real de esc_pos_printer_plus del Flutter (Socket.connect → add →
+ * flush → delay → destroy): NO usa el spooler de Windows ni exige impresora
+ * instalada, solo conectividad IP. En web lanza error controlado.
+ *
+ * El shell Rust drena la respuesta de la térmica ~250ms tras el flush antes
+ * de cerrar (réplica del socket Dart que vivía 300-1000ms tras el flush).
+ */
+export async function printTcpEscPos(
+  ip: string,
+  port: number,
+  data: Uint8Array,
+  timeoutMs = 2500,
+): Promise<void> {
+  await invoke<void>('print_tcp', { ip, port, data: Array.from(data), timeoutMs })
+}

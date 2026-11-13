@@ -130,12 +130,10 @@ const gridColumns = computed<number>(() => {
   return 5
 })
 
-/** Aspect ratio réplica L256/L290: no-Windows gridWidth<500 → 1.1, else 0.95. */
-const gridAspectRatio = computed<string>(() => {
-  if (isPhone.value && gridWidth.value < 500) return '1.1'
-  return '0.95'
-})
-
+/** Aspect ratio réplica L256/L290: no-Windows gridWidth<500 → 1.1, else 0.95.
+ *  REPLICADO EN CSS (fix tarjetas aplastadas): .product-card/.extra-card
+ *  aspect-ratio 0.95 + media query ≤515px → 1.1 (ancho de contenedor ≈
+ *  viewport − padding del wrap en phone fullscreen). */
 let gridObserver: ResizeObserver | null = null
 
 /** Observa el wrap cuando aparece en el DOM (v-else-if tras el fetch). */
@@ -564,7 +562,7 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
           <div
             v-if="isExtrasTab"
             class="menu-grid"
-            :style="{ gridTemplateColumns: `repeat(${gridColumns}, 1fr)`, gridAutoRows: `calc(100% / ${gridColumns} / ${gridAspectRatio})` }"
+            :style="{ gridTemplateColumns: `repeat(${gridColumns}, 1fr)` }"
             data-testid="extras-grid"
           >
             <button
@@ -593,7 +591,7 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
           <div
             v-else
             class="menu-grid"
-            :style="{ gridTemplateColumns: `repeat(${gridColumns}, 1fr)`, gridAutoRows: `calc(100% / ${gridColumns} / ${gridAspectRatio})` }"
+            :style="{ gridTemplateColumns: `repeat(${gridColumns}, 1fr)` }"
           >
             <div
               v-for="template in filteredTemplates"
@@ -1074,8 +1072,11 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
 }
 
 /* Grid responsivo por ancho de contenedor: <900→3 | <1200→4 | else→5
-   (columnas + altura de fila calculadas en el script: réplica del
-   childAspectRatio Flutter — ancho/aspecto = alto de fila) */
+   (columnas inline en el script; ALTO de fila vía aspect-ratio de la
+   tarjeta — fix tarjetas aplastadas: el gridAutoRows calc(100%/N/aspect)
+   resolvía 100% contra el ALTO del wrap (~600px) en vez del ancho de
+   columna, colapsando la imagen a una franja. aspect-ratio sobre el card
+   es el equivalente EXACTO del childAspectRatio Flutter: ancho/alto.) */
 .menu-grid-wrap {
   flex: 1;
   overflow-y: auto;
@@ -1086,6 +1087,7 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
 .menu-grid {
   display: grid;
   gap: 12px;
+  grid-auto-rows: auto;
 }
 
 .menu-empty {
@@ -1102,9 +1104,14 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
      (max 2 líneas ellipsis) + precio deepOrange bold 13.
    SIN botón Add: el click en cualquier parte del card abre el modal.
    ========================================================================== */
+/* aspect-ratio 0.95 = childAspectRatio Flutter (L256): ancho/alto — el card
+   mide width/0.95 de alto y el flex interno (media 3 / info 2) llena el
+   resto. min-width:0 evita el overflow del ítem grid con line-clamp. */
 .product-card {
   display: flex;
   flex-direction: column;
+  aspect-ratio: 0.95;
+  min-width: 0;
   overflow: hidden;
   background: var(--bg-surface);
   border-radius: var(--radius);
@@ -1192,6 +1199,8 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
 .extra-card {
   display: flex;
   flex-direction: column;
+  aspect-ratio: 0.95;
+  min-width: 0;
   padding: 0;
   overflow: hidden;
   background: var(--bg-surface);
@@ -1705,6 +1714,16 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
   }
 }
 
+/* Aspect 1.1 réplica gridAspectRatio (L134-137 del .dart): isPhone &&
+   gridWidth<500 → el card es más alto (width/1.1). En phone fullscreen el
+   wrap mide ~viewport − padding 8×2 → breakpoint 516px de ventana. */
+@media (max-width: 515px) {
+  .product-card,
+  .extra-card {
+    aspect-ratio: 1.1;
+  }
+}
+
 /* ==========================================================================
    PHONE (<700px) — pos_view.dart L53-82 del original Flutter:
    NO apila el POS. TabBar 'Menú | Orden' arriba (Container cardTheme +
@@ -1769,7 +1788,7 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
     border-top: none;
   }
 
-  /* Menú 2 columnas: el spacing del grid pasa a 8 (isNarrow L262-263) */
+  /* Menú 2 columnas: el spacing del grid pasa a 8 (isNarrow L262-263). */
   .menu-grid {
     gap: 8px;
   }

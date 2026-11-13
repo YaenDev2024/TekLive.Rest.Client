@@ -11,9 +11,11 @@
  * - Cliente (kitchen:false): área CLIENTE si configurada, sino principal.
  *
  * Bytes: ticketToEscPosBytes (escpos.ts) sobre los builders configurables.
- * Envío: print_raw del shell Tauri (Winspool RAW) para USB/nombre Windows;
- * el shell también resuelve la térmica de red — el probe 9100 es el filtro
- * de readiness (un host que no responde 9100 no imprimirá RAW).
+ * Envío (ronda robustez RED): RED → print_tcp socket TCP directo a ip:9100
+ * (camino real de esc_pos_printer_plus, sin spooler ni impresora instalada);
+ * USB → print_raw del shell Tauri (Winspool RAW por nombre Windows).
+ * El readiness con probe 9100 ya existía y filtra destinos muertos antes del
+ * envío.
  */
 
 import type { CartItem } from '../../stores/cart'
@@ -24,7 +26,7 @@ import {
   ticketToEscPosBytes,
   type TicketDoc,
 } from '../ticket'
-import { isTauri, listPrinters, printRawEscPos, probePrinter } from './tauri-bridge'
+import { isTauri, listPrinters, printRawEscPos, printTcpEscPos, probePrinter } from './tauri-bridge'
 import {
   getAreaPrinter,
   getKitchenSlot,
@@ -49,6 +51,13 @@ export interface AreaPrintResult {
   /** true si al menos un destino recibió el ticket (o no había destinos). */
   ok: boolean
   messages: string[]
+  /**
+   * SOLO los fallos por destino (ronda robustez RED): readiness fallido,
+   * error de socket/escritura, o área detectada sin impresora guardada.
+   * El caller (sale-print) los sube como toast para que NUNCA haya crash
+   * silencioso de impresora.
+   */
+  failures: string[]
 }
 
 // ---------------------------------------------------------------------------
@@ -229,11 +238,48 @@ export async function validatePrinterReadiness(
   }
 }
 
-/** Envía bytes a UN destino (USB → print_raw nombre; red → print_raw IP). */
+/**
+ * Envía bytes a UN destino con el transporte CORRECTO por tipo (ronda
+ * robustez RED):
+ * - RED (isUsb=false) → socket TCP directo printTcpEscPos(ip, 9100): el
+ *   camino EXACTO de esc_pos_printer_plus del Flutter (L437-465) — no pasa
+ *   por el spooler de Windows ni exige impresora instalada. El print_raw por
+ *   NOMBRE de IP fallaba con OpenPrinterW si la térmica no estaba dada de
+ *   alta en Windows: eliminado del camino de red.
+ * - USB (isUsb=true) → print_raw por nombre Windows (Winspool RAW).
+ *
+ * Reintento: 1 reintento automático en fallo del socket (total 2 intentos).
+ * El original NO reintentaba (su Socket.connect era directo), pero su flujo
+ * silencioso era tolerante a un fallo transitorio porque el usuario no veía
+ * nada; aquí el toast de error es la única señal, así que un glitch de red
+ * de <2s no debe convertirlo en error visible. El retry solo cubre
+ * connect/write — un ticket duplicado es imposible: si el primer intento
+ * escribió bytes parciales y falló, la térmica normalmente ya está
+ * imprimiendo y el fallo fue en el drain, caso en el que el retry es el
+ * comportamiento esperado del usuario (reimprimir).
+ */
 async function sendBytesToPrinter(
   bytes: Uint8Array,
   printer: { ip: string; isUsb: boolean },
 ): Promise<void> {
+  if (!printer.isUsb) {
+    let lastError: unknown = null
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await printTcpEscPos(printer.ip, 9100, bytes, 2500)
+        return
+      } catch (e) {
+        lastError = e
+        if (attempt === 1) {
+          // Pausa corta antes del reintento (glitch transitorio de red).
+          await new Promise((resolve) => setTimeout(resolve, 300))
+        }
+      }
+    }
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(String(lastError ?? `Fallo enviando a ${printer.ip}:9100`))
+  }
   await printRawEscPos(printer.ip, bytes)
 }
 
@@ -252,8 +298,9 @@ export async function printKitchenOrderByArea(input: {
   items: CartItem[]
 }): Promise<AreaPrintResult> {
   const messages: string[] = []
+  const failures: string[] = []
   if (!isTauri()) {
-    return { ok: false, messages: ['La impresión directa solo está disponible en la app de escritorio.'] }
+    return { ok: false, messages: ['La impresión directa solo está disponible en la app de escritorio.'], failures: ['La impresión directa solo está disponible en la app de escritorio.'] }
   }
 
   const bytes = ticketToEscPosBytes(input.doc)
@@ -267,12 +314,16 @@ export async function printKitchenOrderByArea(input: {
   for (const area of printerAreas) {
     const printer = getAreaPrinter(area)
     if (printer == null) {
-      messages.push(`Se detectó el área "${area}", pero no hay una impresora guardada para esa área.`)
+      const msg = `Se detectó el área "${area}", pero no hay una impresora guardada para esa área.`
+      messages.push(msg)
+      failures.push(msg)
       continue
     }
     const readiness = await validatePrinterReadiness(printer)
     if (!readiness.isReady) {
-      messages.push(`Área ${area}: ${readiness.message}`)
+      const msg = `Área ${area}: ${readiness.message}`
+      messages.push(msg)
+      failures.push(msg)
       continue
     }
     try {
@@ -280,7 +331,9 @@ export async function printKitchenOrderByArea(input: {
       messages.push(`Área ${area} → ${printer.ip} OK`)
       sentAny = true
     } catch (e) {
-      messages.push(`Área ${area}: ${e instanceof Error ? e.message : String(e)}`)
+      const msg = `Área ${area}: ${e instanceof Error ? e.message : String(e)}`
+      messages.push(msg)
+      failures.push(msg)
     }
   }
 
@@ -288,25 +341,30 @@ export async function printKitchenOrderByArea(input: {
     // Fallback principal (L536-544): sin coincidencias → impresora principal.
     const main = getMainPrinter()
     if (main == null || main.ip.trim() === '') {
-      messages.push('No hay impresora principal configurada para los productos sin área.')
-      return { ok: false, messages }
+      const msg = 'No hay impresora principal configurada para los productos sin área.'
+      messages.push(msg)
+      failures.push(msg)
+      return { ok: false, messages, failures }
     }
     const readiness = await validatePrinterReadiness(main)
     if (!readiness.isReady) {
       messages.push(readiness.message)
-      return { ok: false, messages }
+      failures.push(readiness.message)
+      return { ok: false, messages, failures }
     }
     try {
       await sendBytesToPrinter(bytes, main)
       messages.push(`Cocina → principal (${main.ip}) OK`)
       sentAny = true
     } catch (e) {
-      messages.push(`Principal: ${e instanceof Error ? e.message : String(e)}`)
-      return { ok: false, messages }
+      const msg = `Principal: ${e instanceof Error ? e.message : String(e)}`
+      messages.push(msg)
+      failures.push(msg)
+      return { ok: false, messages, failures }
     }
   }
 
-  return { ok: sentAny, messages }
+  return { ok: sentAny, messages, failures }
 }
 
 /**
@@ -325,7 +383,13 @@ export async function printKitchenTicketToBothPrinters(doc: TicketDoc): Promise<
       return { ok: false, message: `Cocina ${slot} sin configurar` }
     }
     try {
-      await printRawEscPos(cfg.ip, bytes)
+      // Mismo transporte por tipo que sendBytesToPrinter (ronda robustez
+      // RED): red → socket TCP directo, USB → spooler.
+      if (cfg.isUsb) {
+        await printRawEscPos(cfg.ip, bytes)
+      } else {
+        await printTcpEscPos(cfg.ip, 9100, bytes, 2500)
+      }
       return { ok: true, message: `Cocina ${slot} OK (${cfg.ip})` }
     } catch (e) {
       return { ok: false, message: `Cocina ${slot} falló: ${e instanceof Error ? e.message : String(e)}` }
@@ -351,29 +415,36 @@ export async function printKitchenTicketToBothPrinters(doc: TicketDoc): Promise<
  */
 export async function printClientTicketTauri(doc: TicketDoc): Promise<AreaPrintResult> {
   const messages: string[] = []
+  const failures: string[] = []
   if (!isTauri()) {
-    return { ok: false, messages: ['La impresión directa solo está disponible en la app de escritorio.'] }
+    const msg = 'La impresión directa solo está disponible en la app de escritorio.'
+    return { ok: false, messages: [msg], failures: [msg] }
   }
   const bytes = ticketToEscPosBytes(doc)
   const client = getAreaPrinter('CLIENTE')
   const main = getMainPrinter()
   const target = client ?? main
   if (target == null || target.ip.trim() === '') {
-    messages.push('⚠️ Impresora no configurada. Configúrala en Ajustes > Impresoras.')
-    return { ok: false, messages }
+    const msg = '⚠️ Impresora no configurada. Configúrala en Ajustes > Impresoras.'
+    messages.push(msg)
+    failures.push(msg)
+    return { ok: false, messages, failures }
   }
   const readiness = await validatePrinterReadiness(target)
   if (!readiness.isReady) {
     messages.push(readiness.message)
-    return { ok: false, messages }
+    failures.push(readiness.message)
+    return { ok: false, messages, failures }
   }
   try {
     await sendBytesToPrinter(bytes, target)
     messages.push(`Cliente → ${target.ip} OK`)
-    return { ok: true, messages }
+    return { ok: true, messages, failures }
   } catch (e) {
-    messages.push(e instanceof Error ? e.message : String(e))
-    return { ok: false, messages }
+    const msg = e instanceof Error ? e.message : String(e)
+    messages.push(msg)
+    failures.push(msg)
+    return { ok: false, messages, failures }
   }
 }
 

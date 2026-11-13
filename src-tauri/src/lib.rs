@@ -12,7 +12,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             printing::list_printers,
             printing::print_raw,
-            printing::probe_printer
+            printing::probe_printer,
+            printing::print_tcp
         ])
         .run(tauri::generate_context!())
         .expect("error while running TekLive Rest");
