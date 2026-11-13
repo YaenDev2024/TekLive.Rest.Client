@@ -1,19 +1,25 @@
 /**
- * TekLive Rest · Impresión de venta (ronda cash/print) — réplica del flujo
- * silencioso del original (printing_service.dart + order_provider.dart):
+ * TekLive Rest · Impresión de venta (ronda cash/print + ronda Piso 1) —
+ * réplica del flujo silencioso del original (printing_service.dart +
+ * order_provider.dart):
  *
  *   Venta → printEscPosCreatedOrder(kitchen:true) [x2 si keywords L660-716]
  *         → printEscPosCreatedOrder(kitchen:false)
  *         → toast '✓ Orden procesada' + UI cerrada. NUNCA hay preview ni
  *           diálogo que detenga al cajero.
  *
- * En browser hoy: 1 solo printTicket() con TODOS los tickets concatenados
- * (cocina [+duplicado] + cliente) → 1 diálogo del sistema. En Tauri/APK
- * futuro: bytes ESC/POS por socket TCP 9100 silencioso (escpos.ts ya existe).
+ * DOS CANALES (ronda Piso 1):
+ * - Tauri (escritorio): flujo REAL por impresoras — ticket cocina → área(s)
+ *   según keywords guardadas (route-print.printKitchenOrderByArea); cliente →
+ *   área CLIENTE si configurada sino principal. Silencioso, sin diálogos.
+ *   Los flags del ticket-config (footer, showKitchenModifiers/Notes,
+ *   showClientPaid/Free/Notes) se aplican vía los builders; si la carga del
+ *   config falla se usan los defaults del Flutter (NUNCA se bloquea la
+ *   impresión).
+ * - Web (navegador/PWA): comportamiento HISTÓRICO intacto — 1 printTicket()
+ *   con todos los tickets concatenados → 1 diálogo del navegador.
  *
- * Keywords de duplicado (L662-669): TENDERS, HAMBURGUESA, ELOTE, ELOTES,
- * ASADAS, PECHUGA — contra nombre de producto, extras, complementos y notas
- * (búsqueda parcial, upper-case).
+ * El print-log best-effort se mantiene en ambos canales.
  */
 
 import type { CartItem } from '../../stores/cart'
@@ -24,9 +30,19 @@ import {
   printTicket,
   type TicketDoc,
 } from './index'
-import { logTicketPrint } from '../../api/rest'
+import { logTicketPrint, type TicketConfig } from '../../api/rest'
+import { useAdminTicketConfigStore } from '../../stores/adminTicketConfig'
+import { isTauri } from '../printing/tauri-bridge'
+import {
+  buildClientDocTauri,
+  buildPendingKitchenDocTauri,
+  printClientTicketTauri,
+  printKitchenOrderByArea,
+} from '../printing/route-print'
 
-/** Keywords réplica _orderNeedsDuplicateKitchenTicket (L662-669). */
+/** Keywords réplica _orderNeedsDuplicateKitchenTicket (L662-669) — SOLO canal
+ *  web (el histórico; en Tauri el x2 lo decide route-print por keywords
+ *  guardadas). */
 const DUPLICATE_KEYWORDS = [
   'TENDERS', // TENDERS, TENDER
   'HAMBURGUESA', // HAMBURGUESA(S)
@@ -36,7 +52,7 @@ const DUPLICATE_KEYWORDS = [
   'PECHUGA',
 ] as const
 
-/** true si la orden contiene productos clave → cocina se imprime x2. */
+/** true si la orden contiene productos clave → cocina se imprime x2 (web). */
 export function orderNeedsDuplicateKitchen(items: CartItem[]): boolean {
   for (const item of items) {
     const names = [
@@ -78,6 +94,8 @@ export interface SaleTicketInput {
   paidState?: SalePaidState | null
   /** Id real de la orden → print-log best-effort. */
   orderId?: number | null
+  /** Teléfono EXTERNO (grande en ticket cocina/cliente EXTERNO). */
+  customerPhone?: string | null
 }
 
 /** Nombre de cliente réplica (switch order_panel.dart L1410-1426). */
@@ -90,6 +108,23 @@ function customerNameFor(orderType: string, platformDeliveryInfo?: string | null
       return info !== '' ? info : 'UBER/DIDI'
     default:
       return 'CLIENTE LOCAL'
+  }
+}
+
+/** Config efectiva del ticket (defaults si la carga falló — nunca null). */
+function effectiveTicketConfig(): TicketConfig {
+  try {
+    return useAdminTicketConfigStore().effectiveConfig
+  } catch {
+    // Fuera de contexto Pinia (tests/unit): defaults del Flutter.
+    return {
+      footer: '¡GRACIAS POR SU COMPRA! Vuelva pronto',
+      showKitchenModifiers: true,
+      showKitchenNotes: true,
+      showClientPaidModifiers: true,
+      showClientFreeModifiers: false,
+      showClientNotes: true,
+    }
   }
 }
 
@@ -109,8 +144,10 @@ function clientItems(items: CartItem[]) {
     productName: item.productName,
     unitPrice: cartItemUnitPrice(item),
     notes: buildItemNotes(item),
-    extras: item.extras.map((e) => e.name),
-    complements: item.complement != null ? [item.complement.name] : [],
+    // Ronda Piso 1: extras/complementos CON precio (filtro pagados/gratuitos).
+    extras: item.extras.map((e) => ({ name: e.name, price: e.price })),
+    complements:
+      item.complement != null ? [{ name: item.complement.name, price: item.complement.price }] : [],
   }))
 }
 
@@ -118,6 +155,7 @@ function clientItems(items: CartItem[]) {
  * Doc de SOLO cocina (para 'Guardar Orden' pendiente — el original imprime
  * únicamente el ticket de cocina al crear la orden pendiente, L374-388).
  * Incluye la 2ª copia si hay keywords (x2 con separación, réplica L335-342).
+ * Flags del ticket-config aplicados (showKitchenModifiers/Notes).
  */
 export function buildPendingKitchenDoc(input: {
   folio: string
@@ -126,6 +164,7 @@ export function buildPendingKitchenDoc(input: {
   items: CartItem[]
   total: number
 }): TicketDoc {
+  const cfg = effectiveTicketConfig()
   const base: TicketDoc = buildKitchenTicket({
     folio: input.folio,
     orderType: input.orderType,
@@ -134,6 +173,8 @@ export function buildPendingKitchenDoc(input: {
     platformDeliveryInfo: input.platformDeliveryInfo,
     items: kitchenItems(input.items),
     total: input.total,
+    showModifiers: cfg.showKitchenModifiers,
+    showNotes: cfg.showKitchenNotes,
   })
   if (!orderNeedsDuplicateKitchen(input.items)) return base
   // Copia duplicada: feed de separación + mismas líneas (réplica 1500ms).
@@ -141,12 +182,13 @@ export function buildPendingKitchenDoc(input: {
 }
 
 /**
- * Doc completo de la venta: cocina (+duplicado si keywords) + cliente.
- * Un solo documento → un solo print en browser (los builders ya terminan
- * cada ticket con cut/feed, que separa en la térmica).
+ * Doc completo de la venta (canal WEB): cocina (+duplicado si keywords) +
+ * cliente. Un solo documento → un solo print en browser (los builders ya
+ * terminan cada ticket con cut/feed, que separa en la térmica).
  */
 export function buildSaleDoc(input: SaleTicketInput): TicketDoc {
   const kitchen = buildPendingKitchenDoc(input)
+  const cfg = effectiveTicketConfig()
   const client = buildClientTicket({
     folio: input.folio,
     orderType: input.orderType,
@@ -154,6 +196,10 @@ export function buildSaleDoc(input: SaleTicketInput): TicketDoc {
     cashierName: 'CAJERO',
     items: clientItems(input.items),
     total: input.total,
+    footer: cfg.footer,
+    showNotes: cfg.showClientNotes,
+    showPaidModifiers: cfg.showClientPaidModifiers,
+    showFreeModifiers: cfg.showClientFreeModifiers,
     state: input.paidState
       ? {
           kind: 'paid',
@@ -171,25 +217,73 @@ export function buildSaleDoc(input: SaleTicketInput): TicketDoc {
 }
 
 /** Print-log best-effort (no bloquea). */
-async function logBoth(orderId: number | null | undefined): Promise<void> {
+async function logBoth(orderId: number | null | undefined, printerName: string): Promise<void> {
   if (orderId == null) return
   try {
-    await logTicketPrint(orderId, { printType: 'kitchen', printerName: 'browser', success: true, errorMessage: null })
+    await logTicketPrint(orderId, { printType: 'kitchen', printerName, success: true, errorMessage: null })
   } catch { /* best-effort */ }
   try {
-    await logTicketPrint(orderId, { printType: 'client', printerName: 'browser', success: true, errorMessage: null })
+    await logTicketPrint(orderId, { printType: 'client', printerName, success: true, errorMessage: null })
   } catch { /* best-effort */ }
 }
 
 /**
  * Impresión de venta SILENCIOSA desde el punto de vista del cajero: no
- * abre previews ni modales. En browser dispara 1 diálogo con todos los
- * tickets; devuelve true si se lanzó.
+ * abre previews ni modales.
+ *
+ * - Tauri: cocina por áreas (keywords → impresoras) + cliente (área CLIENTE
+ *   o principal) vía print_raw; devuelve true si AMBOS flujos tuvieron al
+ *   menos un destino OK (o el canal no requería destino).
+ * - Web: 1 diálogo del navegador con todos los tickets; true si se lanzó.
  */
 export function printSaleTickets(input: SaleTicketInput): boolean {
+  if (isTauri()) {
+    // Canal Tauri es async: dispara y no bloquea el flujo del checkout (el
+    // toast/fin de venta no depende de la impresión — réplica L636-648 que
+    // manda y sigue).
+    void printSaleTicketsTauri(input)
+    return true
+  }
   const ok = printTicket(buildSaleDoc(input))
-  void logBoth(input.orderId)
+  void logBoth(input.orderId, 'browser')
   return ok
+}
+
+/** Flujo Tauri real (async): cocina por áreas + cliente. */
+async function printSaleTicketsTauri(input: SaleTicketInput): Promise<void> {
+  const cfg = effectiveTicketConfig()
+  const customerName = customerNameFor(input.orderType, input.platformDeliveryInfo)
+  try {
+    await printKitchenOrderByArea({
+      doc: buildPendingKitchenDocTauri({
+        folio: input.folio,
+        orderType: input.orderType,
+        platformDeliveryInfo: input.platformDeliveryInfo,
+        customerName,
+        customerPhone: input.customerPhone,
+        items: input.items,
+        total: input.total,
+        config: cfg,
+      }),
+      items: input.items,
+    })
+  } catch { /* el resultado por destino ya se captura dentro */ }
+  try {
+    await printClientTicketTauri(
+      buildClientDocTauri({
+        folio: input.folio,
+        orderType: input.orderType,
+        platformDeliveryInfo: input.platformDeliveryInfo,
+        customerName,
+        customerPhone: input.customerPhone,
+        items: input.items,
+        total: input.total,
+        config: cfg,
+        paidState: input.paidState,
+      }),
+    )
+  } catch { /* idem */ }
+  void logBoth(input.orderId, 'tauri')
 }
 
 /** Impresión SOLO cocina (pendientes) + print-log kitchen. */
@@ -201,6 +295,30 @@ export function printPendingKitchenTicket(input: {
   total: number
   orderId?: number | null
 }): boolean {
+  if (isTauri()) {
+    void (async () => {
+      try {
+        await printKitchenOrderByArea({
+          doc: buildPendingKitchenDocTauri({
+            folio: input.folio,
+            orderType: input.orderType,
+            platformDeliveryInfo: input.platformDeliveryInfo,
+            customerName: customerNameFor(input.orderType, input.platformDeliveryInfo),
+            items: input.items,
+            total: input.total,
+            config: effectiveTicketConfig(),
+          }),
+          items: input.items,
+        })
+      } catch { /* resultado por destino capturado dentro */ }
+      if (input.orderId != null) {
+        try {
+          await logTicketPrint(input.orderId, { printType: 'kitchen', printerName: 'tauri', success: true, errorMessage: null })
+        } catch { /* best-effort */ }
+      }
+    })()
+    return true
+  }
   const ok = printTicket(buildPendingKitchenDoc(input))
   if (input.orderId != null) {
     try {

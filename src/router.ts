@@ -24,6 +24,7 @@ const AUTH_ROUTES = new Set([
   'admin-precio-aumento',
   'admin-resumen-caja',
   'admin-nomina',
+  'ajustes-impresoras',
   'pos',
   'pos-piso1',
   'pos-ordenes',
@@ -118,6 +119,14 @@ const router = createRouter({
       path: '/admin/nomina',
       name: 'admin-nomina',
       component: () => import('./views/admin/PayrollView.vue'),
+    },
+    {
+      // Ronda Piso 1: Configuración de Impresora — réplica
+      // printer_settings_screen.dart (principal + K1/K2 + áreas + keywords
+      // + escaneo de red Tauri). Enrutable también desde Ajustes.
+      path: '/ajustes/impresoras',
+      name: 'ajustes-impresoras',
+      component: () => import('./views/admin/PrintersView.vue'),
     },
     {
       // Shell del POS (réplica desktop_home_layout): rail 80px + RouterView.

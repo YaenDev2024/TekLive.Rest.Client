@@ -31,6 +31,7 @@ import {
   type TicketDoc,
 } from '../../services/ticket'
 import { logTicketPrint } from '../../api/rest'
+import { useAdminTicketConfigStore } from '../../stores/adminTicketConfig'
 import AppModal from './AppModal.vue'
 
 const props = defineProps<{
@@ -60,6 +61,14 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{ close: [] }>()
+
+/**
+ * Ronda Piso 1: flags del ticket-config (con defaults si la carga falla —
+ * nunca bloquea el preview). Se resuelve UNA vez por mount (best-effort).
+ */
+const ticketCfg = useAdminTicketConfigStore()
+void ticketCfg.load()
+const cfg = computed(() => ticketCfg.effectiveConfig)
 
 /**
  * Pestañas Cocina/Cliente (el original imprime ambos por venta): default
@@ -108,6 +117,8 @@ const docCurrent = computed<TicketDoc>(() => {
       })),
       total: props.total,
       createdAt: now,
+      showModifiers: cfg.value.showKitchenModifiers,
+      showNotes: cfg.value.showKitchenNotes,
     })
   }
   return buildClientTicket({
@@ -120,11 +131,18 @@ const docCurrent = computed<TicketDoc>(() => {
       productName: item.productName,
       unitPrice: cartItemUnitPrice(item),
       notes: combinedNotes(item),
-      extras: item.extras.map((e) => e.name),
-      complements: item.complement != null ? [item.complement.name] : [],
+      extras: item.extras.map((e) => ({ name: e.name, price: e.price })),
+      complements:
+        item.complement != null
+          ? [{ name: item.complement.name, price: item.complement.price }]
+          : [],
     })),
     total: props.total,
     createdAt: now,
+    footer: cfg.value.footer,
+    showNotes: cfg.value.showClientNotes,
+    showPaidModifiers: cfg.value.showClientPaidModifiers,
+    showFreeModifiers: cfg.value.showClientFreeModifiers,
     // Success del checkout (venta cobrada) → PAGADO - METODO (L1146-1214);
     // previews del carrito/orden sin pagar → 'PENDIENTE DE PAGO'.
     state: props.paidState
@@ -156,6 +174,8 @@ const docKitchen = computed<TicketDoc>(() =>
     })),
     total: props.total,
     createdAt: now,
+    showModifiers: cfg.value.showKitchenModifiers,
+    showNotes: cfg.value.showKitchenNotes,
   }),
 )
 

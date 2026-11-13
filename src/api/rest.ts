@@ -1312,3 +1312,41 @@ export async function deletePayrollEmployee(
   )
   return { status, data: data.data }
 }
+
+// ---------------------------------------------------------------------------
+// Configuración del ticket (ronda Piso 1) — réplica _fetchTicketConfig
+// (ticket_service.dart L43-74). Flags de impresión + footer del ticket
+// cliente. Contrato backend RestTicketConfigController (envelope desenrollado
+// igual que el resto del módulo Rest): 403 para RestOperator al guardar.
+// ---------------------------------------------------------------------------
+
+/** Config del ticket: flags de cocina/cliente + footer (≤200, nullable). */
+export interface TicketConfig {
+  /** Footer del ticket cliente. null → backend/devuelven default Flutter. */
+  footer: string | null
+  /** Cocina: mostrar extras/complementos. */
+  showKitchenModifiers: boolean
+  /** Cocina: mostrar notas (NOTA::/NOTE::). */
+  showKitchenNotes: boolean
+  /** Cliente: mostrar modificadores con precio > 0. */
+  showClientPaidModifiers: boolean
+  /** Cliente: mostrar modificadores gratuitos (precio ≤ 0; los "negativos"
+   *  'sin '/'no '/'-' SIEMPRE se muestran — _isNegativeModifierName). */
+  showClientFreeModifiers: boolean
+  /** Cliente: mostrar notas. */
+  showClientNotes: boolean
+}
+
+/** GET api/rest/ticket-config → data (desenrollado). */
+export async function getTicketConfig(): Promise<ApiResult<TicketConfig | null>> {
+  const { status, data } = await apiGet<Envelope<TicketConfig | null>>('/api/rest/ticket-config')
+  return { status, data: data.data }
+}
+
+/** PUT api/rest/ticket-config — body completo; footer nullable ≤200. */
+export async function updateTicketConfig(
+  body: TicketConfig,
+): Promise<ApiResult<TicketConfig | null>> {
+  const { status, data } = await apiPut<Envelope<TicketConfig | null>>('/api/rest/ticket-config', body)
+  return { status, data: data.data }
+}

@@ -62,6 +62,15 @@ export interface KitchenTicketInput {
   createdAt?: Date
   /** Momento de impresión (default ahora). */
   printedAt?: Date
+  /**
+   * Ronda Piso 1 — flags del backend (ticket_service.dart L18-26
+   * generateKitchenTicketPdf): showModifiers = showKitchenModifiers filtra
+   * Extras/Complementos (L451-474 del PDF, aquí L864-888 ESC/POS);
+   * showNotes = showKitchenNotes filtra las notas parseadas (L476-477).
+   * Default true/true = comportamiento histórico (cocina SIEMPRE mostraba).
+   */
+  showModifiers?: boolean
+  showNotes?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -249,6 +258,9 @@ export function buildKitchenTicket(input: KitchenTicketInput): TicketDoc {
   const now = input.printedAt ?? new Date()
   const createdAt = input.createdAt ?? now
   const tipoOrden = (input.orderType ?? 'LOCAL').toUpperCase()
+  // Ronda Piso 1: flags del ticket-config (default true = histórico).
+  const showModifiers = input.showModifiers ?? true
+  const showNotes = input.showNotes ?? true
 
   // ===== ENCABEZADO (L728-745) =====
   lines.push({ kind: 'text', text: 'ORDEN PARA PREPARAR', align: 'center' })
@@ -298,19 +310,22 @@ export function buildKitchenTicket(input: KitchenTicketInput): TicketDoc {
   for (const item of input.items) {
     lines.push({ kind: 'feed', n: 1 })
     lines.push({ kind: 'text', text: `${item.quantity}x ${item.productName}`, align: 'left', bold: true, double: true })
-    // Notas parseadas (L857-860).
-    for (const noteLine of noteLinesOf(item.notes)) {
-      lines.push({ kind: 'text', text: noteLine, align: 'left' })
+    // Notas parseadas (L857-860) — filtradas por showKitchenNotes (L476-477).
+    if (showNotes) {
+      for (const noteLine of noteLinesOf(item.notes)) {
+        lines.push({ kind: 'text', text: noteLine, align: 'left' })
+      }
     }
-    // Extras: SIEMPRE en cocina (L864-875), incluso si ya hay nota.
-    if (item.extras != null && item.extras.length > 0) {
+    // Extras: en cocina SIEMPRE se mostraban (L864-875); showKitchenModifiers
+    // filtra (réplica L451-461 del PDF: `if (showModifiers && extras…)`).
+    if (showModifiers && item.extras != null && item.extras.length > 0) {
       lines.push({ kind: 'text', text: 'Extras:', align: 'left' })
       for (const extra of item.extras) {
         lines.push({ kind: 'text', text: `  • ${displayModifierName(extra)}`, align: 'left' })
       }
     }
-    // Complementos: SIEMPRE en cocina (L877-888).
-    if (item.complements != null && item.complements.length > 0) {
+    // Complementos (L877-888) — mismo flag showKitchenModifiers (L464-474).
+    if (showModifiers && item.complements != null && item.complements.length > 0) {
       lines.push({ kind: 'text', text: 'Complementos:', align: 'left' })
       for (const comp of item.complements) {
         lines.push({ kind: 'text', text: `  • ${displayModifierName(comp)}`, align: 'left' })

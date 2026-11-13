@@ -26,9 +26,20 @@ export interface ClientTicketItem {
   /** Precio UNITARIO con opciones (item.price del Flutter). */
   unitPrice: number
   notes?: string | null
-  /** Solo se muestran si NO hay nota (L1085-1109). */
-  extras?: string[]
-  complements?: string[]
+  /**
+   * Ronda Piso 1: extras/complementos CON PRECIO (para el filtro
+   * showClientPaid/FreeModifiers réplica _buildProductDetails L856-908: el
+   * original del cliente imprime cada modificador en su propia línea '+ X
+   * $P'). El nombre limpio (_displayModifierName) se aplica al render.
+   */
+  extras?: ClientTicketModifier[]
+  complements?: ClientTicketModifier[]
+}
+
+/** Modificador con precio (extra/complemento del carrito). */
+export interface ClientTicketModifier {
+  name: string
+  price: number
 }
 
 /** Estado de la orden para el bloque final (L1146-1214). */
@@ -58,11 +69,33 @@ export interface ClientTicketInput {
   total: number
   createdAt?: Date
   state: ClientTicketState
+  /**
+   * Ronda Piso 1 — footer configurable (ticket_service.dart L31: default
+   * '¡GRACIAS POR SU COMPRA! Vuelva pronto'). El 'Crazzy Wings Las Torres'
+   * del footer se mantiene fijo como el original.
+   */
+  footer?: string | null
+  /** Ronda Piso 1 — flags del ticket-config (L793): notas del cliente. */
+  showNotes?: boolean
+  /** Modificadores con precio > 0 (L859). */
+  showPaidModifiers?: boolean
+  /** Modificadores gratuitos precio ≤ 0; los negativos SIEMPRE (L860). */
+  showFreeModifiers?: boolean
 }
 
 /** Réplica _displayModifierName (L1326-1328): '_' y '-' → espacio, trim. */
 function displayModifierName(name: string): string {
   return name.replaceAll(/[_-]/g, ' ').trim()
+}
+
+/**
+ * Réplica _isNegativeModifierName (regla del filtro L860: los modificadores
+ * "negativos" 'sin X'/'no X'/'-X' se muestran SIEMPRE aunque showFreeModifiers
+ * sea false — comunican al cliente lo que se le quitó).
+ */
+function isNegativeModifierName(name: string): boolean {
+  const lower = name.toLowerCase().trim()
+  return lower.startsWith('sin ') || lower.startsWith('no ') || lower.startsWith('-')
 }
 
 function pad(n: number): string {
@@ -103,6 +136,12 @@ export function buildClientTicket(input: ClientTicketInput): TicketDoc {
   const lines: TicketLine[] = []
   const createdAt = input.createdAt ?? new Date()
   const tipoOrden = (input.orderType ?? 'LOCAL').toUpperCase()
+  // Ronda Piso 1: flags del ticket-config (defaults réplica del original:
+  // pagados sí, gratuitos no, notas sí; footer default L31).
+  const showNotes = input.showNotes ?? true
+  const showPaidModifiers = input.showPaidModifiers ?? true
+  const showFreeModifiers = input.showFreeModifiers ?? false
+  const footerMessage = input.footer ?? '¡GRACIAS POR SU COMPRA! Vuelva pronto'
 
   // ===== FISCALES (L961-985) =====
   lines.push({ kind: 'feed', n: 1 })
@@ -144,26 +183,38 @@ export function buildClientTicket(input: ClientTicketInput): TicketDoc {
     lines.push({ kind: 'row', left: description, right: `$${lineTotal}` })
 
     const hasNote = item.notes != null && item.notes !== ''
+    // Extras/Complementos SOLO si no hay nota (L1085-1109), CADA modificador
+    // en su línea '+ X $P' filtrado por los flags (réplica L856-908).
     if (!hasNote) {
-      // Extras/Complementos SOLO si no hay nota (L1085-1109), nombres limpios.
-      if (item.extras != null && item.extras.length > 0) {
+      for (const extra of item.extras ?? []) {
+        const show =
+          (extra.price > 0 && showPaidModifiers) ||
+          (extra.price <= 0 && (showFreeModifiers || isNegativeModifierName(extra.name)))
+        if (!show) continue
         lines.push({
-          kind: 'text',
-          text: `Extras: ${item.extras.map((e) => displayModifierName(e)).join(', ')}`,
-          align: 'left',
+          kind: 'row',
+          left: `+ ${displayModifierName(extra.name)}`,
+          right: `$${extra.price.toFixed(2)}`,
         })
       }
-      if (item.complements != null && item.complements.length > 0) {
+      for (const comp of item.complements ?? []) {
+        const show =
+          (comp.price > 0 && showPaidModifiers) ||
+          (comp.price <= 0 && (showFreeModifiers || isNegativeModifierName(comp.name)))
+        if (!show) continue
         lines.push({
-          kind: 'text',
-          text: `Comp: ${item.complements.map((c) => displayModifierName(c)).join(', ')}`,
-          align: 'left',
+          kind: 'row',
+          left: `+ ${displayModifierName(comp.name)}`,
+          right: `$${comp.price.toFixed(2)}`,
         })
       }
     }
-    // Notas parseadas (OPT::/NOTE::) igual que cocina (L1112-1115).
-    for (const noteLine of buildNoteLines(item.notes)) {
-      lines.push({ kind: 'text', text: noteLine, align: 'left' })
+    // Notas parseadas (OPT::/NOTE::) igual que cocina (L1112-1115) —
+    // filtradas por showClientNotes (L839-840).
+    if (showNotes) {
+      for (const noteLine of buildNoteLines(item.notes)) {
+        lines.push({ kind: 'text', text: noteLine, align: 'left' })
+      }
     }
   }
   lines.push({ kind: 'hr' })
@@ -215,9 +266,13 @@ export function buildClientTicket(input: ClientTicketInput): TicketDoc {
   }
   lines.push({ kind: 'hr' })
 
-  // ===== FOOTER (L1218-1239) =====
-  lines.push({ kind: 'text', text: '¡GRACIAS POR SU COMPRA!', align: 'center' })
-  lines.push({ kind: 'text', text: 'Vuelva pronto', align: 'center' })
+  // ===== FOOTER (L1218-1239): mensaje configurable (L31) + tienda fija =====
+  // El footer puede traer varias líneas separadas por \n (≤200 chars).
+  for (const footerLine of footerMessage.split('\n')) {
+    if (footerLine.trim() !== '') {
+      lines.push({ kind: 'text', text: footerLine, align: 'center' })
+    }
+  }
   lines.push({ kind: 'text', text: 'Crazzy Wings Las Torres', align: 'center' })
   lines.push({ kind: 'feed', n: 3 })
   lines.push({ kind: 'cut' })

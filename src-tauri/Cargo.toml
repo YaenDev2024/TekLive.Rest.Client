@@ -17,6 +17,14 @@ tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# Ronda Piso 1: Winspool (EnumPrintersW/OpenPrinterW/WritePrinter...) para
+# impresión térmica RAW. v0.62 = misma versión que ya resuelve Tauri 2.12
+# (vía tao/webview2-com): una sola copia del crate en el build. Símbolos de
+# Printing (OpenPrinterW/PRINTER_INFO_2W) requieren además Win32_Graphics_Gdi.
+# Solo Windows (el resto usa stub).
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Printing", "Win32_Graphics_Gdi", "Win32_Security"] }
+
 [profile.release]
 codegen-units = 1
 lto = true
