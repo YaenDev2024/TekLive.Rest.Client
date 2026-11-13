@@ -88,11 +88,14 @@
  *   OPTIONAL→radio min0 max1; MULTIPLE→checkbox min/max de los inputs. Al
  *   CARGAR en edición: radio min>=1→REQUIRED, radio min0→OPTIONAL,
  *   checkbox→MULTIPLE.
- * - Carga del diálogo filtrada por alcance (L173-247 + scope_filter EXACTO,
- *   patrón de la LISTA): items del store filtrados client-side por
- *   formScope (GLOBAL→solo GLOBAL; SUCURSAL→solo SUCURSAL; PLANT N→solo
- *   PLANT N; sin-scope siempre; dedup); items ya seleccionados fuera del
- *   nuevo alcance NO se remueven (comportamiento original).
+ * - Carga del diálogo filtrada por alcance (L173-247, JERÁRQUICO réplica
+ *   _loadData L196-201 — NO el scope_filter EXACTO de la LISTA): GLOBAL/
+ *   SUCURSAL→TODOS los items del store (el original pide sin plantId y el
+ *   backend devuelve todo); PLANT N→sin-scope + GLOBAL + SUCURSAL + PLANT
+ *   plantId==N (backend jerárquico, nunca otros pisos); dedup por id;
+ *   items ya seleccionados fuera del nuevo alcance NO se remueven
+ *   (comportamiento original). Mismo filtro para CATEGORÍAS (misma
+ *   _loadData).
  *
  * Estructura del editor previa (pe-editor) REEMPLAZADA por el wizard; los
  * testids del formulario se conservan (pe-name/pe-desc/pe-category/pe-price,
@@ -500,39 +503,47 @@ function closeEditor(): void {
 
 const categoryOptions = computed<AppSelectOption[]>(() =>
   // Categorías filtradas por el alcance del paso 1 (L173-247: el original
-  // recarga por alcance; aquí filtro client-side EXACTO, store intacto).
+  // recarga por alcance con la MISMA _loadData que los items — filtro
+  // JERÁRQUICO, ver scopedCatalogItems; store intacto).
   scopedCategories.value.map((c) => ({ value: c.id, label: c.nombre })),
 )
 
-// --- Catálogo del diálogo filtrado por alcance (L173-247 + scope_filter) -------------
+// --- Catálogo del diálogo filtrado por alcance (L173-247, JERÁRQUICO) -----------------
 
 /**
- * Filtro EXACTO (scope_filter.dart, mismo de la LISTA) sobre los items del
- * store: GLOBAL→solo GLOBAL; SUCURSAL→solo SUCURSAL; PLANT N→solo PLANT
- * plantId==N; sin scope → SIEMPRE visible; dedup por id. 100% client-side
- * (el store carga todo; NO se cambia stores ni API).
+ * Filtro JERÁRQUICO réplica _loadData L196-201 del original: con alcance
+ * PLANT pide catálogo CON plantId y el backend devuelve el jerárquico
+ * (GLOBAL + SUCURSAL + ese piso, NUNCA otros pisos); con GLOBAL/SUCURSAL
+ * pide SIN plantId y devuelve TODO. El EDITOR NO usa el filtro EXACTO de
+ * scope_filter.dart de la LISTA (ese es para el listado; aquí la vista del
+ * diálogo replica lo que el backend entrega por petición):
+ * - GLOBAL o SUCURSAL → TODOS los items (sin filtro de scope, solo dedup).
+ * - PLANT N → sin-scope (siempre visible) OR GLOBAL OR SUCURSAL OR
+ *   ('PLANT' && plantId==N); dedup por id. 100% client-side (el store carga
+ *   todo; NO se cambia stores ni API). Items ya seleccionados fuera del
+ *   alcance NO se remueven (comportamiento original).
  */
 const scopedCatalogItems = computed(() => {
   const { scopeType, plantId } = formScope.value
   const seen = new Set<number>()
   const result: RestAdminCatalogItem[] = []
+  const isPlant = scopeType === 'PLANT' && plantId != null
   for (const item of catalogItemsStore.items) {
     if (seen.has(item.id)) continue
     seen.add(item.id)
+    if (!isPlant) {
+      // GLOBAL/SUCURSAL → el original pide TODO (sin plantId en la query).
+      result.push(item)
+      continue
+    }
     const s = item.scopes?.[0]
     if (s == null || s.scopeType.trim() === '') {
       result.push(item)
       continue
     }
-    if (scopeType === 'GLOBAL') {
-      if (s.scopeType === 'GLOBAL') result.push(item)
-    } else if (scopeType === 'SUCURSAL') {
-      if (s.scopeType === 'SUCURSAL') result.push(item)
-    } else if (scopeType === 'PLANT') {
-      if (s.scopeType === 'PLANT' && plantId != null && s.plantId === plantId) {
-        result.push(item)
-      }
-    } else {
+    if (s.scopeType === 'GLOBAL' || s.scopeType === 'SUCURSAL') {
+      result.push(item)
+    } else if (s.scopeType === 'PLANT' && s.plantId === plantId) {
       result.push(item)
     }
   }
@@ -543,23 +554,23 @@ const scopedCategories = computed(() => {
   const { scopeType, plantId } = formScope.value
   const seen = new Set<number>()
   const result: RestAdminCategory[] = []
+  const isPlant = scopeType === 'PLANT' && plantId != null
   for (const cat of categoriesStore.categories) {
     if (seen.has(cat.id)) continue
     seen.add(cat.id)
+    if (!isPlant) {
+      // GLOBAL/SUCURSAL → TODO (misma _loadData que los items).
+      result.push(cat)
+      continue
+    }
     const s = cat.scopes?.[0]
     if (s == null || s.scopeType.trim() === '') {
       result.push(cat)
       continue
     }
-    if (scopeType === 'GLOBAL') {
-      if (s.scopeType === 'GLOBAL') result.push(cat)
-    } else if (scopeType === 'SUCURSAL') {
-      if (s.scopeType === 'SUCURSAL') result.push(cat)
-    } else if (scopeType === 'PLANT') {
-      if (s.scopeType === 'PLANT' && plantId != null && s.plantId === plantId) {
-        result.push(cat)
-      }
-    } else {
+    if (s.scopeType === 'GLOBAL' || s.scopeType === 'SUCURSAL') {
+      result.push(cat)
+    } else if (s.scopeType === 'PLANT' && s.plantId === plantId) {
       result.push(cat)
     }
   }
@@ -695,23 +706,34 @@ const categoryNameOf = computed(() => {
 // --- Validación + submit (textos EXACTOS L500-545) --------------------------------------
 
 function validateForm(): boolean {
+  // Orden EXACTO del original (create_product_template.dart L501-545):
+  // nombre → categoría → grupos (al menos uno) → piso → grupo i sin items.
   if (form.name.trim().length === 0) {
     toast.warning('El nombre del producto es requerido')
     return false
   }
+  // L508-517: categoría requerida. El 0 es 'Sin categoría' del AppSelect
+  // heredado — tratarlo como NO seleccionada (el original valida null).
+  if (form.categoryId == null || form.categoryId === 0) {
+    toast.warning('Debe seleccionar una categoría')
+    return false
+  }
+  // Extra local (el original no la tiene, no daña): precio >= 0.
   const price = Number.parseFloat(form.basePrice)
   if (!Number.isFinite(price) || price < 0) {
     toast.warning('El precio debe ser mayor o igual a 0')
-    return false
-  }
-  if (formScope.value.scopeType === 'PLANT' && formScope.value.plantId == null) {
-    toast.warning('Selecciona un piso para el alcance')
     return false
   }
   if (groups.value.length === 0) {
     toast.warning('Debe agregar al menos un grupo de opciones')
     return false
   }
+  // L527-534.
+  if (formScope.value.scopeType === 'PLANT' && formScope.value.plantId == null) {
+    toast.warning('Selecciona un piso para el alcance')
+    return false
+  }
+  // L536-545.
   for (let gi = 0; gi < groups.value.length; gi += 1) {
     const g = groups.value[gi]
     if (g.selectedItems.length === 0) {
@@ -2286,6 +2308,33 @@ async function confirmDelete(): Promise<void> {
 .pe-group-name {
   flex: 1;
   min-width: 0;
+}
+
+/* Botón icono circular del grupo (delete): patrón .mc-item-btn de
+   ManageCatalogView (QA H2: la clase se usaba SIN su CSS — se veía nativo).
+   40px transparente, hover white08, --delete rojo (L607 del original). */
+.pe-item-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.pe-item-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.pe-item-btn--delete {
+  color: var(--error);
 }
 
 /* min/max SOLO MULTIPLE (L1036) */
