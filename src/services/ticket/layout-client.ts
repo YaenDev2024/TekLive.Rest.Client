@@ -136,8 +136,9 @@ export function buildClientTicket(input: ClientTicketInput): TicketDoc {
   const lines: TicketLine[] = []
   const createdAt = input.createdAt ?? new Date()
   const tipoOrden = (input.orderType ?? 'LOCAL').toUpperCase()
-  // Ronda Piso 1: flags del ticket-config (defaults réplica del original:
-  // pagados sí, gratuitos no, notas sí; footer default L31).
+  // Ronda Piso 1: flags del ticket-config (defaults del builder: pagados sí,
+  // gratuitos no, notas sí — showClientNotes el STORE resuelve a false, que es
+  // el default real backend/Flutter; el caller siempre lo pasa explícito).
   const showNotes = input.showNotes ?? true
   const showPaidModifiers = input.showPaidModifiers ?? true
   const showFreeModifiers = input.showFreeModifiers ?? false

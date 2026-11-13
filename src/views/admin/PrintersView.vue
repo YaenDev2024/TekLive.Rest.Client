@@ -476,32 +476,39 @@ async function scanNetwork(): Promise<void> {
 
 /** Asigna un dispositivo descubierto: principal / C1 / C2 / área. */
 function assignDevice(target: 'main' | 'k1' | 'k2' | PrintArea, device: DiscoveredDevice): void {
+  // USB descubierta (ip = 'usb:<nombre>') réplica printer_settings_screen.dart
+  // L37 configValue = isUsb ? (usbName ?? ip) : ip: el NOMBRE vive en ip (el
+  // spooler imprime por nombre), NUNCA el prefijo 'usb:' — guardarlo crudo
+  // dejaría una config inválida (probePrinter('usb:…') jamás resuelve y
+  // OpenPrinterW fallaría).
+  const isUsbDevice = device.ip.startsWith('usb:')
+  const value = isUsbDevice ? device.ip.slice(4) : device.ip
   if (target === 'main') {
-    setMainPrinter(device.ip, device.name, false)
-    mainIp.value = device.ip
-    mainSaved.value = device.ip
+    setMainPrinter(value, device.name, isUsbDevice, isUsbDevice ? value : undefined)
+    mainIp.value = value
+    mainSaved.value = value
     toast.success(`Impresora guardada: ${device.name}`)
     return
   }
   if (target === 'k1' || target === 'k2') {
     const slot = target === 'k1' ? 1 : 2
-    setKitchenSlot(slot, device.ip, `Cocina ${slot} - ${device.ip}`, false)
+    setKitchenSlot(slot, value, `Cocina ${slot} - ${value}`, isUsbDevice)
     if (slot === 1) {
-      k1Ip.value = device.ip
-      k1Saved.value = device.ip
+      k1Ip.value = value
+      k1Saved.value = value
     } else {
-      k2Ip.value = device.ip
-      k2Saved.value = device.ip
+      k2Ip.value = value
+      k2Saved.value = value
     }
     toast.success(`Cocina ${slot} guardada: ${device.name}`)
     return
   }
-  setAreaPrinter(target, { ip: device.ip, isUsb: false, port: 9100 })
+  setAreaPrinter(target, { ip: value, isUsb: isUsbDevice, port: 9100, usbName: isUsbDevice ? value : undefined })
   const row = areaRows.value[target]
   if (row != null) {
-    row.value = device.ip
-    row.isUsb = false
-    row.saved = device.ip
+    row.value = value
+    row.isUsb = isUsbDevice
+    row.saved = value
   }
   toast.success(`Impresora de ${target} guardada.`)
 }
@@ -509,11 +516,14 @@ function assignDevice(target: 'main' | 'k1' | 'k2' | PrintArea, device: Discover
 /** Labels de asignación de un dispositivo (principal/cocina 1/áreas). */
 function deviceAssignedLabels(device: DiscoveredDevice): string[] {
   const labels: string[] = []
-  if (mainSaved.value != null && device.ip === mainSaved.value) labels.push('principal')
-  if (k1Saved.value != null && device.ip === k1Saved.value) labels.push('cocina 1')
-  if (k2Saved.value != null && device.ip === k2Saved.value) labels.push('cocina 2')
+  // USB descubierta: la config guarda el NOMBRE (sin 'usb:'), comparar contra
+  // él — la UI "asignada" debe matchear lo persistido, no la clave del scan.
+  const value = device.ip.startsWith('usb:') ? device.ip.slice(4) : device.ip
+  if (mainSaved.value != null && value === mainSaved.value) labels.push('principal')
+  if (k1Saved.value != null && value === k1Saved.value) labels.push('cocina 1')
+  if (k2Saved.value != null && value === k2Saved.value) labels.push('cocina 2')
   for (const area of PRINT_AREAS) {
-    if (areaRows.value[area]?.saved === device.ip) labels.push(area.toLowerCase())
+    if (areaRows.value[area]?.saved === value) labels.push(area.toLowerCase())
   }
   return labels
 }

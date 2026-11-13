@@ -116,14 +116,15 @@ function effectiveTicketConfig(): TicketConfig {
   try {
     return useAdminTicketConfigStore().effectiveConfig
   } catch {
-    // Fuera de contexto Pinia (tests/unit): defaults del Flutter.
+    // Fuera de contexto Pinia (tests/unit): defaults del Flutter/backend
+    // (showClientNotes=false — REST_CONFIGURACION_GLOBAL + ticket_service L66).
     return {
       footer: '¡GRACIAS POR SU COMPRA! Vuelva pronto',
       showKitchenModifiers: true,
       showKitchenNotes: true,
       showClientPaidModifiers: true,
       showClientFreeModifiers: false,
-      showClientNotes: true,
+      showClientNotes: false,
     }
   }
 }

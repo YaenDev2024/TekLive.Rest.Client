@@ -25,7 +25,10 @@ export const DEFAULT_TICKET_CONFIG: TicketConfig = {
   showKitchenNotes: true,
   showClientPaidModifiers: true,
   showClientFreeModifiers: false,
-  showClientNotes: true,
+  // Default REAL del backend (REST_CONFIGURACION_GLOBAL.ShowClientNotes=false,
+  // test RestTicketConfigTests Assert.False) y del coalesce del Flutter
+  // (ticket_service.dart L66 'showClientNotes' ?? false).
+  showClientNotes: false,
 }
 
 export const useAdminTicketConfigStore = defineStore('adminTicketConfig', {

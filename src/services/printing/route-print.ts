@@ -24,7 +24,7 @@ import {
   ticketToEscPosBytes,
   type TicketDoc,
 } from '../ticket'
-import { isTauri, printRawEscPos, probePrinter } from './tauri-bridge'
+import { isTauri, listPrinters, printRawEscPos, probePrinter } from './tauri-bridge'
 import {
   getAreaPrinter,
   getKitchenSlot,
@@ -173,7 +173,7 @@ export function buildClientDocTauri(input: {
     items: clientItems(input.items),
     total: input.total,
     footer: cfg?.footer ?? null,
-    showNotes: cfg?.showClientNotes ?? true,
+    showNotes: cfg?.showClientNotes ?? false,
     showPaidModifiers: cfg?.showClientPaidModifiers ?? true,
     showFreeModifiers: cfg?.showClientFreeModifiers ?? false,
     state: input.paidState
@@ -192,13 +192,34 @@ export function buildClientDocTauri(input: {
 // Envío (réplica _printTicketToPrinter L686-770 + readiness L80-148)
 // ---------------------------------------------------------------------------
 
-/** Probe de readiness réplica validatePrinterReadiness: red → 9100, USB → true. */
-async function validatePrinterReadiness(
-  printer: { ip: string; isUsb: boolean },
+/** Probe de readiness réplica validatePrinterReadiness: red → 9100, USB → spooler. */
+export async function validatePrinterReadiness(
+  printer: { ip: string; isUsb: boolean; usbName?: string },
 ): Promise<{ isReady: boolean; message: string }> {
   if (printer.isUsb) {
-    // USB no se puede sondear por TCP; el fallo real lo reporta print_raw.
-    return { isReady: true, message: 'Impresora USB lista' }
+    // USB no se puede sondear por TCP. En Tauri el nombre DEBE existir en el
+    // spooler (list_printers): si el usuario renombró/desinstaló la impresora
+    // el print_raw fallaría tras un toast verde. En web no hay spooler que
+    // consultar (listPrinters devuelve []) → solo presencia del nombre.
+    const name = (printer.usbName ?? printer.ip).trim()
+    if (!isTauri()) {
+      return {
+        isReady: name !== '',
+        message: name !== '' ? 'Impresora USB lista' : 'Impresora USB sin nombre.',
+      }
+    }
+    try {
+      const printers = await listPrinters()
+      const found = printers.some((p) => p.name === name)
+      return {
+        isReady: found,
+        message: found
+          ? 'Impresora USB lista'
+          : `La impresora USB "${name}" no está instalada en Windows. Revisa el nombre en Ajustes > Impresoras.`,
+      }
+    } catch (e) {
+      return { isReady: false, message: e instanceof Error ? e.message : String(e) }
+    }
   }
   try {
     const ok = await probePrinter(printer.ip, 9100, 2000)
@@ -298,9 +319,7 @@ export async function printKitchenTicketToBothPrinters(doc: TicketDoc): Promise<
   const k1 = getKitchenSlot(1)
   const k2 = getKitchenSlot(2)
 
-  const sendOne = async (
-    slot: KitchenPrintResult extends never ? never : 1 | 2,
-  ): Promise<{ ok: boolean; message: string }> => {
+  const sendOne = async (slot: 1 | 2): Promise<{ ok: boolean; message: string }> => {
     const cfg = slot === 1 ? k1 : k2
     if (cfg == null || cfg.ip.trim() === '') {
       return { ok: false, message: `Cocina ${slot} sin configurar` }
