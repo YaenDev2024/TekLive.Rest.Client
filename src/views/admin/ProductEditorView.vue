@@ -6,17 +6,41 @@
  * create_combo_new.dart (builder de combos dinámicos) adaptado al contrato
  * REST del backend nuevo (api/rest/catalog/admin/products).
  *
- * Estructura:
- * - AppBar: back → admin-dashboard (o cierra el editor si está abierto),
- *   título 'Editar Productos', acciones: 'Nuevo Producto' (primary) +
- *   refresh.
- * - Lista de productos: cards con nombre (tachado + badge 'Inactivo' si
- *   !isActive — estilo mc-item-name--inactive), categoría (nombre resuelto
- *   con el store de categorías de PARTE A), precio base, badge de alcance
- *   (mismo estilo .mc-item-scope) y acciones editar/eliminar (confirm soft).
- * - Editor (pantalla completa inline — decisión de ergonomía móvil: el
- *   builder con grupos anidados no cabe cómodo en un AppModal de iPhone):
- *   Nombre*, Descripción, Categoría (AppSelect, opcional), Precio base*
+ * UI-PARITY LISTA (ronda 2026-11-13, SOLO UI — petición: "clavar el UI igual
+ * que el original, el cliente está familiarizado"): la parte LISTA es réplica
+ * EXACTA de manage_product_templates_screen.dart ('Gestionar Templates'):
+ * - AppBar L106-131: título 'Gestionar Templates' + ElevatedButton.icon VERDE
+ *   'Nuevo Template' (única acción; el original NO tiene refresh — el reload
+ *   ocurre al volver del editor y tras guardar/eliminar vía store).
+ * - Panel 'Contexto de alcance' L173-210: margin 16/12/16/0, padding 12,
+ *   borde grey[700] radius 10, título bold + ScopeSelector. Filtro EXACTO de
+ *   scope_filter.dart L42-64 (NO jerárquico como el de ManageCatalogView):
+ *   GLOBAL→solo GLOBAL, SUCURSAL→solo SUCURSAL, PLANT→solo PLANT plantId==N;
+ *   item SIN scope → SIEMPRE visible; dedup por id. PLANT sin piso →
+ *   snackbar 'Selecciona un piso para filtrar'.
+ * - Buscador L211-229: hint 'Buscar template por nombre, descripción o
+ *   grupo', lupa prefix, X solo con query (L156-169: match name/description/
+ *   groupNames join(' ')).
+ * - Cards L282-437: Card grey[900], imagen 150px con fallback
+ *   image_not_supported (brokenImageIds patrón PosPiso1View), nombre 18 bold,
+ *   precio #FF6E40 (deepOrangeAccent), badge scope purple900/700
+ *   (scopeBadgeLabel scope_filter L69-81 con caso '—'), badge 'N grupos'
+ *   blue900/700 (SIN pluralizar: '1 grupos' literal L365), descripción
+ *   grey400 13 maxLines 2, chips de primeros 3 grupos (grey[800], fontSize
+ *   11), botones Editar azul #2196F3 / Eliminar rojo #F44336 CON texto.
+ * - Confirm delete L64-102: 'Confirmar eliminación' / '¿Estás seguro de que
+ *   deseas eliminar este template?' / Cancelar + Eliminar (rojo); toasts
+ *   '✅ Template eliminado' / '❌ Error: …'.
+ * - Empty L230-273: icono inventory_2 64 grey[600] + 'No hay templates
+ *   creados para este alcance' + botón deepOrangeAccent 'Crear Template';
+ *   con query sin resultados → 'No se encontraron templates para "$query"'.
+ *
+ * Editor inline (formulario pe-*) INTACTO funcionalmente — solo se alinean
+ * sus títulos al original (create_product_template.dart L665): 'Editar
+ * Producto' (editando) / 'Crear Nuevo Producto' (creando).
+ *
+ * Estructura del editor (sin cambios):
+ * - Nombre*, Descripción, Categoría (AppSelect, opcional), Precio base*
  *   (sanitize réplica ManageCatalogView), Alcance (ScopeSelector), Activo
  *   (checkbox estilizado, solo editar) y GRUPOS DE OPCIONES: cada grupo con
  *   Nombre*, Tipo (AppSelect radio/checkbox), min/max selecciones, orden, y
@@ -36,12 +60,13 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
+  Archive,
   CircleAlert,
+  ImageOff,
   ListPlus,
-  Package,
   Pencil,
   Plus,
-  RefreshCw,
+  Search,
   Trash2,
   X,
 } from 'lucide-vue-next'
@@ -74,7 +99,7 @@ onMounted(() => {
     return
   }
   void productsStore.loadProducts()
-  // Categorías (PARTE A) para el AppSelect y el nombre en las cards.
+  // Categorías (PARTE A) para el editor y el nombre de categoría.
   void categoriesStore.loadCategories()
   // Items de Gestionar Catálogo para el picker de valores (solo activos).
   void catalogItemsStore.loadItems()
@@ -94,21 +119,124 @@ async function goBack(): Promise<void> {
   await router.replace({ name: 'admin-dashboard' })
 }
 
-// --- Badges de la lista -----------------------------------------------------------
+// --- UI-PARITY: contexto de alcance de la LISTA (L173-210 + scope_filter) -------
 
-function scopeBadgeOf(scopes: { scopeType: CatalogScopeType; plantId?: number | null }[] | undefined): string {
-  const s = scopes?.[0]
-  if (s == null) return ''
-  if (s.scopeType === 'PLANT') return s.plantId != null ? `Piso #${s.plantId}` : 'Piso'
-  if (s.scopeType === 'SUCURSAL') return 'Sucursal'
-  return 'Global'
+/**
+ * Alcance del filtro de la lista (default GLOBAL réplica _scopeType L23).
+ * INDEPENDIENTE del formScope del editor (ese vive abajo).
+ */
+const listScope = ref<ScopeValue>({ scopeType: 'GLOBAL', plantId: null })
+
+/**
+ * Filtro EXACTO de scope_filter.dart L42-64 (matchesScopeFilter) + dedup por
+ * id (L85-95): GLOBAL→solo items scopeType=='GLOBAL'; SUCURSAL→solo
+ * 'SUCURSAL'; PLANT→solo 'PLANT' && plantId==N. Item SIN scope (scopes vacío/
+ * undefined) → SIEMPRE visible (no ocultar datos de backend viejo).
+ * 100% client-side sobre productsStore.sortedProducts (computed local, el
+ * store NO se toca).
+ */
+const scopedProducts = computed<RestAdminProduct[]>(() => {
+  const { scopeType, plantId } = listScope.value
+  const seen = new Set<number>()
+  const result: RestAdminProduct[] = []
+  for (const product of productsStore.sortedProducts) {
+    if (seen.has(product.id)) continue
+    seen.add(product.id)
+    const s = product.scopes?.[0]
+    // Scope desconocido/vacío: visible siempre (scope_filter L48-49).
+    if (s == null || s.scopeType.trim() === '') {
+      result.push(product)
+      continue
+    }
+    if (scopeType === 'GLOBAL') {
+      if (s.scopeType === 'GLOBAL') result.push(product)
+    } else if (scopeType === 'SUCURSAL') {
+      if (s.scopeType === 'SUCURSAL') result.push(product)
+    } else if (scopeType === 'PLANT') {
+      // Réplica L57-59: sin filterPlantId aún, el filtro no muestra PLANT.
+      if (s.scopeType === 'PLANT' && plantId != null && s.plantId === plantId) {
+        result.push(product)
+      }
+    } else {
+      // Filtro desconocido: no filtrar (L61-62).
+      result.push(product)
+    }
+  }
+  return result
+})
+
+/**
+ * Réplica onChanged L189-206: PLANT sin piso → snackbar 'Selecciona un piso
+ * para filtrar'. La lista se re-filtra reactiva (computed). El ScopeSelector
+ * emite (scopeType, plantId) como dos argumentos.
+ */
+function onListScopeChange(scopeType: CatalogScopeType, plantId: number | null): void {
+  listScope.value = { scopeType, plantId }
+  if (scopeType === 'PLANT' && plantId == null) {
+    toast.warning('Selecciona un piso para filtrar')
+  }
 }
 
-/** Nombre de categoría para la card (lookup con el store de PARTE A). */
-function categoryNameOf(categoryId: number | null | undefined): string {
-  if (categoryId == null) return 'Sin categoría'
-  const cat = categoriesStore.categories.find((c) => c.id === categoryId)
-  return cat != null ? cat.nombre : `Categoría #${categoryId}`
+/** Etiqueta del badge de alcance réplica scopeBadgeLabel (L69-81): con '—'. */
+function scopeBadgeLabel(
+  scopes: { scopeType: CatalogScopeType; plantId?: number | null }[] | undefined,
+): string {
+  const s = scopes?.[0]
+  if (s == null) return '—'
+  switch (s.scopeType) {
+    case 'PLANT':
+      return s.plantId != null ? `Piso #${s.plantId}` : 'Piso'
+    case 'SUCURSAL':
+      return 'Sucursal'
+    case 'GLOBAL':
+      return 'Global'
+    default:
+      return s.scopeType
+  }
+}
+
+// --- UI-PARITY: buscador (L156-169 + L211-229) -----------------------------------
+
+const searchQuery = ref('')
+
+/** ¿Hay query? (controla la X del suffix). */
+const hasSearch = computed(() => searchQuery.value.trim().length > 0)
+
+/**
+ * Filtro de búsqueda réplica L156-169: query trim lowercase; match si
+ * name.contains || description.contains || optionGroups names join(' ')
+ * .contains. Se aplica SOBRE scopedProducts (alcance primero, como el
+ * original: _loadTemplates filtra por scope y L158-169 refina por query).
+ */
+const filteredProducts = computed<RestAdminProduct[]>(() => {
+  const query = searchQuery.value.trim().toLowerCase()
+  if (query === '') return scopedProducts.value
+  return scopedProducts.value.filter((product) => {
+    const groupNames = (product.optionGroups ?? [])
+      .map((group) => group.groupName)
+      .join(' ')
+      .toLowerCase()
+    return (
+      product.name.toLowerCase().includes(query) ||
+      (product.description ?? '').toLowerCase().includes(query) ||
+      groupNames.includes(query)
+    )
+  })
+})
+
+function clearSearch(): void {
+  searchQuery.value = ''
+}
+
+// --- UI-PARITY: imagen rota (patrón brokenImageIds de PosPiso1View L242-254) ----
+
+const brokenImageIds = ref<Set<number>>(new Set())
+function onCardImageError(productId: number): void {
+  if (!brokenImageIds.value.has(productId)) {
+    const next = new Set(brokenImageIds.value)
+    next.add(productId)
+    brokenImageIds.value = next
+  }
 }
 
 // --- Editor: drafts -----------------------------------------------------------------
@@ -175,7 +303,8 @@ const deleting = ref(false)
 const confirmTarget = ref<RestAdminProduct | null>(null)
 
 const editorTitle = computed(() =>
-  editingProduct.value == null ? 'Nuevo Producto' : 'Editar Producto',
+  // UI-parity create_product_template.dart L665 (textos EXACTOS).
+  editingProduct.value == null ? 'Crear Nuevo Producto' : 'Editar Producto',
 )
 
 function openCreate(): void {
@@ -440,13 +569,15 @@ async function confirmDelete(): Promise<void> {
   deleting.value = true
   try {
     await productsStore.deleteProduct(confirmTarget.value.id)
-    toast.success('Producto eliminado')
+    // UI-parity manage_product_templates_screen.dart L90 (SnackBar EXACTO).
+    toast.success('✅ Template eliminado')
     confirmTarget.value = null
   } catch (err) {
+    // Réplica L97: '❌ Error: …'.
     toast.error(
       err instanceof ApiError && err.status !== 0
-        ? `Error: ${err.message}`
-        : 'Error: No se pudo conectar con el servidor. Verifica tu conexión.',
+        ? `❌ Error: ${err.message}`
+        : '❌ Error: No se pudo conectar con el servidor. Verifica tu conexión.',
     )
   } finally {
     deleting.value = false
@@ -456,7 +587,9 @@ async function confirmDelete(): Promise<void> {
 
 <template>
   <div class="pe-page">
-    <!-- ===== AppBar: back + título + Nuevo Producto + refresh ===== -->
+    <!-- ===== AppBar réplica L106-131: back + 'Gestionar Templates' + verde
+         'Nuevo Template' (única acción; SIN refresh — el original recarga al
+         volver del editor y el store recarga tras guardar/eliminar) ===== -->
     <header class="pe-appbar">
       <button
         type="button"
@@ -481,34 +614,25 @@ async function confirmDelete(): Promise<void> {
           <path d="M19 12H5" />
         </svg>
       </button>
-      <h1 class="pe-appbar-title">{{ editorOpen ? editorTitle : 'Editar Productos' }}</h1>
+      <h1 class="pe-appbar-title">
+        {{ editorOpen ? editorTitle : 'Gestionar Templates' }}
+      </h1>
       <div class="pe-appbar-actions">
         <button
           v-if="!editorOpen"
           type="button"
-          class="pe-btn pe-btn--primary pe-btn--compact"
+          class="pe-btn pe-btn--green pe-btn--compact"
           data-testid="pe-new"
           @click="openCreate"
         >
           <Plus :size="18" aria-hidden="true" />
-          Nuevo Producto
-        </button>
-        <button
-          v-if="!editorOpen"
-          type="button"
-          class="pe-icon-btn"
-          title="Recargar"
-          aria-label="Recargar"
-          data-testid="pe-refresh"
-          @click="productsStore.loadProducts(true)"
-        >
-          <RefreshCw :size="20" aria-hidden="true" />
+          Nuevo Template
         </button>
       </div>
     </header>
 
     <main class="pe-body">
-      <!-- ====================== LISTA ====================== -->
+      <!-- ====================== LISTA (réplica manage_product_templates_screen L171-279) ====================== -->
       <template v-if="!editorOpen">
         <div v-if="productsStore.loading" class="pe-state" data-testid="pe-loading">
           <AppSpinner :size="36" tone="primary" />
@@ -527,62 +651,167 @@ async function confirmDelete(): Promise<void> {
           </button>
         </div>
 
-        <p
-          v-else-if="productsStore.sortedProducts.length === 0"
-          class="pe-state pe-empty"
+        <!-- ===== Panel 'Contexto de alcance' (L173-210) ===== -->
+        <section
+          v-else
+          class="pe-scope-panel"
+          data-testid="pe-scope-panel"
+        >
+          <h2 class="pe-scope-title">Contexto de alcance</h2>
+          <!-- @change réplica onChanged L189-206 (PLANT sin piso → snackbar).
+               v-model + listener change del ScopeSelector (misma fuente). -->
+          <ScopeSelector
+            v-model="listScope"
+            @change="onListScopeChange"
+          />
+        </section>
+
+        <!-- ===== Buscador (L211-229): hint exacto, lupa prefix, X con query ===== -->
+        <div class="pe-search-wrap">
+          <div class="pe-search">
+            <Search :size="20" class="pe-search-icon" aria-hidden="true" />
+            <input
+              v-model="searchQuery"
+              type="text"
+              class="pe-search-input"
+              placeholder="Buscar template por nombre, descripción o grupo"
+              aria-label="Buscar template por nombre, descripción o grupo"
+              data-testid="pe-search"
+            />
+            <button
+              v-if="hasSearch"
+              type="button"
+              class="pe-search-clear"
+              aria-label="Limpiar búsqueda"
+              data-testid="pe-search-clear"
+              @click="clearSearch"
+            >
+              <X :size="18" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+
+        <!-- ===== Empty SIN productos para el alcance (L230-258): icono
+             inventory_2 + texto exacto + botón deepOrangeAccent ===== -->
+        <div
+          v-if="productsStore.products.length === 0"
+          class="pe-state pe-empty-state"
           data-testid="pe-empty"
         >
-          No hay productos para mostrar
+          <Archive :size="64" class="pe-empty-icon" aria-hidden="true" />
+          <p class="pe-state-text">No hay templates creados para este alcance</p>
+          <button
+            type="button"
+            class="pe-btn pe-btn--accent"
+            data-testid="pe-empty-create"
+            @click="openCreate"
+          >
+            <Plus :size="18" aria-hidden="true" />
+            Crear Template
+          </button>
+        </div>
+
+        <!-- ===== Con query sin resultados (L259-265): texto con comillas ===== -->
+        <p
+          v-else-if="filteredProducts.length === 0"
+          class="pe-state pe-no-results"
+          data-testid="pe-no-results"
+        >
+          No se encontraron templates para "{{ searchQuery.trim() }}"
         </p>
 
+        <!-- ===== Cards (L266-273 + _buildTemplateCard L282-441) ===== -->
         <ul v-else class="pe-list" data-testid="pe-list">
           <li
-            v-for="product in productsStore.sortedProducts"
+            v-for="product in filteredProducts"
             :key="product.id"
             class="pe-card"
             :data-testid="`pe-item-${product.id}`"
           >
-            <span class="pe-avatar" :class="{ 'pe-avatar--inactive': !product.isActive }">
-              <Package :size="22" aria-hidden="true" />
-            </span>
-            <span class="pe-item-info">
-              <span class="pe-item-name" :class="{ 'pe-item-name--inactive': !product.isActive }">
-                {{ product.name }}
+            <!-- Imagen 150px cover con fallback image_not_supported (L289-304);
+                 imageUrl vacía/null → SIN bloque de imagen -->
+            <span
+              v-if="product.imageUrl != null && product.imageUrl !== ''"
+              class="pe-card-media"
+            >
+              <img
+                v-if="!brokenImageIds.has(product.id)"
+                :src="product.imageUrl"
+                alt=""
+                loading="lazy"
+                @error="onCardImageError(product.id)"
+              />
+              <span v-else class="pe-card-media-fallback" aria-hidden="true">
+                <ImageOff :size="28" />
               </span>
-              <span v-if="!product.isActive" class="pe-item-inactive-badge">Inactivo</span>
-              <span class="pe-item-meta">
-                {{ categoryNameOf(product.categoryId) }} • ${{ product.basePrice.toFixed(2) }}
-                <span v-if="scopeBadgeOf(product.scopes) !== ''" class="pe-item-scope">
-                  {{ scopeBadgeOf(product.scopes) }}
+            </span>
+
+            <span class="pe-card-body">
+              <!-- Row spaceBetween: nombre+precio | badge scope | badge grupos -->
+              <span class="pe-card-top">
+                <span class="pe-card-heading">
+                  <span
+                    class="pe-item-name"
+                    :class="{ 'pe-item-name--inactive': !product.isActive }"
+                  >
+                    {{ product.name }}
+                  </span>
+                  <span class="pe-card-price">${{ product.basePrice.toFixed(2) }}</span>
+                </span>
+                <span class="pe-card-scope" :data-testid="`pe-item-scope-${product.id}`">
+                  {{ scopeBadgeLabel(product.scopes) }}
+                </span>
+                <span
+                  class="pe-card-groups"
+                  :data-testid="`pe-item-groups-${product.id}`"
+                >
+                  {{ (product.optionGroups ?? []).length }} grupos
                 </span>
               </span>
+
+              <!-- Descripción (si no vacía): grey400 13 maxLines 2 (L373-382) -->
+              <span
+                v-if="product.description != null && product.description !== ''"
+                class="pe-card-desc"
+              >
+                {{ product.description }}
+              </span>
+
+              <!-- Chips de grupos: primeros 3 (L384-400) -->
               <span
                 v-if="product.optionGroups != null && product.optionGroups.length > 0"
-                class="pe-item-groups"
+                class="pe-card-chips"
               >
-                {{ product.optionGroups.length }}
-                {{ product.optionGroups.length === 1 ? 'grupo' : 'grupos' }} de opciones
+                <span
+                  v-for="group in product.optionGroups.slice(0, 3)"
+                  :key="group.id"
+                  class="pe-card-chip"
+                >
+                  {{ group.groupName }}
+                </span>
               </span>
-            </span>
-            <span class="pe-item-actions">
-              <button
-                type="button"
-                class="pe-item-btn"
-                :aria-label="`Editar ${product.name}`"
-                :data-testid="`pe-edit-${product.id}`"
-                @click="openEdit(product)"
-              >
-                <Pencil :size="20" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                class="pe-item-btn pe-item-btn--delete"
-                :aria-label="`Eliminar ${product.name}`"
-                :data-testid="`pe-delete-${product.id}`"
-                @click="openConfirm(product)"
-              >
-                <Trash2 :size="20" aria-hidden="true" />
-              </button>
+
+              <!-- Botones Row end: Editar azul / Eliminar rojo CON texto (L402-437) -->
+              <span class="pe-item-actions">
+                <button
+                  type="button"
+                  class="pe-btn pe-btn--blue pe-btn--small"
+                  :data-testid="`pe-edit-${product.id}`"
+                  @click="openEdit(product)"
+                >
+                  <Pencil :size="16" aria-hidden="true" />
+                  Editar
+                </button>
+                <button
+                  type="button"
+                  class="pe-btn pe-btn--red pe-btn--small"
+                  :data-testid="`pe-delete-${product.id}`"
+                  @click="openConfirm(product)"
+                >
+                  <Trash2 :size="16" aria-hidden="true" />
+                  Eliminar
+                </button>
+              </span>
             </span>
           </li>
         </ul>
@@ -852,16 +1081,16 @@ async function confirmDelete(): Promise<void> {
       </form>
     </main>
 
-    <!-- ===== Confirm de eliminación (soft) ===== -->
+    <!-- ===== Confirm de eliminación (UI-parity L64-102: textos EXACTOS del
+         AlertDialog original) ===== -->
     <AppModal
       v-if="confirmTarget != null"
-      title="Eliminar Producto"
+      title="Confirmar eliminación"
       :width="400"
       @close="closeConfirm"
     >
       <p class="pe-confirm-text" data-testid="pe-confirm-text">
-        ¿Estás seguro de eliminar el producto "{{ confirmTarget.name }}"? No se eliminará, solo se
-        ocultará.
+        ¿Estás seguro de que deseas eliminar este template?
       </p>
       <template #footer>
         <button
@@ -1000,6 +1229,46 @@ async function confirmDelete(): Promise<void> {
   border-color: var(--text-faint);
 }
 
+/* UI-parity: verde del AppBar (Colors.green #4CAF50, L122) */
+.pe-btn--green {
+  background: #4caf50;
+  color: #ffffff;
+}
+
+.pe-btn--green:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+/* deepOrangeAccent #FF6E40: 'Crear Template' del empty (L250-256) */
+.pe-btn--accent {
+  background: #ff6e40;
+  color: #ffffff;
+}
+
+.pe-btn--accent:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+/* 'Editar' Colors.blue #2196F3 (L414-422) */
+.pe-btn--blue {
+  background: #2196f3;
+  color: #ffffff;
+}
+
+.pe-btn--blue:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+/* 'Eliminar' Colors.red #F44336 (L425-433) */
+.pe-btn--red {
+  background: #f44336;
+  color: #ffffff;
+}
+
+.pe-btn--red:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
 .pe-btn--compact {
   padding: 10px 16px;
   font-size: 14px;
@@ -1035,10 +1304,9 @@ async function confirmDelete(): Promise<void> {
   text-align: center;
 }
 
-.pe-empty {
-  margin: 0;
-  color: var(--text);
-  font-size: 16px;
+/* ===== Empty con icono (L230-258): inventory_2 64px grey[600] ===== */
+.pe-empty-icon {
+  color: #757575; /* Colors.grey.shade600 */
 }
 
 .pe-state-error-icon {
@@ -1066,120 +1334,243 @@ async function confirmDelete(): Promise<void> {
   background: var(--primary-hover);
 }
 
+/* ===== Panel 'Contexto de alcance' (L173-210): margin 16/12/16/0,
+   padding 12, borde grey[700] radius 10 (mismo patrón mc-scope-panel) ===== */
+.pe-scope-panel {
+  margin: 12px 16px 0;
+  padding: 12px;
+  border: 1px solid var(--border); /* Colors.grey.shade700 #616161 */
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px; /* SizedBox(height: 8) L178 */
+}
+
+.pe-scope-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700; /* TextStyle(fontWeight: FontWeight.bold) L176 */
+  color: var(--text);
+}
+
+/* ===== Buscador (L211-229): padding 16/16/16/8, radius 10 ===== */
+.pe-search-wrap {
+  padding: 8px 16px 16px;
+}
+
+.pe-search {
+  position: relative;
+}
+
+.pe-search-icon {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  transform: translateY(-50%);
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.pe-search-input {
+  width: 100%;
+  height: 48px;
+  padding: 0 44px 0 40px;
+  background: rgba(0, 0, 0, 0.3); /* fill del tema, igual que el resto de inputs */
+  border: 1px solid var(--border);
+  border-radius: 10px; /* OutlineInputBorder radius 10 L218 */
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+}
+
+.pe-search-input::placeholder {
+  color: var(--text-faint);
+}
+
+.pe-search-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.pe-search-clear {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.pe-search-clear:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+/* ===== No-results con query (L259-265): grey[400], centrado ===== */
+.pe-no-results {
+  margin: 0;
+  padding: 32px 24px;
+  text-align: center;
+  color: #bdbdbd; /* Colors.grey.shade400 */
+  font-size: 15px;
+}
+
+/* ===== Lista: ListView padding 16, cards grey[900] margin-bottom 16 ===== */
 .pe-list {
   margin: 0;
   padding: 16px;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px; /* margin bottom 16 de cada Card L282 */
 }
 
+/* ===== Card (L282-437): bg grey[900] #212121, radius 12, columna ===== */
 .pe-card {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 8px 12px 16px;
-  background: var(--bg-surface);
+  flex-direction: column;
+  background: var(--bg); /* Colors.grey[900] = #212121 L281 */
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+  overflow: hidden;
 }
 
-.pe-avatar {
-  display: inline-flex;
+/* Imagen 150px cover con ClipRRect radius 12 top (L289-304) */
+.pe-card-media {
+  display: block;
+  height: 150px;
+}
+
+.pe-card-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Fallback image_not_supported: container grey[800] #424242 + icono */
+.pe-card-media-fallback {
+  display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  flex: none;
-  border-radius: 999px;
-  background: var(--success);
-  color: #ffffff;
+  height: 100%;
+  background: #424242; /* Colors.grey.shade800 */
+  color: var(--text-faint);
 }
 
-.pe-avatar--inactive {
-  background: #9e9e9e;
+.pe-card-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 16px;
 }
 
-.pe-item-info {
+/* Row spaceBetween (L323-370): heading | badge scope | badge grupos */
+.pe-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+}
+
+.pe-card-heading {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px; /* SizedBox(height: 4) L334 */
 }
 
 .pe-item-name {
-  font-size: 16px;
+  font-size: 18px; /* fontSize 18 bold L329 */
   font-weight: 700;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: nowrap; /* maxLines 1 */
 }
 
 .pe-item-name--inactive {
   text-decoration: line-through;
 }
 
-.pe-item-inactive-badge {
-  align-self: flex-start;
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  font-size: 11px;
+/* Precio deepOrangeAccent #FF6E40, fontSize 16 bold (L331-333) */
+.pe-card-price {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ff6e40;
 }
 
-.pe-item-meta {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-.pe-item-scope {
-  margin-left: 6px;
-  padding: 1px 7px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
-.pe-item-groups {
+/* Badge scope: purple900 α0.35 + borde purple700 (L342-355) */
+.pe-card-scope {
+  flex: none;
+  padding: 4px 8px;
+  margin-right: 8px;
+  border: 1px solid #7b1fa2; /* Colors.purple.shade700 */
+  border-radius: 8px;
+  background: rgba(74, 20, 90, 0.35); /* purple900 #4A148C α 0.35 */
+  color: var(--text);
   font-size: 12px;
-  color: #bdbdbd;
+  white-space: nowrap;
 }
 
+/* Badge grupos: blue900 α0.3 + borde blue700 (L356-369); 'N grupos' LITERAL
+   sin pluralizar ('1 grupos' como el original '${n} grupos' L365) */
+.pe-card-groups {
+  flex: none;
+  padding: 6px 12px;
+  border: 1px solid #1976d2; /* Colors.blue.shade700 */
+  border-radius: 8px;
+  background: rgba(13, 71, 161, 0.3); /* blue900 #0D47A1 α 0.3 */
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Descripción grey400 13 maxLines 2 (L373-382) */
+.pe-card-desc {
+  margin: 12px 0;
+  color: #bdbdbd; /* Colors.grey.shade400 */
+  font-size: 13px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Chips de grupos: primeros 3, grey[800], fontSize 11, radius full (L384-400) */
+.pe-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px; /* Wrap spacing 8 */
+}
+
+.pe-card-chip {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #424242; /* Colors.grey.shade800 */
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* Botones Row end (L402-437): Editar azul + 8px + Eliminar rojo */
 .pe-item-actions {
   display: flex;
   align-items: center;
-  gap: 2px;
-  flex: none;
-}
-
-.pe-item-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  padding: 0;
-  background: transparent;
-  border: none;
-  border-radius: 999px;
-  color: var(--text);
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.pe-item-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.pe-item-btn--delete {
-  color: var(--error);
+  justify-content: flex-end;
+  gap: 8px;
+  width: 100%;
+  margin-top: 12px;
 }
 
 /* ===== Editor ===== */
@@ -1472,17 +1863,9 @@ async function confirmDelete(): Promise<void> {
     padding: 12px;
   }
 
-  .pe-card {
+  /* Cards: badges pueden envolver bajo el heading */
+  .pe-card-top {
     flex-wrap: wrap;
-    gap: 10px;
-  }
-
-  .pe-item-info {
-    flex-basis: calc(100% - 66px);
-  }
-
-  .pe-item-actions {
-    margin-left: 56px;
   }
 
   .pe-group-grid {
