@@ -454,6 +454,23 @@ function itemNoteLines(notes: string | null | undefined): string[] {
   return parts.map((p) => p.trim()).filter((p) => p.length > 0)
 }
 
+/**
+ * Líneas de EXTRAS del item desde el dato ESTRUCTURAL `OrderDetailItem.extras`
+ * (pos-types.ts L230: [{extraId, name, price}]), NUNCA sintetizadas desde la
+ * nota. El original (pending_orders_screen.dart) no tiene campo extras en su
+ * modelo (PendingOrderItem L95-131: solo notes) — el backend de ese repo junta
+ * los extras DENTRO de la nota y su parser `_buildDetailLines` (L797-909) los
+ * pinta como '• nombre' (branches L883/L898: bullet U+2022, bodySmall
+ * grey[300]); el precio por extra NO se muestra (el subtotal del renglón ya
+ * lo incluye, pending_order_model.dart L128). Réplica: cada extra estructural
+ * se añade como una línea bullet más, con el MISMO formato/estilo que las
+ * líneas de nota. Tras el fix del backend (deja de generar notas con IDs),
+ * este campo estructural es la ÚNICA fuente fiable de extras.
+ */
+function itemExtraLines(item: OrderDetailItem): Array<{ extraId: number; name: string }> {
+  return item.extras ?? []
+}
+
 // --- Deuda backend: edición de opciones por item (pencil) — toast informativo
 
 /** El pencil del .dart reabre el wizard en modo edición (sincroniza precio/
@@ -826,9 +843,26 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
                 <span class="po-item-info">
                   <span class="po-item-name">
                     {{ item.productName }}
-                    <span v-if="itemNoteLines(item.notes).length > 0" class="po-item-notes">
-                      <span v-for="line in itemNoteLines(item.notes)" :key="line" class="po-item-note">
+                    <!-- Sub-líneas del item (réplica _buildDetailLines L797-909
+                         del .dart): notas parseadas + EXTRAS estructurales,
+                         todos como bullets del mismo estilo (.po-item-note).
+                         Las extras SOLO salen de item.extras (campo
+                         estructural del detalle) — nunca se sintetizan desde
+                         la nota, así el 'GRUPO=ID' que el backend dejaba en
+                         las notas nunca se duplica ni se re-sintetiza. -->
+                    <span
+                      v-if="itemNoteLines(item.notes).length > 0 || itemExtraLines(item).length > 0"
+                      class="po-item-notes"
+                    >
+                      <span v-for="line in itemNoteLines(item.notes)" :key="`n-${line}`" class="po-item-note">
                         • {{ line }}
+                      </span>
+                      <span
+                        v-for="extra in itemExtraLines(item)"
+                        :key="`x-${extra.extraId}`"
+                        class="po-item-note"
+                      >
+                        • {{ extra.name }}
                       </span>
                     </span>
                   </span>
@@ -1500,7 +1534,9 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   font-weight: 600;
 }
 
-/* Notas (L890-940): gris 12 itálica con bullet */
+/* Sub-líneas del item (L890-940 del .dart): notas + extras estructurales,
+   gris 12 itálica con bullet — MISMO estilo para ambas fuentes (el original
+   pinta extras de nota y cualquier otra línea con el mismo bullet). */
 .po-item-notes {
   display: flex;
   flex-direction: column;
