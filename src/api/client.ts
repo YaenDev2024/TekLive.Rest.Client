@@ -9,7 +9,9 @@
  * - 401 → silent refresh rotation + single retry (see below).
  *
  * NOTE: the access token lives in `src/services/auth.ts` (in-memory only,
- * never persisted to localStorage).
+ * never persisted to localStorage). The REFRESH token persists in
+ * localStorage (rest.refreshToken) so a page reload (F5) resumes the
+ * session silently via POST /auth/refresh instead of kicking to login.
  */
 import { getRefreshToken, applyRefreshedTokens } from '../services/auth'
 
@@ -141,6 +143,17 @@ async function refreshAccessToken(): Promise<boolean> {
   } finally {
     refreshInFlight = null
   }
+}
+
+/**
+ * Rotador público para el resume tras recarga (router guard → auth.ts
+ * tryResumeFromPersistedRefresh). Single-flight compartido con el handler
+ * de 401s: si una rotación ya corre, ambos esperan la misma promesa. El
+ * token a usar lo lee refreshAccessToken() vía getRefreshToken() (que tras
+ * un reload lo resuelve desde localStorage).
+ */
+export function rotatePersistedRefresh(_refreshToken: string): Promise<boolean> {
+  return refreshAccessToken()
 }
 
 async function request<T>(path: string, init: RequestInit, allowRetry = true): Promise<ApiResult<T>> {

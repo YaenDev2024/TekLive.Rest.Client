@@ -1,12 +1,15 @@
 /**
  * TekLive Rest · Auth/session service.
  *
- * Persistence policy (Fase 2, plan v2):
- * - accessToken + refreshToken: IN MEMORY ONLY (module state), never
- *   localStorage on web. On Tauri/Android (later phases) the refresh token
- *   moves to the platform secure store.
- * - localStorage holds ONLY non-sensitive profile + device data:
- *   rest.employeeNumber, rest.displayName, rest.role, rest.deviceId.
+ * Persistence policy (ajustada 2026-11-14 — petición del dueño: F5 no saca
+ * al login):
+ * - accessToken: IN MEMORY ONLY (15 min, corto a propósito).
+ * - refreshToken: localStorage (rest.refreshToken) → tras un reload el
+ *   router guard rota silenciosamente contra POST /auth/refresh y la
+ *   sesión continúa sin re-login. Logout lo borra. En Tauri/Android fases
+ *   futuras migrará al secure store de la plataforma.
+ * - localStorage además guarda perfil no-sensible: rest.employeeNumber,
+ *   rest.displayName, rest.role, rest.deviceId.
  *
  * Company resolution is 100% SERVER-SIDE: the backend deduces the company
  * from the globally-unique employee number at login. The client never stores
@@ -22,6 +25,15 @@ const LS_EMPLOYEE_NUMBER = 'rest.employeeNumber'
 const LS_DISPLAY_NAME = 'rest.displayName'
 const LS_ROLE = 'rest.role'
 const LS_DEVICE_ID = 'rest.deviceId'
+/**
+ * Refresh token persistido (2026-11-14, petición del dueño: F5 no debe
+ * sacar al login). El ACCESS token sigue memory-only (15 min, corto a
+ * propósito); el REFRESH viaja en localStorage y permite resume silencioso
+ * tras reload vía POST /auth/refresh (rotación + anti-reuso del backend:
+ * presentar un refresh ya usado revoca la familia, así que SIEMPRE se
+ * sobrescribe con el nuevo tras cada rotación). Logout lo borra.
+ */
+const LS_REFRESH_TOKEN = 'rest.refreshToken'
 
 /**
  * Legacy keys from the old license-activation flow. The backend no longer
@@ -104,13 +116,17 @@ export function persistSession(profile: {
 }
 
 /**
- * Called right after a successful login: keeps tokens in memory only
- * and syncs the module state with the API client wrapper.
+ * Called right after a successful login: keeps the access token in memory
+ * and syncs the module state with the API client wrapper. The refresh token
+ * se persiste para sobrevivir recargas (resume silencioso tras F5).
  */
 export function applyTokens(accessToken: string, refreshToken: string | null): void {
   session.accessToken = accessToken
   session.refreshToken = refreshToken
   setAccessToken(accessToken)
+  // Persistir el refresh ACTUAL (login emite uno nuevo; si es null se
+  // conserva el previo — applyTokens(null) nunca borra un refresh vivo).
+  if (refreshToken != null) writeLS(LS_REFRESH_TOKEN, refreshToken)
 }
 
 /** Refresh silencioso exitoso: sincroniza ambos tokens (memoria). */
@@ -118,9 +134,37 @@ export function applyRefreshedTokens(accessToken: string, refreshToken: string):
   applyTokens(accessToken, refreshToken)
 }
 
-/** Refresh token actual (memoria). Lo usa client.ts para la rotación en 401. */
+/** Refresh token actual (memoria; fallback al persistido tras un reload). */
 export function getRefreshToken(): string | null {
-  return session.refreshToken
+  if (session.refreshToken != null) return session.refreshToken
+  // Tras un F5 la memoria está vacía: leer el persistido (el resume lo
+  // promueve a memoria al rotar; mientras tanto el 401-handler lo usa).
+  const persisted = readLS(LS_REFRESH_TOKEN)
+  if (persisted != null) session.refreshToken = persisted
+  return persisted
+}
+
+/**
+ * Resume silencioso tras recarga (F5): rota el refresh persistido contra
+ * POST /auth/refresh para obtener un access token nuevo SIN re-login.
+ * El guard del router lo invoca cuando no hay token en memoria. Single-
+ * flight vía el mismo refreshInFlight del client (se llama con el import
+ * circular resuelto por inyección: el router pasa el rotador).
+ */
+export async function tryResumeFromPersistedRefresh(
+  rotate: (refreshToken: string) => Promise<boolean>,
+): Promise<boolean> {
+  if (getAccessToken() != null) return true // ya hay sesión viva en memoria
+  const persisted = getRefreshToken()
+  if (persisted == null || persisted.length === 0) return false
+  const ok = await rotate(persisted)
+  if (!ok) {
+    // Refresh inválido/usado/expirado: limpiar para no reintentar en cada
+    // navegación (el perfil no-sensible sobrevive para el prefill).
+    writeLS(LS_REFRESH_TOKEN, null)
+    session.refreshToken = null
+  }
+  return ok
 }
 
 /**
@@ -134,6 +178,8 @@ export function restoreSession(): boolean {
   session.displayName = readLS(LS_DISPLAY_NAME)
   session.role = readLS(LS_ROLE)
   getDeviceId() // ensures deviceId is generated/persisted
+  // El refresh persistido se promueve a memoria perezosamente vía
+  // getRefreshToken() (primer 401) o tryResumeFromPersistedRefresh (guard).
   return true
 }
 
@@ -159,6 +205,9 @@ export function clearSession(): void {
   session.accessToken = null
   session.refreshToken = null
   setAccessToken(null)
+  // El refresh persistido muere con el logout explícito (si el usuario cierra
+  // sesión, nadie más debe poder resumir esa sesión en este dispositivo).
+  writeLS(LS_REFRESH_TOKEN, null)
   session.employeeNumber = null
   session.displayName = null
   session.role = null

@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { session, restoreSession } from './services/auth'
+import { session, restoreSession, tryResumeFromPersistedRefresh } from './services/auth'
+import { rotatePersistedRefresh } from './api/client'
 import LoginView from './views/LoginView.vue'
 import ModuleSelectView from './views/pos/ModuleSelectView.vue'
 import PosShellView from './views/pos/PosShellView.vue'
@@ -174,12 +175,15 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
   if (AUTH_ROUTES.has(to.name as string)) {
-    // Sin token en memoria NO se opera el POS (antes el guard dejaba pasar y
-    // cada API respondía 401 → "Error inesperado"). Tras un reload ambos
-    // tokens se pierden (memoria-only): no hay nada que rotar → login con el
-    // número de empleado prefilled desde el perfil persistido.
+    // Sesión viva en memoria → pasar.
     if (session.accessToken != null) return true
+    // Recarga (F5): la memoria está vacía pero el REFRESH TOKEN persiste en
+    // localStorage → resume silencioso (rota contra /auth/refresh y sigue
+    // en la vista pedida, SIN login). Solo si no hay refresh persistido (o
+    // la rotación falla: usado/expirado) se cae al login con prefill.
     restoreSession()
+    const resumed = await tryResumeFromPersistedRefresh(rotatePersistedRefresh)
+    if (resumed) return true
     return { name: 'login' }
   }
   if (to.name === 'login' && session.accessToken != null) {
