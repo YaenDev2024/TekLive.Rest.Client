@@ -56,6 +56,9 @@ const floorsStore = useFloorsStore()
 const cashStore = useCashStore()
 const toast = useToastStore()
 
+// onMounted ya existe: los flags de layout se sincronizan ahí (ver bloque
+// "Carga inicial") — no hay listener de resize (los breakpoints son CSS).
+
 // --- Header (L172-178) ---------------------------------------------------------
 
 const displayName = computed(() => session.displayName ?? '')
@@ -84,22 +87,28 @@ const canAccessAdmin = computed(() =>
 // --- Carga inicial (réplica: FloorProvider.loadFloors al entrar) ----------------
 
 onMounted(() => {
+  syncLayoutFlags()
   void floorsStore.fetchFloors()
 })
 
 const floors = computed(() => floorsStore.floors)
 const isLoadingFloors = computed(() => floorsStore.loading)
 
-// --- Layout responsivo (L182-184: <600 móvil, 600-1199 tablet) ------------------
+// --- Layout responsivo -----------------------------------------------------------
+// Los breakpoints viven SOLO en CSS (@media): eliminar el listener de resize
+// (tenía leak: nunca se removía) elimina el parpadeo al redimensionar y el
+// JS escribe las clases isMobile/isTablet una sola vez al montar (SSR-safe).
+// Visual idéntico; CSS puro es la fuente de verdad desde la ronda UI 2026-11-16.
 
-const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1280)
-function onResize(): void {
-  windowWidth.value = window.innerWidth
+const isMobile = ref(false)
+const isTablet = ref(false)
+
+function syncLayoutFlags(): void {
+  if (typeof window === 'undefined') return
+  isMobile.value = window.innerWidth < 600
+  isTablet.value = window.innerWidth >= 600 && window.innerWidth < 1200
 }
-if (typeof window !== 'undefined') window.addEventListener('resize', onResize)
-
-const isMobile = computed(() => windowWidth.value < 600)
-const isTablet = computed(() => windowWidth.value >= 600 && windowWidth.value < 1200)
+syncLayoutFlags()
 
 // --- Gate de caja por piso (réplica _openPosForFloor L44-79) --------------------
 
@@ -195,15 +204,10 @@ function floorSubtitle(floor: RestFloorResponse): string {
 // --- Catálogo de iconos (equivalentes lucide de los Icons.* del original) -------
 // Icons.admin_panel_settings→ShieldCheck, Icons.payments_outlined→Banknote,
 // Icons.store→Store, Icons.restaurant_menu→UtensilsCrossed, Icons.refresh→RefreshCw.
+// Desde la ronda UI 2026-11-16 los componentes se usan DIRECTOS en el template
+// (permite dimensionar por CSS con font-size em en vez de ternarios JS).
 // El icono Restaurant del errorBuilder del logo (L236/299) no aplica en web:
 // /logo.png es un asset estático servido por Vite (sin errorBuilder).
-const ICONS = {
-  admin: ShieldCheck,
-  payments: Banknote,
-  store: Store,
-  restaurantMenu: UtensilsCrossed,
-  refresh: RefreshCw,
-} as const
 </script>
 
 <template>
@@ -246,9 +250,11 @@ const ICONS = {
         >
           <span class="ms-badge">DIRECTO</span>
           <span class="ms-card-content ms-card-content--badge">
-            <component :is="ICONS.admin" class="ms-card-icon" :size="isTablet ? 36 : 56" />
-            <span class="ms-card-title" :class="{ 'ms-card-title--compact': isTablet }">Administración</span>
-            <span class="ms-card-subtitle" :class="{ 'ms-card-subtitle--compact': isTablet }">Acceso independiente</span>
+            <ShieldCheck class="ms-card-icon" :size="56" />
+            <span class="ms-card-text">
+              <span class="ms-card-title">Administración</span>
+              <span class="ms-card-subtitle">Acceso independiente</span>
+            </span>
           </span>
         </button>
 
@@ -262,9 +268,11 @@ const ICONS = {
           @click="openPaymentsModule"
         >
           <span class="ms-card-content">
-            <component :is="ICONS.payments" class="ms-card-icon" :size="isTablet ? 36 : 56" />
-            <span class="ms-card-title" :class="{ 'ms-card-title--compact': isTablet }">Cuentas por Cobrar</span>
-            <span class="ms-card-subtitle" :class="{ 'ms-card-subtitle--compact': isTablet }">Cobros pendientes de mesas</span>
+            <Banknote class="ms-card-icon" :size="56" />
+            <span class="ms-card-text">
+              <span class="ms-card-title">Cuentas por Cobrar</span>
+              <span class="ms-card-subtitle">Cobros pendientes de mesas</span>
+            </span>
           </span>
         </button>
 
@@ -280,9 +288,11 @@ const ICONS = {
             @click="openModuleForFloor(floor)"
           >
             <span class="ms-card-content">
-              <component :is="ICONS.store" class="ms-card-icon" :size="isTablet ? 36 : 56" />
-              <span class="ms-card-title" :class="{ 'ms-card-title--compact': isTablet }">{{ floor.name }}</span>
-              <span class="ms-card-subtitle" :class="{ 'ms-card-subtitle--compact': isTablet }">{{ floorSubtitle(floor) }}</span>
+              <Store class="ms-card-icon" :size="56" />
+              <span class="ms-card-text">
+                <span class="ms-card-title">{{ floor.name }}</span>
+                <span class="ms-card-subtitle">{{ floorSubtitle(floor) }}</span>
+              </span>
             </span>
           </button>
         </template>
@@ -301,7 +311,7 @@ const ICONS = {
             :disabled="isLoadingFloors"
             @click="floorsStore.fetchFloors()"
           >
-            <component :is="ICONS.refresh" :size="18" aria-hidden="true" />
+            <RefreshCw :size="18" aria-hidden="true" />
             Recargar pisos
           </button>
         </div>
@@ -316,9 +326,11 @@ const ICONS = {
           @click="navigateToRestaurant"
         >
           <span class="ms-card-content">
-            <component :is="ICONS.restaurantMenu" class="ms-card-icon" :size="isTablet ? 36 : 56" />
-            <span class="ms-card-title" :class="{ 'ms-card-title--compact': isTablet }">Piso 2</span>
-            <span class="ms-card-subtitle" :class="{ 'ms-card-subtitle--compact': isTablet }">Sistema de mesas</span>
+            <UtensilsCrossed class="ms-card-icon" :size="56" />
+            <span class="ms-card-text">
+              <span class="ms-card-title">Piso 2</span>
+              <span class="ms-card-subtitle">Sistema de mesas</span>
+            </span>
           </span>
         </button>
 
@@ -346,21 +358,32 @@ const ICONS = {
 </template>
 
 <style scoped>
-/* Réplica Scaffold backgroundColor grey[900] + SafeArea */
+/* Réplica Scaffold backgroundColor grey[900] + SafeArea.
+   100dvh: en móvil la barra de direcciones dinámica no corta el footer. */
 .ms-page {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--bg);
 }
 
-/* ===== Header (L203-214): padding 24, grey[850], shadow black .2 blur 8 ===== */
+/* ===== Header (L203-214): padding 24, grey[850], shadow black .2 blur 8 =====
+   Sticky: el contexto de usuario no se pierde al hacer scroll (móvil/tablet).
+   Safe-area (viewport-fit=cover ya declarado en index.html): el contenido no
+   queda bajo la muesca en APK/PWA fullscreen. */
 .ms-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   padding: 24px;
+  padding-top: max(24px, env(safe-area-inset-top));
+  padding-left: max(24px, env(safe-area-inset-left));
+  padding-right: max(24px, env(safe-area-inset-right));
   background: var(--bg-surface);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
@@ -433,12 +456,15 @@ const ICONS = {
   color: var(--text);
 }
 
-/* ===== Cards (L352-456): Wrap centrado spacing 32 ===== */
+/* ===== Cards (L352-456): Wrap centrado spacing 32 =====
+   Desktop/Tauri: el bloque se CENTRA verticalmente en el espacio restante
+   (como el Column del original Flutter), no pegado al header. */
 .ms-main {
   flex: 1;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
+  padding-bottom: 24px;
 }
 
 .ms-cards {
@@ -467,13 +493,29 @@ const ICONS = {
   text-align: center;
   transition:
     border-color 0.2s ease,
-    box-shadow 0.2s ease;
+    box-shadow 0.2s ease,
+    transform 0.15s ease;
 }
 
-/* Hover L525-538: borde deepOrange 2px + glow deepOrange .3 blur 12 */
+/* Hover L525-538: borde deepOrange + glow deepOrange .3 blur 12.
+   FIX salto de 1px: el anillo crece HACIA ADENTRO (inset) y el borde
+   sube a 2px compensando con margen negativo — el contenido NO brinca. */
 .ms-card:hover {
-  border: 2px solid var(--primary);
-  box-shadow: 0 4px 12px rgba(255, 87, 34, 0.3);
+  border-color: var(--primary);
+  box-shadow:
+    inset 0 0 0 1px var(--primary),
+    0 4px 12px rgba(255, 87, 34, 0.3);
+}
+
+/* Feedback táctil (APK/tablet, hover no existe): presión sutil. */
+.ms-card:active {
+  transform: scale(0.97);
+}
+
+/* Teclado (desktop web): anillo de foco visible solo por navegación. */
+.ms-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 /* Administración (L523): fondo #3A2A1F + borde fijo deepOrange */
@@ -500,6 +542,7 @@ const ICONS = {
 /* Icono L589-595: grey[300] → deepOrange al hover */
 .ms-card-icon {
   color: var(--text-muted);
+  flex: none;
   transition: color 0.2s ease;
 }
 
@@ -509,7 +552,7 @@ const ICONS = {
 
 /* Título L597-607: 24 bold grey[300] → blanco al hover */
 .ms-card-title {
-  margin-top: 12px;
+  display: block;
   font-size: 24px;
   font-weight: 700;
   line-height: 1.05;
@@ -527,7 +570,7 @@ const ICONS = {
 
 /* Subtítulo L609-620: 14 grey[500] */
 .ms-card-subtitle {
-  margin-top: 4px;
+  display: block;
   font-size: 14px;
   font-weight: 400;
   line-height: 1.15;
@@ -537,6 +580,17 @@ const ICONS = {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* Columna de textos junto al icono (centrado en desktop: el texto
+   hereda align center; en móvil la fila lo alinea a la izquierda). */
+.ms-card-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* Badge píldora (L552-578): deepOrange, radius 999, 11px bold */
@@ -614,41 +668,54 @@ const ICONS = {
   font-size: 14px;
 }
 
-/* ===== Responsivo (L182-184 + L215-277) ===== */
+/* ===== Responsivo (ronda UI 2026-11-16) ===== */
 
-/* Tablet 600-1199: cards 220x160, compact (L371-372 + L542-548) */
+/* Tablet 600-1199: cards fluidas con aspect-ratio estable, tipografía
+   intermedia (el compact 14px del legacy era demasiado agresivo). */
 @media (min-width: 600px) and (max-width: 1199px) {
   .ms-card {
-    width: 220px;
-    height: 160px;
+    width: calc((100% - 32px) / 3); /* 3 por fila con gap 32 dentro del max-width */
+    max-width: 240px;
+    height: auto;
+    aspect-ratio: 3 / 2;
   }
 
   .ms-card--tablet .ms-card-content {
-    padding: 10px 10px 8px;
+    padding: 12px 12px 10px;
   }
 
   .ms-card--tablet .ms-card-content--badge {
-    padding-top: 28px;
+    padding-top: 30px;
   }
 
   .ms-card--tablet .ms-card-title {
-    margin-top: 6px;
-    font-size: 14px;
-    font-weight: 700;
+    margin-top: 8px;
+    font-size: 18px;
   }
 
   .ms-card--tablet .ms-card-subtitle {
-    margin-top: 2px;
-    font-size: 11px;
-    white-space: nowrap;
-    display: block;
+    margin-top: 3px;
+    font-size: 12px;
+  }
+
+  .ms-card--tablet .ms-card-icon {
+    width: 40px;
+    height: 40px;
   }
 }
 
-/* Móvil <600: header columna (L215-277), title 22, cards full-width 140 */
+/* Móvil <600: header columna (L215-277) + FILAS HORIZONTALES.
+   Card full-width bajo: icono 34px a la izquierda, textos a la izquierda
+   (look app nativa) — 5 módulos caben sin scroll. */
 @media (max-width: 599px) {
   .ms-header {
     padding: 16px;
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+  }
+
+  .ms-header-brand {
+    gap: 12px;
   }
 
   .ms-logo {
@@ -665,22 +732,81 @@ const ICONS = {
   }
 
   .ms-title {
-    margin: 24px 0;
+    margin: 24px 0 20px;
     font-size: 22px;
   }
 
   .ms-cards {
-    gap: 16px;
+    gap: 12px;
     padding: 0 16px;
+    /* Izquierda (patrón lista nativa) en vez de centrado flotante. */
+    justify-content: stretch;
   }
 
   .ms-card {
     width: 100%;
-    height: 140px;
+    height: auto;
+    min-height: 92px;
+    display: flex;
+    text-align: left;
+  }
+
+  /* Badge DIRECTO: esquina, sin tapar el icono. */
+  .ms-badge {
+    top: -8px;
+    left: auto;
+    right: 12px;
+    transform: none;
+  }
+
+  .ms-card-content,
+  .ms-card--mobile .ms-card-content,
+  .ms-card--mobile .ms-card-content--badge {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 14px;
+    padding: 14px 16px;
+    text-align: left;
+    padding-top: 14px; /* neutraliza el padding-extra del badge */
+  }
+
+  .ms-card-icon {
+    flex: none;
+    width: 34px;
+    height: 34px;
+  }
+
+  /* Textos a la izquierda (lista nativa), título arriba subtítulo abajo. */
+  .ms-card-text {
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .ms-card-title {
+    font-size: 17px;
+  }
+
+  .ms-card-subtitle {
+    font-size: 13px;
+    -webkit-line-clamp: 1;
   }
 
   .ms-empty {
     width: 100%;
+  }
+}
+
+/* Accesibilidad: sin animaciones si el sistema lo pide. */
+@media (prefers-reduced-motion: reduce) {
+  .ms-card,
+  .ms-card-icon,
+  .ms-card-title {
+    transition: none;
+  }
+
+  .ms-card:active {
+    transform: none;
   }
 }
 </style>
