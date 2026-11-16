@@ -27,10 +27,11 @@ withDefaults(defineProps<Props>(), {
 .app-banner {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 10px;
+  padding: 11px 13px;
   border-radius: var(--radius);
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
+  line-height: 1.45;
   border: 1px solid transparent;
 }
 
@@ -46,26 +47,26 @@ withDefaults(defineProps<Props>(), {
 }
 
 .app-banner--error {
-  background: rgba(255, 82, 82, 0.12);
-  border-color: var(--error);
-  color: var(--error);
+  background: var(--error-soft);
+  border-color: color-mix(in srgb, var(--error) 45%, transparent);
+  color: #ff8b8f;
 }
 
 .app-banner--success {
-  background: rgba(76, 175, 80, 0.1);
-  border-color: var(--success);
-  color: var(--success);
+  background: var(--success-soft);
+  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+  color: #6ede7c;
 }
 
 .app-banner--info {
-  background: rgba(33, 150, 243, 0.1);
-  border-color: var(--info);
-  color: var(--info);
+  background: var(--info-soft);
+  border-color: color-mix(in srgb, var(--info) 45%, transparent);
+  color: #85bdff;
 }
 
 .app-banner--warning {
-  background: rgba(255, 152, 0, 0.1);
-  border-color: var(--warning);
-  color: var(--warning);
+  background: var(--warning-soft);
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+  color: #f0bf4a;
 }
 </style>

@@ -51,66 +51,113 @@ function openPrinters(): void {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  background: var(--bg); /* #212121 */
+  background: var(--bg); /* var(--bg) */
 }
 
 /* AppBar con bg del scaffold (Theme.of(context).scaffoldBackgroundColor) */
 .set-appbar {
-  padding: 14px 16px;
+  padding: 22px 24px 12px;
   background: var(--bg);
+
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
 }
 
 .set-appbar-title {
   margin: 0;
-  font-size: 20px;
-  font-weight: 500;
-  color: var(--text);
+  font-size: var(--text-h1);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-1);
 }
 
-/* ListTile M3: leading 24 + title/subtitle, tap completo */
+/* Lista alineada al mismo eje del appbar (evita el título centrado con
+   tiles pegados al rail) */
 .set-list {
-  margin: 0;
-  padding: 0;
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 0 24px 32px;
   list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
+/* Fila-card: superficie propia, icono-tile neutro, chevron de affordance */
 .set-tile {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
   width: 100%;
-  padding: 16px;
-  background: transparent;
-  border: none;
+  min-height: 64px;
+  padding: 14px 16px;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
   cursor: pointer;
   text-align: left;
   font-family: var(--font);
-  transition: background 0.15s ease;
+  transition:
+    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
 }
 
-.set-tile:hover {
-  background: var(--card-overlay);
+@media (hover: hover) {
+  .set-tile:hover {
+    border-color: var(--border);
+    background: var(--surface-hover);
+  }
+}
+
+.set-tile:active {
+  transform: scale(0.995);
 }
 
 .set-tile-icon {
-  color: var(--text);
   flex: none;
+  color: var(--text-2);
 }
 
 .set-tile-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
+  flex: 1;
 }
 
 .set-tile-title {
-  color: var(--text);
-  font-size: 16px;
+  color: var(--text-1);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .set-tile-subtitle {
-  color: var(--text-muted);
-  font-size: 14px;
+  color: var(--text-3);
+  font-size: var(--text-sm);
+}
+
+.set-tile::after {
+  content: '';
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-left: 4px;
+  border-right: 1.5px solid var(--text-3);
+  border-bottom: 1.5px solid var(--text-3);
+  transform: rotate(-45deg);
+}
+
+@media (max-width: 640px) {
+  .set-appbar {
+    padding: 18px 16px 10px;
+  }
+
+  .set-list {
+    padding: 0 16px 24px;
+  }
 }
 </style>

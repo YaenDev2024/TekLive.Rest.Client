@@ -415,7 +415,7 @@ function denominationRowTotal(row: DenominationRow): number {
 }
 
 const differenceColor = computed<string>(() =>
-  difference.value < 0 ? '#e53935' : '#43a047') // red.shade700 / green.shade800 (L719-720)
+  difference.value < 0 ? 'var(--error)' : 'var(--success)')
 </script>
 
 <template>
@@ -576,7 +576,7 @@ const differenceColor = computed<string>(() =>
             <div class="cash-summary-row"><span>Total capturado en terminales:</span><span>{{ formatMoney(cardTerminalsCountedTotal) }}</span></div>
             <div
               class="cash-summary-row cash-summary-row--bold"
-              :style="{ color: Math.abs(cardTerminalsDifference) > 0.01 ? '#ffb74d' : '#66bb6a' }"
+              :style="{ color: Math.abs(cardTerminalsDifference) > 0.01 ? 'var(--warning)' : 'var(--success)' }"
             >
               <span>Diferencia tarjeta (capturado - sistema):</span>
               <span>{{ formatDifference(cardTerminalsDifference) }}</span>
@@ -813,15 +813,20 @@ const differenceColor = computed<string>(() =>
 }
 
 .cash-appbar {
-  padding: 14px 16px;
-  background: var(--bg-surface); /* grey[850] */
+  padding: 22px 24px 12px;
+  background: var(--bg);
+
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
 }
 
 .cash-appbar-title {
   margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text);
+  font-size: var(--text-h1);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-1);
 }
 
 /* Estados centrados (loading / sin acceso / sin sesión) */
@@ -832,29 +837,35 @@ const differenceColor = computed<string>(() =>
   align-items: center;
   justify-content: center;
   gap: 16px;
-  padding: 24px;
+  padding: 32px 24px;
+  text-align: center;
 }
 
 .cash-state p {
   margin: 0;
-  color: var(--text);
-  font-size: 16px;
+  max-width: 380px;
+  color: var(--text-2);
+  font-size: var(--text-body);
+  line-height: 1.55;
 }
 
-/* Botón Iniciar caja (ElevatedButton del diálogo Flutter) */
+/* CTA: único botón naranja sólido de la pantalla */
 .cash-start-btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 24px;
+  min-height: 44px;
+  padding: 11px 22px;
   background: var(--primary);
   color: var(--on-primary);
   border: none;
-  border-radius: 12px;
+  border-radius: var(--radius);
   font-family: var(--font);
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: background var(--dur) var(--ease);
 }
 
 .cash-start-btn:hover {
@@ -866,52 +877,57 @@ const differenceColor = computed<string>(() =>
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  padding: 18px; /* _cardPadding */
+  gap: 20px;
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 12px 24px;
   padding-bottom: 102px; /* espacio para la barra fija (18+84 del Flutter L528) */
   overflow-y: auto;
 }
 
-/* Card gris[850] radius 12 elevation 2 (cardTheme de main.dart) */
+/* Card de arqueo */
 .cash-card {
-  background: var(--bg-surface);
+  background: var(--card);
   border: 1px solid var(--border-soft);
-  border-radius: 12px;
-  padding: 18px; /* _cardPadding */
-  box-shadow: var(--shadow);
+  border-radius: var(--radius-lg);
+  padding: 20px;
 }
 
-/* SectionTitle (L83-123): icono 28 chip primario alpha .14 + título bold */
+/* SectionTitle: icono-tile neutro + título + subtítulo */
 .cash-section-title {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 8px;
+  gap: 11px;
+  margin-bottom: 10px;
 }
 
 .cash-section-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   flex: none;
-  border-radius: 8px;
-  background: rgba(255, 87, 34, 0.14);
-  color: var(--primary);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-soft);
+  color: var(--text-2);
 }
 
 .cash-section-text h2 {
   margin: 0;
-  font-size: 1.25rem; /* titleLarge */
-  font-weight: 700;
-  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-1);
 }
 
 .cash-section-text p {
-  margin: 2px 0 0;
-  font-size: 0.8rem; /* bodySmall */
-  color: var(--text-muted);
+  margin: 3px 0 0;
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  color: var(--text-3);
 }
 
 .cash-divider {
@@ -928,29 +944,39 @@ const differenceColor = computed<string>(() =>
   height: 8px;
 }
 
-/* SummaryRow (L741-761): label izquierda, valor derecha */
+/* SummaryRow: label izquierda, valor derecha */
 .cash-summary-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 4px 0;
-  color: var(--text);
-  font-size: 1rem; /* bodyLarge */
+  padding: 5px 0;
+  color: var(--text-2);
+  font-size: var(--text-body);
+}
+
+.cash-summary-row > span:last-child {
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
 }
 
 .cash-summary-row--bold {
-  font-weight: 700;
+  font-weight: 600;
+  color: var(--text-1);
 }
 
 .cash-summary-row--bold-value {
-  font-weight: 700;
+  font-weight: 600;
+  color: var(--text-1);
 }
 
-/* (=) Total efectivo / (=) Diferencia: titleLarge bold */
+/* (=) Total efectivo / (=) Diferencia: énfasis de total */
 .cash-summary-row--total {
-  font-size: 1.25rem;
-  font-weight: 700;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-1);
+  padding: 8px 0;
 }
 
 /* ===== MoneyInputRow (L763-813): label izq + input 160x44 der ===== */
@@ -970,23 +996,25 @@ const differenceColor = computed<string>(() =>
 }
 
 .cash-money-name {
-  color: var(--text);
-  font-weight: 600;
+  color: var(--text-1);
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .cash-money-helper {
-  color: var(--text-muted);
-  font-size: 0.8rem; /* bodySmall */
+  color: var(--text-3);
+  font-size: var(--text-xs);
+  line-height: 1.45;
 }
 
 .cash-money-warning {
   margin-top: 4px;
-  color: #ffb74d; /* Colors.orange.shade300 (L790) */
-  font-size: 0.8rem;
+  color: var(--warning);
+  font-size: var(--text-xs);
+  line-height: 1.45;
 }
 
-/* Input monetario (réplica _inputDecoration L52-73):
-   fill white .06, border white .12, focus primario 1.4, radius 10 */
+/* Inputs del arqueo: superficie elevada + foco con anillo */
 .cash-money-input,
 .cash-denom-input,
 .cash-terminal-name,
@@ -994,22 +1022,26 @@ const differenceColor = computed<string>(() =>
   width: 160px;
   height: 44px; /* _inputHeight */
   padding: 0 12px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  color: var(--text);
+  background: var(--elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  color: var(--text-1);
   font-family: var(--font);
-  font-size: 15px;
+  font-size: var(--text-body);
+  font-variant-numeric: tabular-nums;
   text-align: right; /* TextAlign.end */
   outline: none;
-  transition: border-color 0.15s ease;
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 
 .cash-money-input::placeholder,
 .cash-denom-input::placeholder,
 .cash-terminal-name::placeholder,
 .cash-terminal-amount::placeholder {
-  color: var(--text-faint);
+  color: var(--text-3);
+  font-variant-numeric: normal;
 }
 
 .cash-money-input:focus,
@@ -1017,7 +1049,7 @@ const differenceColor = computed<string>(() =>
 .cash-terminal-name:focus,
 .cash-terminal-amount:focus {
   border-color: var(--primary);
-  border-width: 1.4px;
+  box-shadow: 0 0 0 3px rgba(255, 100, 45, 0.16);
 }
 
 /* ===== Terminales de tarjeta (L815-911) ===== */
@@ -1094,7 +1126,7 @@ const differenceColor = computed<string>(() =>
 }
 
 .cash-add-terminal:hover {
-  background: rgba(255, 87, 34, 0.1);
+  background: var(--primary-soft);
 }
 
 /* ===== Desglose de efectivo (L649-739): tabla max 720 ===== */
@@ -1104,15 +1136,20 @@ const differenceColor = computed<string>(() =>
   width: 100%;
 }
 
+/* Cabecera de la tabla de denominaciones */
 .cash-denom-head {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 8px 10px;
   background: rgba(255, 255, 255, 0.04);
-  border-radius: 10px;
-  color: var(--text);
-  font-weight: 700;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  color: var(--text-3);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .cash-denom-concepto {
@@ -1135,15 +1172,21 @@ const differenceColor = computed<string>(() =>
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 6px 0;
-  color: var(--text);
+  padding: 5px 0;
+  color: var(--text-2);
+  font-size: var(--text-body);
+}
+
+.cash-denom-row .cash-denom-concepto {
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
 }
 
 .cash-denom-row .cash-denom-input {
   width: 100%;
 }
 
-/* Box de valor read-only (réplica _valueBoxDecoration L75-81) */
+/* Box de valor read-only */
 .cash-denom-value-box {
   display: flex;
   align-items: center;
@@ -1151,41 +1194,49 @@ const differenceColor = computed<string>(() =>
   width: 100%;
   height: 44px;
   padding: 0 12px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  font-size: 15px;
+  background: var(--elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  color: var(--text-1);
+  font-size: var(--text-body);
+  font-variant-numeric: tabular-nums;
 }
 
 .cash-rate {
   margin: 0 0 4px;
-  color: var(--text-muted);
-  font-size: 0.8rem;
+  color: var(--text-3);
+  font-size: var(--text-xs);
+  line-height: 1.45;
 }
 
 .cash-rate--missing {
   color: var(--warning);
 }
 
-/* Faltante/Sobrante (L722-734): red.shade700 / green.shade800 bold */
+/* Faltante/Sobrante */
 .cash-diff-label {
   margin: 8px 0 0;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-align: right;
 }
 
-/* ===== Botón Cerrar Caja y Sesión (L535-556) ===== */
+/* ===== Botón Cerrar Caja y Sesión ===== */
 .cash-close-btn {
-  min-height: 52px;
-  padding: 16px 0;
+  min-height: 50px;
+  padding: 14px 0;
   background: var(--primary);
   color: var(--on-primary);
   border: none;
-  border-radius: 12px;
+  border-radius: var(--radius);
   font-family: var(--font);
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, opacity 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition:
+    background var(--dur) var(--ease),
+    opacity var(--dur) var(--ease);
 }
 
 .cash-close-btn:hover:not(:disabled) {
@@ -1197,7 +1248,7 @@ const differenceColor = computed<string>(() =>
   cursor: not-allowed;
 }
 
-/* ===== Barra inferior fija (L125-168) ===== */
+/* ===== Barra inferior fija del arqueo ===== */
 .cash-bottom-bar {
   position: fixed;
   bottom: 0;
@@ -1207,9 +1258,9 @@ const differenceColor = computed<string>(() =>
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 18px;
-  background: var(--bg-surface); /* colorScheme.surface */
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 12px 24px;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-soft);
   z-index: 10;
 }
 
@@ -1225,14 +1276,16 @@ const differenceColor = computed<string>(() =>
 }
 
 .cash-bottom-label {
-  color: var(--text);
-  font-size: 0.9rem;
+  color: var(--text-3);
+  font-size: var(--text-xs);
+  letter-spacing: 0.02em;
 }
 
 .cash-bottom-value {
-  color: var(--text);
-  font-size: 18px; /* L144-145 */
-  font-weight: 700;
+  color: var(--text-1);
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ===== Diálogos ===== */
@@ -1243,8 +1296,11 @@ const differenceColor = computed<string>(() =>
 }
 
 .dlg-label {
-  color: var(--text-muted);
-  font-size: 0.9rem;
+  color: var(--text-3);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .dlg-input-wrap {
@@ -1254,28 +1310,33 @@ const differenceColor = computed<string>(() =>
 .dlg-prefix {
   position: absolute;
   top: 50%;
-  left: 12px;
+  left: 13px;
   transform: translateY(-50%);
-  color: var(--text-muted);
+  color: var(--text-3);
+  font-size: var(--text-sm);
   pointer-events: none;
 }
 
 .dlg-input {
   width: 100%;
-  height: 44px;
-  padding: 0 12px 0 46px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  color: var(--text);
+  height: 46px;
+  padding: 0 12px 0 48px;
+  background: var(--elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  color: var(--text-1);
   font-family: var(--font);
-  font-size: 15px;
+  font-size: var(--text-body);
+  font-variant-numeric: tabular-nums;
   outline: none;
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 
 .dlg-input:focus {
   border-color: var(--primary);
-  border-width: 1.4px;
+  box-shadow: 0 0 0 3px rgba(255, 100, 45, 0.16);
 }
 
 .dlg--warning {
@@ -1289,7 +1350,9 @@ const differenceColor = computed<string>(() =>
 
 .dlg-message {
   margin: 0;
-  color: var(--text);
+  color: var(--text-2);
+  font-size: var(--text-body);
+  line-height: 1.6;
   white-space: pre-line;
   text-align: left;
 }
@@ -1303,17 +1366,23 @@ const differenceColor = computed<string>(() =>
   align-items: center;
   justify-content: center;
   gap: 16px;
-  color: var(--text);
+  color: var(--text-3);
+  font-size: var(--text-sm);
 }
 
 .cash-dlg-btn {
+  min-height: 42px;
   padding: 10px 20px;
   border-radius: var(--radius);
   font-family: var(--font);
-  font-size: 0.95rem;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
 }
 
 .cash-dlg-btn--primary {
@@ -1328,12 +1397,12 @@ const differenceColor = computed<string>(() =>
 .cash-dlg-btn--ghost {
   background: transparent;
   border-color: var(--border);
-  color: var(--text-muted);
+  color: var(--text-2);
 }
 
 .cash-dlg-btn--ghost:hover:not(:disabled) {
-  color: var(--text);
-  border-color: var(--text-faint);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-1);
 }
 
 /* Responsive: tabla de denominaciones colapsa a columna en móvil */

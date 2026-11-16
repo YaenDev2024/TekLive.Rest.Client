@@ -1320,15 +1320,20 @@ async function confirmDelete(): Promise<void> {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px;
+  padding: 18px 24px 10px;
   background: var(--bg);
+
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
 }
 
 .py-appbar-title {
   margin: 0;
   flex: 1;
-  font-size: 22px;
-  font-weight: 400;
+  font-size: var(--text-h1);
+  font-weight: 600;
+  letter-spacing: -0.02em;
   color: var(--text);
 }
 
@@ -1356,7 +1361,7 @@ async function confirmDelete(): Promise<void> {
 }
 
 .py-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--border-soft);
 }
 
 /* ===== Cuerpo centrado ===== */
@@ -1375,9 +1380,9 @@ async function confirmDelete(): Promise<void> {
 .py-card {
   margin: 0 16px;
   padding: 16px;
-  background: var(--bg-surface);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  background: var(--card);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-soft);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1385,9 +1390,10 @@ async function confirmDelete(): Promise<void> {
 
 .py-card-title {
   margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-1);
 }
 
 .py-card-head {
@@ -1418,8 +1424,8 @@ async function confirmDelete(): Promise<void> {
 }
 
 .py-label {
-  font-size: 12px;
-  color: var(--text-faint);
+  font-size: var(--text-xs);
+  color: var(--text-3);
 }
 
 /* InputDecorationTheme réplica: fill black alpha .3, outline grey[700],
@@ -1428,18 +1434,21 @@ async function confirmDelete(): Promise<void> {
   width: 100%;
   height: 44px;
   padding: 0 12px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--border);
+  background: var(--elevated);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius);
-  color: var(--text);
+  color: var(--text-1);
   font-family: var(--font);
-  font-size: 15px;
+  font-size: var(--text-body);
   outline: none;
-  transition: border-color 0.15s ease;
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 
 .py-input:focus {
   border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(255, 100, 45, 0.16);
 }
 
 .py-input--date {
@@ -1470,7 +1479,7 @@ async function confirmDelete(): Promise<void> {
 }
 
 .py-add-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--border-soft);
 }
 
 /* ===== Renglón concepto {concepto, cantidad} + quitar (L1280-1341) ===== */
@@ -1505,7 +1514,7 @@ async function confirmDelete(): Promise<void> {
 }
 
 .py-item-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--border-soft);
 }
 
 .py-item-btn--delete {
@@ -1524,7 +1533,7 @@ async function confirmDelete(): Promise<void> {
 }
 
 .py-total--percepcion {
-  background: rgba(255, 87, 34, 0.15); /* deepOrangeAccent .15 */
+  background: var(--primary-soft); /* deepOrangeAccent .15 */
   border: 2px solid var(--primary);
   color: var(--text);
 }
@@ -1547,7 +1556,7 @@ async function confirmDelete(): Promise<void> {
 .py-neto {
   margin: 0 16px;
   padding: 16px;
-  background: rgba(255, 87, 34, 0.15);
+  background: var(--primary-soft);
   border-radius: var(--radius);
   display: flex;
   align-items: center;
@@ -1590,13 +1599,17 @@ async function confirmDelete(): Promise<void> {
   align-items: center;
   justify-content: center;
   gap: 8px;
+  min-height: 46px;
   padding: 12px 24px;
   border-radius: var(--radius);
   font-family: var(--font);
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
 
 .py-btn--primary {
@@ -1611,14 +1624,16 @@ async function confirmDelete(): Promise<void> {
 
 /* 'Guardar en BD' verde L1224-1227 → primary block (brief: Guardar) */
 .py-btn--block {
-  padding-top: 16px;
-  padding-bottom: 16px;
-  font-size: 18px;
+  align-self: stretch;
+  padding-top: 15px;
+  padding-bottom: 15px;
+  font-size: 16px;
 }
 
 .py-btn--danger {
-  background: var(--error);
-  color: #ffffff;
+  background: var(--error-soft);
+  border-color: color-mix(in srgb, var(--error) 40%, transparent);
+  color: var(--error);
 }
 
 .py-btn--danger:hover:not(:disabled) {
@@ -1628,7 +1643,7 @@ async function confirmDelete(): Promise<void> {
 .py-btn--ghost {
   background: transparent;
   border-color: var(--border);
-  color: var(--text-muted);
+  color: var(--text-2);
 }
 
 .py-btn--ghost:hover:not(:disabled) {
@@ -1650,10 +1665,12 @@ async function confirmDelete(): Promise<void> {
 
 /* ===== Historial ===== */
 .py-section-title {
-  margin: 16px 16px 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text);
+  margin: 18px 16px 0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
 
 .py-state {
@@ -1707,9 +1724,9 @@ async function confirmDelete(): Promise<void> {
 }
 
 .py-record {
-  background: var(--bg-surface);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  background: var(--card);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-soft);
   overflow: hidden;
 }
 
@@ -1718,13 +1735,14 @@ async function confirmDelete(): Promise<void> {
   align-items: center;
   gap: 12px;
   width: 100%;
-  padding: 12px 16px;
+  padding: 14px 16px;
   background: transparent;
   border: none;
   font-family: var(--font);
   text-align: left;
   cursor: pointer;
-  color: var(--text);
+  color: var(--text-1);
+  transition: background var(--dur) var(--ease);
 }
 
 .py-record-head:hover {
@@ -1741,23 +1759,25 @@ async function confirmDelete(): Promise<void> {
 
 .py-record-name {
   font-size: 15px;
-  font-weight: 700;
-  color: var(--text);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .py-record-meta {
-  font-size: 12px;
-  color: var(--text-muted);
+  font-size: var(--text-xs);
+  color: var(--text-3);
 }
 
 .py-record-neto {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--primary);
   flex: none;
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary);
 }
 
 .py-record-neto--negative {
@@ -1778,9 +1798,9 @@ async function confirmDelete(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.15);
+  padding: 14px 16px;
+  border-top: 1px solid var(--border-soft);
+  background: var(--elevated);
 }
 
 .py-detail-row {

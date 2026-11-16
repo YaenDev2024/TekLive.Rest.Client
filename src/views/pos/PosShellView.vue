@@ -230,9 +230,9 @@ async function logout(): Promise<void> {
   }
 }
 
-/* ================= BOTTOM NAV PHONE (mobile_home_layout.dart L16-47) ======
-   BottomNavigationBar type.fixed: bg cardTheme (#303030), item activo
-   deepOrange, inactivo onSurface 70%. Fijado abajo, safe-area iOS/notch. */
+/* ================= BOTTOM NAV PHONE ======================================
+   Barra inferior: superficie propia, borde superior sutil, item activo
+   naranja. Fijada abajo con safe-area iOS/notch. */
 .bottom-nav {
   position: fixed;
   left: 0;
@@ -241,8 +241,8 @@ async function logout(): Promise<void> {
   z-index: 50;
   display: flex;
   align-items: stretch;
-  background: #303030; /* theme.cardTheme.color */
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-soft);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   height: calc(64px + env(safe-area-inset-bottom, 0px));
 }
@@ -260,35 +260,50 @@ async function logout(): Promise<void> {
   cursor: pointer;
   font-family: var(--font);
   -webkit-tap-highlight-color: transparent;
+  transition: color var(--dur) var(--ease);
 }
 
 .bottom-nav__icon {
-  color: rgba(255, 255, 255, 0.7); /* onSurface .7 */
-  transition: color 0.15s ease;
+  color: var(--text-3);
+  transition: color var(--dur) var(--ease);
 }
 
 .bottom-nav__label {
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 500;
   line-height: 1;
-  color: rgba(255, 255, 255, 0.7);
-  transition: color 0.15s ease;
+  letter-spacing: 0.01em;
+  color: var(--text-3);
+  transition: color var(--dur) var(--ease);
 }
 
 .bottom-nav__item--active .bottom-nav__icon,
 .bottom-nav__item--active .bottom-nav__label {
-  color: var(--primary); /* selectedItemColor deepOrange */
+  color: var(--primary);
 }
 
-/* Leading: logo 40px con padding vertical 20 */
+/* Rail de navegación desktop: columna estrecha como superficie propia. */
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 80px;
+  flex: none;
+  height: 100%;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-soft);
+}
+
+/* Leading: logo 36px con padding vertical */
 .rail-leading {
-  padding: 20px 0;
+  padding: 18px 0 14px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .rail-logo {
-  height: 40px;
+  height: 34px;
   width: auto;
   object-fit: contain;
 }
@@ -296,73 +311,82 @@ async function logout(): Promise<void> {
 .rail-destinations {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   width: 100%;
 }
 
-/* Destino: pill 56×32 radius 16 + label 12 debajo (labelType.all) */
+/* Destino: icono + label 11px debajo */
 .rail-dest {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 0;
+  gap: 3px;
+  padding: 6px 0;
   margin: 0 auto;
-  width: 80px;
+  width: 72px;
   background: transparent;
   border: none;
+  border-radius: var(--radius-md);
   cursor: pointer;
   font-family: var(--font);
+  transition: background var(--dur) var(--ease);
 }
 
-/* Pill M3: 56×32 detrás del icono, transparente si no está seleccionado */
+/* Pill detrás del icono, transparente si no está seleccionado */
 .rail-pill {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
-  height: 32px;
-  border-radius: 16px;
+  width: 42px;
+  height: 30px;
+  border-radius: var(--radius-full);
   background: transparent;
-  transition: background 0.15s ease;
+  transition: background var(--dur) var(--ease);
 }
 
 .rail-dest:hover .rail-pill {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .rail-dest--active .rail-pill {
-  background: var(--primary); /* deepOrange #FF5722 */
+  background: var(--primary-soft);
+}
+
+.rail-dest:active .rail-pill {
+  transform: scale(0.96);
 }
 
 .rail-icon {
-  color: var(--text-faint); /* unselected: gris onSurfaceVariant */
-  transition: color 0.15s ease;
+  color: var(--text-3);
+  transition: color var(--dur) var(--ease);
 }
 
 .rail-dest:hover .rail-icon {
-  color: var(--text);
+  color: var(--text-1);
 }
 
 .rail-dest--active .rail-icon {
-  color: var(--on-primary); /* selected: blanco sobre pill */
+  color: var(--primary);
 }
 
 .rail-label {
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 500;
   line-height: 1;
-  color: var(--text-faint);
-  transition: color 0.15s ease;
+  letter-spacing: 0.01em;
+  color: var(--text-3);
+  transition: color var(--dur) var(--ease);
 }
 
 .rail-dest--active .rail-label {
-  color: var(--text);
+  color: var(--primary);
+  font-weight: 600;
 }
 
 /* Trailing: logout al fondo */
 .rail-trailing {
   margin-top: auto;
-  padding-bottom: 20px;
+  padding-bottom: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -379,19 +403,25 @@ async function logout(): Promise<void> {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   background: transparent;
   border: none;
-  border-radius: 999px;
-  color: var(--text-muted);
+  border-radius: var(--radius);
+  color: var(--text-3);
   cursor: pointer;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition:
+    color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
 }
 
 .rail-logout:hover {
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.rail-logout:active {
+  background: rgba(255, 255, 255, 0.11);
 }
 </style>

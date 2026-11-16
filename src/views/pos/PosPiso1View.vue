@@ -41,6 +41,8 @@ import type { ComponentPublicInstance } from 'vue'
 import {
   Soup, Info, Search, Trash2, Utensils, CircleMinus, CirclePlus,
   SquarePen, User, UtensilsCrossed, ReceiptText, SquareMenu,
+  Plus, Pizza, Sandwich, Beef, Salad, CupSoda, Cake, Package,
+  Flame, Coffee, Cookie, Croissant, Hamburger, Drumstick, Wine,
 } from 'lucide-vue-next'
 import type { CatalogExtra, CatalogTemplate } from '../../api/pos-types'
 import { POS_PLANT_ID, POS_SUCURSAL_ID, useCatalogStore } from '../../stores/catalog'
@@ -414,7 +416,8 @@ function onLineNoteBlur(item: CartItem): void {
 }
 
 function lineNotePlaceholder(): string {
-  return 'Nota adicional (ej. sin cebolla)...'
+  // Cabe completo: la nota tiene su propia línea en la tarjeta
+  return 'Nota adicional (ej. sin cebolla)…'
 }
 
 /** Opciones dinámicas en líneas '• x' (réplica dynamicOptionsSummary L1094+). */
@@ -430,6 +433,72 @@ function optionLines(item: CartItem): string[] {
 
 function formatMoney(amount: number): string {
   return `$${amount.toFixed(2)}`
+}
+
+// --- Presentación del menú (ronda Piso 1 premium) ---------------------------
+//
+// ⚠️ SOLO PRESENTACIÓN. Nada de aquí altera precios, carrito, pagos ni
+// contratos: son funciones puras de lectura sobre datos que ya existen.
+
+/**
+ * Arte de respaldo por categoría. El contrato del catálogo HOY no expone la URL
+ * de la imagen (solo `hasImage: boolean`) y el endpoint
+ * `/api/rest/catalog/templates/{id}/image` todavía no existe, así que todas las
+ * tarjetas caerían al mismo icono genérico. Mientras el backend de imágenes no
+ * esté listo, cada categoría se pinta con su propio icono + tinte para que el
+ * grid sea legible y reconocible de un vistazo, sin fotos ni datos inventados.
+ *
+ * Cuando el backend exponga las imágenes, el <img> toma el control y este arte
+ * solo aparece en los productos sin foto. No hay que tocar el diseño otra vez.
+ */
+const CATEGORY_ART: Array<{ match: RegExp; icon: unknown; pill: string; hue: string }> = [
+  { match: /taco|burrito|antojito|mexican/i, icon: Flame, pill: 'rgba(255, 100, 45, 0.14)', hue: '#ff8a5c' },
+  { match: /pizza/i, icon: Pizza, pill: 'rgba(255, 100, 45, 0.14)', hue: '#ff8a5c' },
+  { match: /hamburg|burger|sandwich|torta|lonche/i, icon: Hamburger, pill: 'rgba(227, 160, 8, 0.14)', hue: '#e3a008' },
+  { match: /pollo|wing|alita|boneless|drumstick/i, icon: Drumstick, pill: 'rgba(255, 100, 45, 0.14)', hue: '#ff8a5c' },
+  { match: /carne|beef|steak|costilla|arrachera/i, icon: Beef, pill: 'rgba(242, 86, 91, 0.14)', hue: '#f2565b' },
+  { match: /ensalada|salad|verdura|vegetal/i, icon: Salad, pill: 'rgba(63, 185, 80, 0.14)', hue: '#3fb950' },
+  { match: /bebida|refresco|soda|jugo|agua|horchata|limonada/i, icon: CupSoda, pill: 'rgba(74, 158, 255, 0.14)', hue: '#4a9eff' },
+  { match: /cerveza|vino|alcohol|michelada|coctel/i, icon: Wine, pill: 'rgba(163, 122, 255, 0.14)', hue: '#a37aff' },
+  { match: /caf|espresso|capuchino|latte/i, icon: Coffee, pill: 'rgba(163, 122, 255, 0.14)', hue: '#a37aff' },
+  { match: /postre|flan|pastel|tarta|cake|dulce/i, icon: Cake, pill: 'rgba(255, 138, 185, 0.14)', hue: '#ff8ab9' },
+  { match: /galleta|cookie|brownie/i, icon: Cookie, pill: 'rgba(255, 138, 185, 0.14)', hue: '#ff8ab9' },
+  { match: /pan|baguette|croissant|bolillo/i, icon: Croissant, pill: 'rgba(227, 160, 8, 0.14)', hue: '#e3a008' },
+  { match: /paquete|combo|promo|familiar/i, icon: Package, pill: 'rgba(74, 158, 255, 0.14)', hue: '#4a9eff' },
+  { match: /sopa|caldo|crema|consome/i, icon: Soup, pill: 'rgba(227, 160, 8, 0.14)', hue: '#e3a008' },
+]
+
+const DEFAULT_ART = { icon: Sandwich, pill: 'rgba(255, 255, 255, 0.05)', hue: '#a3a3a3' }
+
+/** Nombre de la categoría del template ('' si el catálogo no la trae). */
+function categoryNameOf(template: CatalogTemplate): string {
+  if (template.categoryId == null) return ''
+  return catalog.catalog?.categories.find((c) => c.id === template.categoryId)?.name ?? ''
+}
+
+/** Icono + tono de una tarjeta de producto, derivado de su categoría/nombre. */
+function productArt(template: CatalogTemplate): { icon: unknown; pill: string; hue: string } {
+  const hay = `${categoryNameOf(template)} ${template.name}`
+  return CATEGORY_ART.find((a) => a.match.test(hay)) ?? DEFAULT_ART
+}
+
+/** Icono + tinte para una píldora de categoría del tab bar. */
+function categoryArt(name: string): { icon: unknown; pill: string; hue: string } {
+  return CATEGORY_ART.find((a) => a.match.test(name)) ?? DEFAULT_ART
+}
+
+/** Descripción en una línea para la tarjeta (el backend ya la envía). */
+function descriptionOf(template: CatalogTemplate): string {
+  return (template.description ?? '').trim()
+}
+
+/**
+ * Subtotal del carrito para el bloque de totales.
+ * `cart.subtotal` ya existe y NO incluye impuestos (CrazyWings: taxRate 0.0).
+ * Aquí solo se muestra desglosado lo que el backend realmente cobra.
+ */
+function cartItemsUnitCount(): number {
+  return cart.lines.reduce((sum, line) => sum + line.quantity, 0)
 }
 
 /** Gate de caja (Fase 1-P1): canSell real = sesión OPEN del piso 1.
@@ -493,14 +562,14 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
         class="menu"
         aria-label="Menú"
       >
-        <!-- Header: título+fecha izquierda, búsqueda derecha -->
+        <!-- Header: título+fecha izquierda, búsqueda ancha + acción derecha -->
         <header class="menu-header">
           <div class="menu-header-text">
             <h1 class="menu-title">Crazy Wings</h1>
             <span class="menu-date">{{ currentDate }}</span>
           </div>
           <div class="menu-search">
-            <Search :size="14" class="menu-search-icon" aria-hidden="true" />
+            <Search :size="16" class="menu-search-icon" aria-hidden="true" />
             <input
               v-model="searchText"
               type="text"
@@ -512,7 +581,7 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
           </div>
         </header>
 
-        <!-- TabBar scrollable horizontal -->
+        <!-- Pills de categoría: icono + nombre, activo sólido naranja -->
         <nav class="menu-tabs" aria-label="Categorías">
           <div class="menu-tabs-scroll" role="tablist">
             <button
@@ -523,7 +592,10 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
               :aria-selected="selectedCategoryId === null"
               @click="selectedCategoryId = null"
             >
-              TODO
+              <span class="menu-tab-icon">
+                <Utensils :size="18" aria-hidden="true" />
+              </span>
+              <span class="menu-tab-label">TODO</span>
             </button>
             <button
               v-for="category in catalog.catalog.categories"
@@ -535,7 +607,18 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
               :aria-selected="selectedCategoryId === category.id"
               @click="selectedCategoryId = category.id"
             >
-              {{ category.name }}
+              <!-- Activo: sin estilo inline, el pill sólido naranja manda (CSS) -->
+              <span
+                class="menu-tab-icon"
+                :style="
+                  selectedCategoryId === category.id
+                    ? undefined
+                    : { background: categoryArt(category.name).pill, color: categoryArt(category.name).hue }
+                "
+              >
+                <component :is="categoryArt(category.name).icon" :size="18" aria-hidden="true" />
+              </span>
+              <span class="menu-tab-label">{{ category.name }}</span>
             </button>
             <button
               type="button"
@@ -546,10 +629,14 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
               data-testid="extras-tab"
               @click="selectedCategoryId = EXTRAS_TAB"
             >
-              EXTRAS
+              <span class="menu-tab-icon">
+                <Plus :size="18" aria-hidden="true" />
+              </span>
+              <span class="menu-tab-label">EXTRAS</span>
             </button>
           </div>
         </nav>
+
         <div class="menu-divider" aria-hidden="true"></div>
 
         <!-- Grid: extras (tab EXTRAS) o productos -->
@@ -604,7 +691,7 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
               @keydown.enter="onProductClick(template)"
               @keydown.space.prevent="onProductClick(template)"
             >
-              <!-- flex 3: imagen cover con esquinas superiores 12; fallback fastfood -->
+              <!-- Media: foto si el backend la sirve; si no, arte por categoría -->
               <span class="product-media">
                 <img
                   v-if="template.hasImage && !brokenImageIds.has(template.id)"
@@ -613,20 +700,41 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
                   loading="lazy"
                   @error="onImageError"
                 />
-                <Soup v-else :size="46" class="product-media-icon" aria-hidden="true" />
+                <!-- Sin foto: superficie neutra + icono de la categoría en su tono -->
+                <span v-else class="product-media-fallback">
+                  <component
+                    :is="productArt(template).icon"
+                    :size="44"
+                    class="product-media-icon"
+                    :style="{ color: productArt(template).hue }"
+                    aria-hidden="true"
+                  />
+                </span>
               </span>
-              <!-- flex 2: nombre bold 13 blanco centrado + precio deepOrange bold 13 -->
+
+              <!-- Datos: nombre, descripción real del backend, precio + acción -->
               <span class="product-info">
                 <span class="product-name">{{ template.name }}</span>
-                <span class="product-price">{{ formatMoney(template.basePrice) }}</span>
+                <span v-if="descriptionOf(template) !== ''" class="product-desc">
+                  {{ descriptionOf(template) }}
+                </span>
+                <span class="product-foot">
+                  <span class="product-price">{{ formatMoney(template.basePrice) }}</span>
+                  <span class="product-add" aria-hidden="true">
+                    <Plus :size="18" />
+                  </span>
+                </span>
               </span>
             </div>
+
           </div>
           <div
             v-if="!isExtrasTab && filteredTemplates.length === 0"
             class="menu-empty"
           >
-            No se encontraron productos.
+            <Search :size="44" class="menu-empty-icon" aria-hidden="true" />
+            <p>No se encontraron productos.</p>
+            <span class="menu-empty-hint">Prueba con otro nombre o cambia de categoría.</span>
           </div>
         </div>
       </section>
@@ -637,10 +745,12 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
         class="order-panel"
         data-testid="order-panel"
       >
-        <!-- Header: título + toggle tipo + formularios condicionales
-             (réplica order_panel.dart L346-405) -->
+        <!-- Header: título + contador, toggle tipo, formularios condicionales -->
         <div class="op-header">
-          <h2 class="op-title">Orden Actual</h2>
+          <div class="op-title-row">
+            <h2 class="op-title">Orden Actual</h2>
+            <span v-if="!cart.isEmpty" class="op-count">{{ cartItemsUnitCount() }}</span>
+          </div>
 
           <!-- ToggleButtons tipo orden (réplica _buildOrderTypeToggle L839-880) -->
           <div class="op-toggle" role="radiogroup" aria-label="Tipo de orden" data-testid="order-type-toggle">
@@ -754,7 +864,7 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
               </span>
             </div>
 
-            <!-- Acciones: nota al blur + −/qty/+/editar/eliminar (L1140-1188) -->
+            <!-- Acciones: nota al blur + -/qty/+/editar/eliminar (L1140-1188) -->
             <div class="op-item-controls">
               <input
                 v-model="lineNotes[item.key]"
@@ -766,7 +876,8 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
                 @blur="onLineNoteBlur(item)"
                 @keydown.enter="($event.target as HTMLInputElement).blur()"
               />
-              <button
+              <div class="op-item-qty-row">
+                <button
                 type="button"
                 class="op-qty"
                 :aria-label="`Quitar uno de ${item.productName}`"
@@ -803,12 +914,26 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
               >
                 <Trash2 :size="18" />
               </button>
+              </div>
             </div>
           </li>
         </ul>
 
         <!-- Footer con totales + previews + acción única (réplica L432-806) -->
         <footer class="op-footer">
+          <!-- Desglose: solo lo que el backend cobra (sin impuestos ni descuentos
+               inventados: CrazyWings opera taxRate 0.0 y no tiene descuentos) -->
+          <div v-if="!cart.isEmpty" class="op-breakdown">
+            <div class="op-breakdown-row">
+              <span>Subtotal</span>
+              <span class="op-breakdown-value">{{ formatMoney(cart.subtotal) }}</span>
+            </div>
+            <div class="op-breakdown-row op-breakdown-row--muted">
+              <span>Artículos</span>
+              <span class="op-breakdown-value">{{ cartItemsUnitCount() }}</span>
+            </div>
+          </div>
+
           <div class="op-total">
             <span class="op-total-label">Total</span>
             <span class="op-total-value" data-testid="cart-total">{{ formatMoney(cart.total) }}</span>
@@ -920,8 +1045,13 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
 
 <style scoped>
 /* ==========================================================================
-   Layout raíz (pos_view.dart): Row → menú flexible + panel 290px fijo
+   POS PISO 1 · rediseño premium (rama ui-exp)
+   SOLO PRESENTACIÓN: ningún selector de aquí altera lógica, contratos ni
+   flujo de venta. Tokens de src/style.css; naranja reservado a la acción
+   principal y a la selección.
    ========================================================================== */
+
+/* Layout raíz: menú flexible + panel de orden fijo */
 .pos {
   display: flex;
   flex-direction: column;
@@ -935,7 +1065,7 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
   align-items: center;
   gap: 16px;
   padding: 80px 24px;
-  color: var(--text-muted);
+  color: var(--text-2);
 }
 
 .pos-body {
@@ -946,7 +1076,7 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
 }
 
 /* ==========================================================================
-   MENU CONTENT (menu_content.dart)
+   MENÚ
    ========================================================================== */
 .menu {
   flex: 1;
@@ -956,83 +1086,94 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
   position: relative;
 }
 
-/* Header (padding 10 como Flutter; sin back: la navegación es por el rail) */
+/* Header: título + fecha a la izquierda, buscador ancho a la derecha */
 .menu-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 10px;
+  gap: 24px;
+  padding: 18px 20px 14px;
 }
 
 .menu-header-text {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
+  flex: none;
 }
 
 .menu-title {
   margin: 0;
-  font-size: 28px;
+  font-size: var(--text-h1);
   line-height: 1.2;
-  font-weight: 700;
-  color: var(--text);
-  letter-spacing: 0;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-1);
+  white-space: nowrap;
 }
 
 .menu-date {
-  font-size: 10px;
-  color: var(--text-muted);
+  font-size: 12.5px;
+  color: var(--text-2);
+  white-space: nowrap;
 }
 
+/* Buscador: ocupa el ancho disponible (referencia: barra protagonista) */
 .menu-search {
   position: relative;
-  width: 170px;
-  flex: none;
+  flex: 1;
+  max-width: 560px;
+  min-width: 0;
 }
 
 .menu-search-icon {
   position: absolute;
   top: 50%;
-  left: 8px;
+  left: 14px;
   transform: translateY(-50%);
-  color: var(--text-faint);
+  color: var(--text-3);
   pointer-events: none;
 }
 
 .menu-search-input {
   width: 100%;
-  padding: 5px 8px 5px 26px;
-  background: var(--input-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text);
+  height: 46px;
+  padding: 0 14px 0 40px;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-full);
+  color: var(--text-1);
   font-family: var(--font);
-  font-size: 11px;
+  font-size: var(--text-body);
   outline: none;
-  transition: border-color 0.15s ease;
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease),
+    background var(--dur) var(--ease);
 }
 
 .menu-search-input::placeholder {
-  color: var(--text-faint);
-  font-size: 10px;
+  color: var(--text-3);
 }
 
 .menu-search-input:focus {
+  background: var(--elevated);
   border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
-/* TabBar scrollable horizontal con underline deepOrange */
+/* Pills de categoría: icono en tile + label, activo sólido naranja */
 .menu-tabs {
-  padding: 0 10px;
+  padding: 0 20px;
 }
 
 .menu-tabs-scroll {
   display: flex;
-  gap: 0;
+  gap: 8px;
   overflow-x: auto;
   white-space: nowrap;
+  padding-bottom: 4px;
   scrollbar-width: none;
 }
 
@@ -1041,111 +1182,169 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
 }
 
 .menu-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
   flex: none;
-  padding: 10px 6px;
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--text);
+  min-height: 48px;
+  padding: 5px 16px 5px 5px;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-full);
+  color: var(--text-2);
   font-family: var(--font);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  letter-spacing: -0.005em;
   cursor: pointer;
-  transition: color 0.15s ease, border-color 0.15s ease;
+  transition:
+    color var(--dur) var(--ease),
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
 
-.menu-tab:hover {
-  color: var(--primary-hover);
+.menu-tab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-2);
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.menu-tab-label {
+  padding-right: 4px;
+}
+
+@media (hover: hover) {
+  .menu-tab:hover {
+    color: var(--text-1);
+    border-color: var(--border);
+  }
 }
 
 .menu-tab--active {
-  color: var(--primary);
-  border-bottom-color: var(--primary);
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
 }
 
-/* Divider white24 bajo tabs (Divider(height:1, thickness:1, white24)) */
+.menu-tab--active .menu-tab-icon {
+  background: rgba(255, 255, 255, 0.2);
+  color: var(--on-primary);
+}
+
 .menu-divider {
   height: 1px;
-  background: rgba(255, 255, 255, 0.24);
-  margin: 0 10px;
+  background: var(--border-soft);
+  margin: 12px 20px 0;
 }
 
-/* Grid responsivo por ancho de contenedor: <900→3 | <1200→4 | else→5
-   (columnas inline en el script; ALTO de fila vía aspect-ratio de la
-   tarjeta — fix tarjetas aplastadas: el gridAutoRows calc(100%/N/aspect)
-   resolvía 100% contra el ALTO del wrap (~600px) en vez del ancho de
-   columna, colapsando la imagen a una franja. aspect-ratio sobre el card
-   es el equivalente EXACTO del childAspectRatio Flutter: ancho/alto.) */
+/* Grid: alto de fila por aspect-ratio del card (ancho/alto) */
 .menu-grid-wrap {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  padding: 16px 20px;
   min-height: 0;
 }
 
 .menu-grid {
   display: grid;
-  gap: 12px;
+  gap: 14px;
   grid-auto-rows: auto;
 }
 
+/* Estado vacío */
 .menu-empty {
-  padding: 40px 24px;
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 56px 24px;
   text-align: center;
-  color: var(--text-faint);
+  color: var(--text-2);
+  font-size: var(--text-body);
+}
+
+.menu-empty p {
+  margin: 0;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.menu-empty-hint {
+  color: var(--text-3);
+  font-size: var(--text-sm);
+}
+
+.menu-empty-icon {
+  color: var(--text-3);
+  opacity: 0.45;
 }
 
 /* ==========================================================================
-   PRODUCT CARD (ProductCard REAL de menu_content.dart L316-411)
-   Card #303030 radius 12 elev 2 → Column stretch:
-   - flex 3: ClipRRect top 12 imagen cover; fallback fastfood 46 grey[700]
-   - flex 2: padding 12h/8v spaceEvenly: nombre bold 13 blanco centrado
-     (max 2 líneas ellipsis) + precio deepOrange bold 13.
-   SIN botón Add: el click en cualquier parte del card abre el modal.
+   TARJETA DE PRODUCTO
+   Media arriba (foto o arte por categoría) + datos + precio con acción.
    ========================================================================== */
-/* aspect-ratio 0.95 = childAspectRatio Flutter (L256): ancho/alto — el card
-   mide width/0.95 de alto y el flex interno (media 3 / info 2) llena el
-   resto. min-width:0 evita el overflow del ítem grid con line-clamp. */
 .product-card {
   display: flex;
   flex-direction: column;
-  aspect-ratio: 0.95;
+  aspect-ratio: 1.06;
   min-width: 0;
   overflow: hidden;
-  background: var(--bg-surface);
-  border-radius: var(--radius);
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.3),
-    0 1px 2px rgba(0, 0, 0, 0.15);
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
   cursor: pointer;
   user-select: none;
   transition:
-    filter 0.15s ease,
-    box-shadow 0.15s ease;
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
 }
 
-.product-card:hover {
-  filter: brightness(1.15);
-  box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.35),
-    0 1px 3px rgba(0, 0, 0, 0.2);
+@media (hover: hover) {
+  .product-card:hover {
+    /* Fallback estático (WebView Android viejo sin color-mix) */
+    border-color: #80422c;
+    border-color: color-mix(in srgb, var(--primary) 40%, var(--border-soft));
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+  }
+
+  .product-card:hover .product-add {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: var(--on-primary);
+  }
 }
 
 .product-card:active {
-  background: var(--primary);
+  transform: scale(0.99);
 }
 
-/* flex 3: media cuadrada arriba (imagen cover o icono fastfood grey[700]) */
+.product-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Media: ocupa el bloque superior; la foto manda si existe */
 .product-media {
-  flex: 3;
+  flex: 1;
   min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #303030;
-  border-radius: 12px 12px 0 0;
   overflow: hidden;
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .product-media img {
@@ -1155,195 +1354,354 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
   display: block;
 }
 
-.product-media-icon {
-  color: #616161; /* Colors.grey[700] (errorBuilder L353) */
+/* Arte de respaldo: superficie neutra con el icono de la categoría en su tono.
+   No simula una foto: es un marcador limpio que desaparece cuando hay imagen. */
+.product-media-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(120% 100% at 50% 0%, rgba(255, 255, 255, 0.045), transparent 70%),
+    var(--elevated);
 }
 
-/* flex 2: info padding 12h/8v, spaceEvenly centrado */
+.product-media-icon {
+  opacity: 0.9;
+  transition: transform var(--dur) var(--ease);
+}
+
+.product-card:hover .product-media-icon {
+  transform: scale(1.06);
+}
+
+/* Datos: nombre dominante, descripción secundaria, precio + botón */
 .product-info {
-  flex: 2;
-  min-height: 0;
+  flex: none;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: space-evenly;
-  padding: 8px 12px;
+  gap: 4px;
+  padding: 12px 14px 12px;
 }
 
 .product-name {
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.25;
-  text-align: center;
+  color: var(--text-1);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
-/* Precio deepOrange bold (theme.colorScheme.primary, L381) */
+.product-desc {
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.product-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+}
+
 .product-price {
-  color: var(--primary);
-  font-size: 13px;
-  font-weight: 700;
+  color: var(--text-1);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Afordance de "agregar": neutro hasta el hover, entonces acento */
+.product-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-soft);
+  color: var(--text-2);
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
 }
 
 /* ==========================================================================
-   EXTRA CARD (menu_content.dart L413-524)
-   Top flex 3 con deepOrange alpha 0.1 + icono local_dining 60; bottom flex 2:
-   nombre bold 14 blanco centrado, gap 8, precio deepOrange bold 14, gap 4,
-   categoryName gris alpha 0.7 (omitida: el catálogo Rest no trae categoryName
-   en CatalogExtra, solo CategoryId).
+   TARJETA DE EXTRA (tap agrega directo al carrito)
    ========================================================================== */
 .extra-card {
   display: flex;
   flex-direction: column;
-  aspect-ratio: 0.95;
+  aspect-ratio: 1.06;
   min-width: 0;
-  padding: 0;
   overflow: hidden;
-  background: var(--bg-surface);
-  border: none;
-  border-radius: var(--radius);
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.3),
-    0 1px 2px rgba(0, 0, 0, 0.15);
+  padding: 0;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  font-family: var(--font);
+  text-align: left;
   cursor: pointer;
-  text-align: center;
-  transition: filter 0.15s ease;
+  user-select: none;
+  transition:
+    border-color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
 }
 
-.extra-card:hover {
-  filter: brightness(1.15);
+@media (hover: hover) {
+  .extra-card:hover {
+    /* Fallback estático (WebView Android viejo sin color-mix) */
+    border-color: #80422c;
+    border-color: color-mix(in srgb, var(--primary) 40%, var(--border-soft));
+    transform: translateY(-2px);
+  }
+}
+
+.extra-card:active {
+  transform: scale(0.99);
+}
+
+.extra-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .extra-card-top {
-  flex: 3;
+  flex: 1;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 87, 34, 0.1);
-  border-radius: 12px 12px 0 0;
+  background:
+    radial-gradient(120% 100% at 50% 0%, rgba(255, 255, 255, 0.045), transparent 70%),
+    var(--elevated);
 }
 
 .extra-card-icon {
   color: var(--primary);
+  opacity: 0.9;
+  transition: transform var(--dur) var(--ease);
+}
+
+.extra-card:hover .extra-card-icon {
+  transform: scale(1.06);
 }
 
 .extra-card-bottom {
-  flex: 2;
+  flex: none;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 12px;
+  gap: 3px;
+  padding: 12px 14px;
 }
 
 .extra-card-name {
-  color: var(--text);
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.25;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  color: var(--text-1);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
 }
 
-/* SizedBox(height: 8) entre nombre y precio (L473) */
 .extra-card-price {
-  margin-top: 8px;
-  color: var(--primary);
-  font-size: 14px;
-  font-weight: 700;
-}
-
-/* SizedBox(height: 4) antes de categoryName (L482) — omitida por contrato */
-.extra-card-category {
-  margin-top: 4px;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 12px;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ==========================================================================
-   ORDER PANEL (order_panel.dart) — 290px exactos
+   PANEL DE ORDEN
    ========================================================================== */
 .order-panel {
-  width: 290px;
+  width: 320px;
   flex: none;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: rgba(48, 48, 48, 0.98);
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border-soft);
 }
 
-/* Header scrollable: título + toggle + forms condicionales (L346-405) */
+/* Tablet ancha: panel más angosto para no ahogar el grid */
+@media (max-width: 1200px) {
+  .order-panel {
+    width: 300px;
+  }
+}
+
+@media (max-width: 900px) {
+  .order-panel {
+    width: 288px;
+  }
+}
+
+/* Tablet vertical (768x1024): el panel lateral deja tarjetas de 113px, así que
+   se apila debajo — hay altura suficiente para que siga siendo usable. */
+@media (max-width: 880px) and (min-width: 700px) {
+  .pos-body {
+    flex-direction: column;
+  }
+
+  /* Sin min-height:0 el menú no encoge en columna y el panel queda aplastado */
+  .menu {
+    min-height: 0;
+  }
+
+  .order-panel {
+    width: 100%;
+    flex: 0 0 auto;
+    height: 56vh;
+    max-height: 56vh;
+    border-left: none;
+    border-top: 1px solid var(--border-soft);
+  }
+
+  .op-empty {
+    padding: 16px;
+  }
+
+  .op-header {
+    padding: 12px 16px 10px;
+    gap: 10px;
+  }
+
+  /* Pie compacto: el desglose y el CTA importan, los huecos no */
+  .op-footer {
+    padding: 10px 16px 12px;
+    gap: 8px;
+  }
+
+  .op-breakdown {
+    gap: 4px;
+    padding-bottom: 8px;
+  }
+
+  .op-total-value {
+    font-size: 24px;
+  }
+
+  .op-btn {
+    min-height: 46px;
+    padding: 12px 16px;
+  }
+}
+
 .op-header {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 12px;
-  padding: 16px 16px 12px;
+  padding: 18px 16px 14px;
+}
+
+.op-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .op-title {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--text-h3);
   font-weight: 600;
-  color: var(--text);
-  text-align: center;
+  letter-spacing: -0.015em;
+  color: var(--text-1);
 }
 
-/* ToggleButtons centrado (L839-880): fill deepOrange, radius 6, minHeight 32 */
+/* Contador de artículos: pill neutra, no compite con el CTA */
+.op-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 8px;
+  background: var(--primary-soft);
+  border-radius: var(--radius-full);
+  color: var(--primary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Toggle tipo de orden: riel de superficie, activo sólido naranja */
 .op-toggle {
   display: flex;
-  justify-content: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
 }
 
 .op-toggle-seg {
+  flex: 1;
+  min-height: 36px;
   padding: 0 10px;
-  min-height: 32px;
   background: transparent;
-  border: 1px solid var(--bg-surface); /* borderColor = surface (#303030) */
-  border-right-width: 0;
-  color: rgba(255, 255, 255, 0.8); /* onSurface 80% */
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius-md) - 4px);
+  color: var(--text-2);
   font-family: var(--font);
-  font-size: 12px;
+  font-size: var(--text-sm);
+  font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
 }
 
-.op-toggle-seg:first-child {
-  border-radius: 6px 0 0 6px;
-}
-
-.op-toggle-seg:last-child {
-  border-radius: 0 6px 6px 0;
-  border-right-width: 1px;
+@media (hover: hover) {
+  .op-toggle-seg:hover {
+    color: var(--text-1);
+    background: rgba(255, 255, 255, 0.04);
+  }
 }
 
 .op-toggle-seg--active {
-  background: var(--primary); /* fillColor primary */
-  border-color: var(--primary); /* selectedBorderColor */
-  color: #fff; /* onPrimary */
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
 }
 
-/* Form UBER/DIDI (L883-932): naranja alpha .3, borde shade700, radius 6 */
+.op-toggle-seg--active:hover {
+  color: var(--on-primary);
+}
+
+/* Form UBER/DIDI: superficie neutra con acento en el borde izquierdo */
 .op-platform-form {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 8px;
-  background: rgba(230, 81, 0, 0.3); /* orange.shade900 .3 */
-  border: 1px solid #ef6c00; /* orange.shade700 */
-  border-radius: 6px;
+  padding: 12px;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius);
 }
 
 .op-platform-label {
-  color: #ffcc80; /* orange.shade300 */
-  font-size: 11px;
-  font-weight: 700;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .op-platform-input-wrap {
@@ -1353,99 +1711,110 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
 .op-platform-icon {
   position: absolute;
   top: 50%;
-  left: 8px;
+  left: 11px;
   transform: translateY(-50%);
-  color: var(--warning); /* Icons.person orange */
+  color: var(--text-3);
   pointer-events: none;
 }
 
 .op-platform-input {
   width: 100%;
-  padding: 8px 8px 8px 30px;
-  background: #212121; /* grey[900] */
-  border: 1px solid #616161; /* grey[700] */
-  border-radius: 4px;
-  color: var(--text);
+  height: 42px;
+  padding: 0 12px 0 34px;
+  background: var(--elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  color: var(--text-1);
   font-family: var(--font);
-  font-size: 11px;
+  font-size: var(--text-sm);
   outline: none;
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 
 .op-platform-input::placeholder {
-  color: var(--text-faint); /* grey[600] */
-  font-size: 11px;
+  color: var(--text-3);
 }
 
-/* Form EXTERNO (envuelve ExternalCustomerForm) */
+.op-platform-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
 .op-external-form {
   /* el hijo trae sus propios estilos */
 }
 
 .op-divider {
   height: 1px;
-  background: rgba(255, 255, 255, 0.24);
+  background: var(--border-soft);
 }
 
-/* Items (OrderListItem: imagen 50 + nombre/unitario + total 80 bold) */
+/* Vacío */
 .op-empty {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: var(--text);
-  font-size: 16px;
-  font-weight: 600;
-  padding: 16px;
+  gap: 8px;
+  padding: 24px 20px;
+  color: var(--text-3);
+  font-size: var(--text-body);
   text-align: center;
 }
 
+/* Lista de líneas */
 .op-items {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   margin: 0;
-  padding: 8px 16px;
+  padding: 10px 16px;
   list-style: none;
   display: flex;
   flex-direction: column;
+  gap: 10px;
 }
 
+/* Cada línea es una superficie propia: se lee como recibo, no como tabla */
 .op-item {
-  padding: 12px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 12px;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
 }
 
-.op-item:last-child {
-  border-bottom: none;
-}
-
-/* Fila imagen 50x50 radius 8 + mid + total (L1021-1063) */
 .op-item-top {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: 11px;
 }
 
 .op-item-media {
   flex: none;
-  width: 50px;
-  height: 50px;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
-  background: var(--bg-surface-2);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-soft);
 }
 
 .op-item-media img {
-  width: 50px;
-  height: 50px;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
   display: block;
 }
 
 .op-item-media-icon {
-  color: #616161; /* grey[700] errorBuilder */
+  color: var(--text-2);
+  opacity: 0.75;
 }
 
 .op-item-mid {
@@ -1457,10 +1826,11 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
 }
 
 .op-item-name {
-  color: var(--text);
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.25;
+  color: var(--text-1);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -1468,80 +1838,95 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
 }
 
 .op-item-unit {
-  color: var(--text-muted); /* bodySmall */
-  font-size: 11px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .op-item-total {
   flex: none;
-  width: 80px; /* SizedBox width 80 (L1053) */
   text-align: right;
-  color: var(--text);
-  font-size: 15px;
-  font-weight: 700;
+  color: var(--text-1);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
-/* Meta itálica bajo la fila (padding-left 62 = 50 + gap 12; L1065-1126) */
+/* Meta bajo la fila, alineada con el nombre */
 .op-item-meta {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding-left: 62px;
-  margin-top: 4px;
+  padding-left: 55px;
+  margin-top: 6px;
 }
 
 .op-item-meta-title {
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 11px;
-  font-weight: 700;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 600;
 }
 
 .op-item-meta-line {
-  color: rgba(189, 189, 189, 0.7); /* bodySmall alpha .7 */
-  font-size: 11px;
-  font-style: italic;
+  color: var(--text-2);
+  font-size: 12.5px;
   word-break: break-word;
 }
 
-/* Notas '- texto' #B0B0B0 (réplica L1212) */
 .op-item-notes {
-  margin-top: 4px;
-  margin-bottom: 12px;
+  margin-top: 6px;
 }
 
 .op-item-note-line {
-  color: #b0b0b0;
-  font-size: 11px;
+  color: var(--text-2);
+  font-size: 12.5px;
   word-break: break-word;
 }
 
+/* Acciones de la línea: nota arriba (ancho completo) y stepper debajo.
+   En 320px, compartir fila cortaba el placeholder ("Nota adi…"). */
 .op-item-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.op-item-qty-row {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-top: 8px;
+  justify-content: flex-end;
 }
 
-/* Input nota adicional (L1143-1152): densidad baja */
 .op-item-note-input {
-  flex: 1;
-  min-width: 0;
-  padding: 8px 12px;
-  background: var(--input-bg);
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  background: transparent;
   border: 1px solid var(--border-soft);
-  border-radius: 6px;
-  color: var(--text);
+  border-radius: var(--radius-sm);
+  color: var(--text-1);
   font-family: var(--font);
-  font-size: 11px;
+  font-size: 12.5px;
   outline: none;
+  transition:
+    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
 }
 
 .op-item-note-input::placeholder {
-  color: var(--text-faint);
-  font-size: 10px;
+  color: var(--text-3);
+}
+
+.op-item-note-input:hover {
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .op-item-note-input:focus {
+  background: var(--elevated);
   border-color: var(--primary);
 }
 
@@ -1549,124 +1934,164 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 32px;
+  height: 32px;
+  flex: none;
   padding: 0;
   background: transparent;
-  border: none;
-  border-radius: 999px;
-  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
   cursor: pointer;
-  transition: color 0.15s ease;
+  transition:
+    color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
 }
 
-.op-qty:hover {
-  color: var(--text);
+@media (hover: hover) {
+  .op-qty:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-1);
+  }
 }
 
 .op-qty--danger {
-  color: var(--error); /* delete_outline colorScheme.error */
+  color: var(--text-3);
 }
 
 .op-qty--danger:hover {
+  background: var(--error-soft);
   color: var(--error);
 }
 
 .op-qty-num {
-  min-width: 20px;
+  min-width: 26px;
   text-align: center;
-  color: var(--text);
-  font-weight: 700;
-  font-size: 15px;
+  color: var(--text-1);
+  font-weight: 600;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
 }
 
-/* Footer (Container radius-top 16, border-top grey[800], padding 24→16) */
+/* Footer: desglose + total + acción */
 .op-footer {
-  padding: 16px 16px 14px;
+  flex: none;
+  padding: 14px 16px 16px;
   background: var(--bg-surface);
-  border-radius: 16px 16px 0 0;
-  border-top: 1px solid #424242;
+  border-top: 1px solid var(--border-soft);
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-/* Banner gate de caja (Fase 1-P1): compacto sobre el panel */
 .op-cash-banner {
   margin: 0 16px 4px;
-  font-size: 0.82rem;
+  font-size: var(--text-xs);
   padding: 8px 10px;
+}
+
+/* Desglose: filas discretas, valores tabulares */
+.op-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.op-breakdown-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+.op-breakdown-value {
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.op-breakdown-row--muted .op-breakdown-value {
+  color: var(--text-2);
 }
 
 .op-total {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  gap: 12px;
 }
 
 .op-total-label {
-  color: var(--text-muted);
-  font-size: 16px;
+  color: var(--text-2);
+  font-size: var(--text-body);
+  font-weight: 500;
 }
 
-/* Total deepOrange headlineSmall (~28px) bold (L812-822) */
+/* Total: cifra protagonista de la pantalla, tabular */
 .op-total-value {
-  color: var(--primary);
+  color: var(--text-1);
   font-size: 28px;
-  font-weight: 700;
-  line-height: 1.2;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
 }
 
-/* Previews de ticket centrados (réplica Row L455-484) */
+/* Previews de ticket: acciones secundarias, superficie neutra */
 .op-previews {
   display: flex;
-  justify-content: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .op-preview {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 42px;
+  height: 42px;
+  flex: none;
   padding: 0;
-  background: transparent;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius);
+  color: var(--text-2);
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
 }
 
-.op-preview--kitchen {
-  color: var(--primary); /* deepOrangeAccent */
-  border: 1px solid rgba(255, 87, 34, 0.5);
+@media (hover: hover) {
+  .op-preview:hover {
+    border-color: var(--border);
+    color: var(--text-1);
+  }
 }
 
-.op-preview--kitchen:hover {
-  background: rgba(255, 87, 34, 0.12);
-}
-
-.op-preview--client {
-  color: var(--info); /* blueAccent */
-  border: 1px solid rgba(33, 150, 243, 0.5);
-}
-
-.op-preview--client:hover {
-  background: rgba(33, 150, 243, 0.12);
-}
-
+/* CTA principal: el único naranja sólido de la pantalla */
 .op-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
-  border-radius: 12px;
+  gap: 8px;
+  min-height: 50px;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
   border: 1px solid transparent;
   font-family: var(--font);
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 
 .op-btn--primary {
@@ -1678,65 +2103,78 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
   background: var(--primary-hover);
 }
 
+.op-btn--primary:active:not(:disabled) {
+  transform: scale(0.995);
+}
+
 .op-btn--primary:disabled {
-  opacity: 0.55;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
-/* Guardar Orden (UBER/DIDI|EXTERNO): bg orange[700] (L717) */
+/* Guardar Orden: superficie neutra con acento (un solo CTA sólido) */
 .op-btn--save {
-  background: #f57c00; /* Colors.orange[700] */
-  color: #fff;
+  background: var(--card);
+  color: var(--primary);
+  /* Fallback estático (WebView Android viejo sin color-mix) */
+  border-color: #7a462f;
+  border-color: color-mix(in srgb, var(--primary) 45%, transparent);
 }
 
 .op-btn--save:hover:not(:disabled) {
-  background: #ff9800;
+  background: var(--primary-subtle);
+  border-color: var(--primary);
 }
 
 .op-btn--save:disabled {
-  opacity: 0.55;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
-/* Responsive: bajo 1024px el panel puede envolver (POS es desktop-first) */
+/* ==========================================================================
+   RESPONSIVE
+   ========================================================================== */
+
+/* Tablet: se mantiene el panel lateral (es la herramienta de cobro), solo se
+   ajustan márgenes. Apilar el panel lo deja inutilizable en 1024x768. */
 @media (max-width: 1024px) {
-  .pos-body {
-    flex-direction: column;
-  }
-
-  .order-panel {
-    width: 100%;
-    border-top: 1px solid var(--border-soft);
-  }
-
   .menu-grid-wrap {
-    padding: 8px;
+    padding: 12px 16px;
+  }
+
+  .menu-header,
+  .menu-tabs {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .menu-divider {
+    margin-left: 16px;
+    margin-right: 16px;
+  }
+
+  .menu-title {
+    font-size: 20px;
   }
 }
 
-/* Aspect 1.1 réplica gridAspectRatio (L134-137 del .dart): isPhone &&
-   gridWidth<500 → el card es más alto (width/1.1). En phone fullscreen el
-   wrap mide ~viewport − padding 8×2 → breakpoint 516px de ventana. */
+/* Tarjetas más altas en pantallas estrechas (equivalente al aspect 1.1) */
 @media (max-width: 515px) {
   .product-card,
   .extra-card {
-    aspect-ratio: 1.1;
+    aspect-ratio: 0.98;
   }
 }
 
 /* ==========================================================================
-   PHONE (<700px) — pos_view.dart L53-82 del original Flutter:
-   NO apila el POS. TabBar 'Menú | Orden' arriba (Container cardTheme +
-   TabBar M3: labels+iconos, indicador deepOrange 2px abajo) y la pestaña
-   activa ocupa la pantalla completa. Grid 2 cols aspect 1.1 (rama
-   no-Windows width<700 del menu_content.dart).
+   PHONE (<700px): TabBar Menú | Orden a pantalla completa
    ========================================================================== */
 .pos-body--phone {
   flex-direction: column;
 }
 
 .phone-tabs {
-  display: none; /* solo visible <700px */
+  display: none;
 }
 
 @media (max-width: 699px) {
@@ -1746,41 +2184,44 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
     min-height: 0;
   }
 
-  /* TabBar Flutter: Container color cardTheme (#303030) full width */
   .phone-tabs {
     display: flex;
     flex: none;
-    background: #303030;
+    gap: 4px;
+    padding: 8px 12px 0;
+    background: var(--bg);
   }
 
-  /* Tab M3: label+icono 14px w500, alto 48-56, indicador 2px deepOrange
-     bajo la pestaña activa; inactivo blanco70 */
   .phone-tab {
     flex: 1;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
-    min-height: 48px;
-    padding: 10px 8px;
+    min-height: 44px;
+    padding: 8px 10px;
     background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    color: rgba(255, 255, 255, 0.7);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+    color: var(--text-2);
     font-family: var(--font);
-    font-size: 14px;
+    font-size: var(--text-sm);
     font-weight: 500;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
+    transition:
+      background var(--dur) var(--ease),
+      color var(--dur) var(--ease),
+      border-color var(--dur) var(--ease);
   }
 
   .phone-tab--active {
-    color: var(--primary);
-    border-bottom-color: var(--primary);
+    background: var(--primary);
+    border-color: var(--primary);
+    color: var(--on-primary);
+    font-weight: 600;
   }
 
-  /* La pestaña visible llena la pantalla (TabBarView): el menú ya es
-     flex:1 del column; el order-panel pasa a ancho completo */
   .order-panel {
     width: 100%;
     flex: 1;
@@ -1788,24 +2229,76 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
     border-top: none;
   }
 
-  /* Menú 2 columnas: el spacing del grid pasa a 8 (isNarrow L262-263). */
-  .menu-grid {
-    gap: 8px;
-  }
-
-  .menu-grid-wrap {
-    padding: 8px;
-  }
-
-  /* Header compacto en phone: la búsqueda ocupa el resto (170px fijo
-     desborda a 360px) */
   .menu-header {
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 12px;
+    padding: 14px 12px 10px;
   }
 
   .menu-search {
-    width: min(170px, 100%);
+    flex: 1 0 100%;
+    max-width: none;
+  }
+
+  .menu-search-input {
+    height: 44px;
+  }
+
+  .menu-tabs {
+    padding: 0 12px;
+  }
+
+  .menu-divider {
+    margin: 10px 12px 0;
+  }
+
+  .menu-grid {
+    gap: 10px;
+  }
+
+  .menu-grid-wrap {
+    padding: 12px;
+  }
+
+  .product-name {
+    font-size: 14px;
+  }
+
+  .product-desc {
+    -webkit-line-clamp: 1;
+  }
+
+  .product-price {
+    font-size: 15px;
+  }
+
+  .op-header {
+    padding: 14px 12px 12px;
+  }
+
+  .op-items {
+    padding: 10px 12px;
+  }
+
+  .op-footer {
+    padding: 12px;
+  }
+}
+
+/* Respeta la preferencia de movimiento reducido */
+@media (prefers-reduced-motion: reduce) {
+  .product-card,
+  .extra-card,
+  .menu-tab,
+  .op-qty,
+  .op-preview,
+  .op-btn {
+    transition: none;
+  }
+
+  .product-card:hover,
+  .extra-card:hover {
+    transform: none;
   }
 }
 </style>

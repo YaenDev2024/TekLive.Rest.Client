@@ -360,15 +360,20 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px;
+  padding: 18px 24px 10px;
   background: var(--bg);
+
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
 }
 
 .as-appbar-title {
   margin: 0;
   flex: 1;
-  font-size: 22px;
-  font-weight: 400;
+  font-size: var(--text-h1);
+  font-weight: 600;
+  letter-spacing: -0.02em;
   color: var(--text);
 }
 
@@ -396,7 +401,7 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
 }
 
 .as-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--border-soft);
 }
 
 /* ===== Cuerpo (máx ~900px: la tabla necesita algo más que el form) ===== */
@@ -458,8 +463,8 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
   width: 100%;
   height: 44px;
   padding: 0 12px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--border);
+  background: var(--elevated);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius);
   color: var(--text);
   font-family: var(--font);
@@ -470,6 +475,7 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
 
 .as-input:focus {
   border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(255, 100, 45, 0.16);
 }
 
 /* date input: icono a la izquierda, color-scheme dark para el picker */
@@ -493,11 +499,12 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
   padding: 12px 24px;
   border-radius: var(--radius);
   font-family: var(--font);
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
   flex: none;
+  min-height: 44px;
 }
 
 .as-btn--primary {
@@ -564,10 +571,12 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
 
 /* Section title (L416-420 'Resumen del Dia'): 20 bold */
 .as-section-title {
-  margin: 0 0 12px;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text);
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
 
 /* ===== Totales: grid de cards (KPI réplica L424-446) ===== */
@@ -601,7 +610,7 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
 
 /* GRAN TOTAL: grande/primario (réplica L563-574 deepOrange .15) */
 .as-total-card--grand {
-  background: rgba(255, 87, 34, 0.15);
+  background: var(--primary-soft);
   border-color: var(--primary);
 }
 
@@ -627,9 +636,9 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
 
 .as-session {
   padding: 12px 16px;
-  background: var(--bg-surface);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  background: var(--card);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-soft);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -660,12 +669,12 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
 }
 
 .as-session-status--open {
-  background: rgba(76, 175, 80, 0.15);
+  background: var(--success-soft);
   color: var(--success);
 }
 
 .as-session-status--closed {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--border-soft);
   color: var(--text-muted);
 }
 
@@ -725,9 +734,9 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  background: var(--bg-surface);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  background: var(--card);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-soft);
 }
 
 .as-user-name {

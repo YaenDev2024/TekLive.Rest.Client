@@ -912,15 +912,20 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px;
+  padding: 18px 24px 10px;
   background: var(--bg);
+
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
 }
 
 .prt-appbar-title {
   margin: 0;
   flex: 1;
-  font-size: 22px;
-  font-weight: 400;
+  font-size: var(--text-h1);
+  font-weight: 600;
+  letter-spacing: -0.02em;
   color: var(--text);
 }
 
@@ -941,7 +946,7 @@ onMounted(() => {
 }
 
 .prt-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--border-soft);
 }
 
 .prt-body {
@@ -957,54 +962,61 @@ onMounted(() => {
 /* Banner informativo web */
 .prt-banner {
   margin: 0 16px 12px;
-  padding: 12px;
-  border: 1px solid rgba(33, 150, 243, 0.35);
-  background: rgba(33, 150, 243, 0.12);
-  border-radius: 10px;
-  color: var(--text);
-  font-size: 0.9rem;
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft);
+  background: var(--card);
+  border-left: 3px solid var(--info);
+  border-radius: var(--radius-md);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  line-height: 1.5;
 }
 
-/* Card réplica Card+Padding 16 del Flutter */
+/* Card de sección de configuración */
 .prt-card {
   margin: 0 16px 16px;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  padding: 18px;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .prt-card-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
 }
 
 .prt-card-icon {
-  color: var(--primary);
+  color: var(--text-2);
   flex: none;
 }
 
 .prt-card-title {
   margin: 0;
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-1);
 }
 
 .prt-card-sub {
   margin: 0;
-  font-size: 13px;
-  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-3);
 }
 
 .prt-section-title {
   margin: 8px 16px 4px;
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--text);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
 
 .prt-row {
@@ -1050,6 +1062,7 @@ onMounted(() => {
 
 .prt-input:focus {
   border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(255, 100, 45, 0.16);
   border-width: 1.4px;
 }
 
@@ -1073,35 +1086,55 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
+/* CTA principal: único botón naranja sólido de la pantalla */
 .prt-btn--primary {
   background: var(--primary);
   color: var(--on-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .prt-btn--primary:hover:not(:disabled) {
   background: var(--primary-hover);
 }
 
+/* Acciones secundarias (probar, ticket, escanear): superficie neutra con acento */
 .prt-btn--accent {
-  background: var(--primary);
-  color: var(--on-primary);
+  background: var(--card);
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  color: var(--primary);
+}
+
+.prt-btn--accent:hover:not(:disabled) {
+  background: var(--primary-subtle);
+  border-color: var(--primary);
 }
 
 .prt-btn--outline {
   background: transparent;
   border-color: var(--border);
-  color: var(--text);
+  color: var(--text-2);
 }
 
+.prt-btn--outline:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-1);
+}
+
+/* Guardar por área: acción destructiva-positiva → superficie con acento success */
 .prt-btn--green {
-  background: #2e7d32; /* Colors.green[700] réplica */
-  color: #ffffff;
+  background: var(--success-soft);
+  border-color: color-mix(in srgb, var(--success) 40%, transparent);
+  color: var(--success);
+}
+
+.prt-btn--green:hover:not(:disabled) {
+  border-color: var(--success);
 }
 
 .prt-btn--ghost {
   background: transparent;
   border-color: var(--border);
-  color: var(--text-muted);
+  color: var(--text-3);
 }
 
 .prt-btn--sm {
@@ -1149,7 +1182,7 @@ onMounted(() => {
 }
 
 .prt-chip--ok {
-  background: #2e7d32;
+  background: var(--success);
 }
 
 .prt-chip--muted {
@@ -1252,7 +1285,7 @@ onMounted(() => {
   gap: 6px;
   padding: 6px 10px;
   border-radius: 999px;
-  background: rgba(255, 87, 34, 0.15); /* deepOrange alpha .15 réplica */
+  background: var(--primary-soft); /* deepOrange alpha .15 réplica */
   color: var(--text);
   font-size: 12px;
 }

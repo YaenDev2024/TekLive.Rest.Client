@@ -572,7 +572,7 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 /* 'Total: $X MXN ≈ $Y USD' (azul info como el banner de DOLARES del Flutter). */
 .chk__usd-total {
   padding: 8px 14px;
-  background: rgba(33, 150, 243, 0.1);
+  background: var(--info-soft);
   border: 1px solid var(--info);
   border-radius: var(--radius);
   color: var(--info);

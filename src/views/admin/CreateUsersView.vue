@@ -364,15 +364,20 @@ async function submitCreate(): Promise<void> {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px;
+  padding: 18px 24px 10px;
   background: var(--bg);
+
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
 }
 
 .cu-appbar-title {
   margin: 0;
   flex: 1;
-  font-size: 22px;
-  font-weight: 400;
+  font-size: var(--text-h1);
+  font-weight: 600;
+  letter-spacing: -0.02em;
   color: var(--text);
 }
 
@@ -401,7 +406,7 @@ async function submitCreate(): Promise<void> {
 }
 
 .cu-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--border-soft);
 }
 
 /* ===== Cuerpo centrado ===== */
@@ -421,16 +426,18 @@ async function submitCreate(): Promise<void> {
   flex-direction: column;
   gap: 14px;
   padding: 20px;
-  background: var(--bg-surface);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  background: var(--card);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-soft);
 }
 
 .cu-form-title {
-  margin: 0 0 4px;
-  font-size: 20px;
-  font-weight: 700; /* headlineSmall bold (L165-171) */
-  color: var(--text);
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
 
 .cu-field {
@@ -452,8 +459,8 @@ async function submitCreate(): Promise<void> {
   align-items: center;
   gap: 8px;
   padding: 0 12px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--border);
+  background: var(--elevated);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius);
   transition: border-color 0.15s ease;
 }
@@ -480,8 +487,8 @@ async function submitCreate(): Promise<void> {
   width: 100%;
   height: 44px;
   padding: 0 12px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--border);
+  background: var(--elevated);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius);
   color: var(--text);
   font-family: var(--font);
@@ -492,6 +499,7 @@ async function submitCreate(): Promise<void> {
 
 .cu-input:focus {
   border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(255, 100, 45, 0.16);
 }
 
 /* Toggle mostrar/ocultar contraseña (réplica LoginView suffix) */
@@ -589,7 +597,7 @@ async function submitCreate(): Promise<void> {
   width: 16px;
   height: 16px;
   border-radius: 999px;
-  background: #bdbdbd;
+  background: var(--text-2);
   transition: transform 0.15s ease, background 0.15s ease;
 }
 
@@ -621,10 +629,11 @@ async function submitCreate(): Promise<void> {
   padding: 12px 24px;
   border-radius: var(--radius);
   font-family: var(--font);
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
+  min-height: 44px;
 }
 
 /* ElevatedButton L175-186: height 50, fontSize default */

@@ -496,8 +496,8 @@ const submitLabel = computed(() => (isEditingSelected.value ? 'Actualizar' : 'Cr
   align-items: center;
   gap: 10px;
   padding: 8px;
-  background: rgba(76, 175, 80, 0.1);
-  border: 1.5px solid rgba(76, 175, 80, 0.5);
+  background: var(--success-soft);
+  border: 1.5px solid var(--success-soft);
   border-radius: 6px;
 }
 
@@ -509,7 +509,7 @@ const submitLabel = computed(() => (isEditingSelected.value ? 'Actualizar' : 'Cr
   width: 28px;
   height: 28px;
   border-radius: 999px;
-  background: rgba(76, 175, 80, 0.3);
+  background: var(--success-soft);
   color: var(--success);
 }
 
@@ -602,7 +602,7 @@ const submitLabel = computed(() => (isEditingSelected.value ? 'Actualizar' : 'Cr
   padding: 10px 12px;
   background: transparent;
   border: none;
-  border-bottom: 0.5px solid #424242;
+  border-bottom: 0.5px solid var(--bg-surface-2);
   color: var(--text);
   font-family: var(--font);
   text-align: left;
@@ -671,7 +671,7 @@ const submitLabel = computed(() => (isEditingSelected.value ? 'Actualizar' : 'Cr
 .ecf__input {
   width: 100%;
   padding: 10px;
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--elevated);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text);

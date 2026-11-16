@@ -90,13 +90,19 @@ async function login(): Promise<void> {
 <template>
   <div class="login-page">
     <div class="login-card">
-      <img
-        class="login-logo"
-        src="/logo.png"
-        alt="Crazy Wings"
-        width="210"
-        height="210"
-      />
+      <div class="login-brand">
+        <img
+          class="login-logo"
+          src="/logo.png"
+          alt="Crazy Wings"
+          width="210"
+          height="210"
+        />
+        <div class="login-heading">
+          <h1 class="login-title">Iniciar sesión</h1>
+          <p class="login-subtitle">Punto de venta</p>
+        </div>
+      </div>
 
       <AppBanner v-if="errorMessage" type="error" role="alert" aria-live="assertive">
         <template #icon><ShieldAlert :size="18" /></template>
@@ -152,36 +158,91 @@ async function login(): Promise<void> {
 </template>
 
 <style scoped>
-/* Réplica de login_screen.dart: gradiente topLeft→bottomRight #303030→#212121 */
+/* Fondo neutro con un halo de acento muy tenue detrás de la card
+   (profundidad sutil, sin gradientes decorativos estridentes). */
 .login-page {
+  position: relative;
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: linear-gradient(135deg, #303030 0%, #212121 100%);
+  background: var(--bg);
+  overflow: hidden;
 }
 
-/* Card Flutter: rgba(0,0,0,0.2), radius 16, elevation 8, max 380, pad 24/32 */
+.login-page::before {
+  content: '';
+  position: absolute;
+  top: -30%;
+  left: 50%;
+  width: 720px;
+  height: 720px;
+  transform: translateX(-50%);
+  background: radial-gradient(circle, rgba(255, 100, 45, 0.09), transparent 62%);
+  pointer-events: none;
+}
+
+/* Card: superficie propia, borde discreto, sombra natural */
 .login-card {
   position: relative;
   width: 100%;
-  max-width: 380px;
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-  padding: 32px 24px;
+  max-width: 400px;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  padding: 32px 28px;
   display: flex;
   flex-direction: column;
 }
 
-/* Logo Flutter: assets/logo.png height 210 centrado */
+/* Marca: logo contenido + título/subtítulo alineados a la izquierda */
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 26px;
+}
+
 .login-logo {
   display: block;
-  height: 210px;
-  width: auto;
-  margin: 0 auto 16px;
+  width: 56px;
+  height: 56px;
+  flex: none;
   object-fit: contain;
+}
+
+.login-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.login-title {
+  margin: 0;
+  font-size: var(--text-h1);
+  font-weight: 600;
+  letter-spacing: -0.022em;
+  line-height: 1.2;
+  color: var(--text-1);
+}
+
+.login-subtitle {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.login-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .login-logo + .app-banner {
@@ -189,25 +250,46 @@ async function login(): Promise<void> {
 }
 
 .login-submit {
-  margin-top: 20px;
+  margin-top: 6px;
 }
 
-/* PHONE @360px (verificación demo): la card 400px desborda → min(380px,
-   calc(100vw - 32px)); réplica login_screen.dart L114-117 (SingleScroll
-   padding 24 + ConstrainedBox maxWidth 380: el ancho real en phone es
-   viewport - 48). Con teclado abierto la card sube (CTA visible). */
+/* PHONE: card casi a ancho completo, padding más ajustado. Con el teclado
+   abierto la card sube para que el CTA siga visible (regla global). */
 @media (max-width: 699px) {
+  .login-page {
+    padding: 16px;
+    align-items: center;
+  }
+
   .login-card {
-    max-width: min(380px, calc(100vw - 32px));
+    max-width: min(400px, calc(100vw - 32px));
+    padding: 26px 20px;
+    border-radius: var(--radius-lg);
+  }
+
+  .login-brand {
+    gap: 14px;
+    margin-bottom: 22px;
   }
 
   .login-logo {
-    height: 160px;
+    width: 46px;
+    height: 46px;
+  }
+
+  .login-title {
+    font-size: 20px;
   }
 }
 
-/* Teclado virtual abierto: la card sube para que el botón Ingresar quede
-   visible/clicable (~440px libres a 360x740). La regla vive en style.css
-   global porque html.vk-open no puede combinarse con el scope de este SFC. */
+@media (max-height: 700px) {
+  .login-logo {
+    width: 44px;
+    height: 44px;
+  }
 
+  .login-brand {
+    margin-bottom: 18px;
+  }
+}
 </style>

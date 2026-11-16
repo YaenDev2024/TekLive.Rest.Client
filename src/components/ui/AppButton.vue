@@ -54,17 +54,19 @@ const isDisabled = computed(() => props.disabled || props.loading)
   gap: 8px;
   border: 1px solid transparent;
   border-radius: var(--radius);
-  padding: 16px 24px;
+  padding: 12px 20px;
   font-family: var(--font);
-  font-size: 16px;
-  font-weight: 700;
-  line-height: 1;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
   cursor: pointer;
   transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease,
-    transform 0.05s ease;
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease),
+    transform var(--dur-fast) var(--ease);
 }
 
 .app-btn--block {
@@ -72,55 +74,64 @@ const isDisabled = computed(() => props.disabled || props.loading)
 }
 
 .app-btn:active:not(:disabled) {
-  transform: translateY(1px);
+  transform: scale(0.985);
 }
 
 .app-btn:disabled {
-  opacity: 0.55;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
-/* primary: ElevatedButton deepOrange / texto blanco */
+.app-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* primary: acción principal — naranja sólido con sombra de acento sutil */
 .app-btn--primary {
   background: var(--primary);
   color: var(--on-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .app-btn--primary:hover:not(:disabled) {
   background: var(--primary-hover);
+  box-shadow: var(--shadow-accent);
 }
 
-/* ghost: transparente + borde grey[700] */
+/* ghost: superficie neutra con borde discreto (acción secundaria) */
 .app-btn--ghost {
-  background: transparent;
-  color: var(--text-muted);
+  background: var(--card);
+  color: var(--text-2);
   border-color: var(--border);
 }
 
 .app-btn--ghost:hover:not(:disabled) {
-  color: var(--text);
-  border-color: var(--text-faint);
-  background: var(--card-overlay);
+  color: var(--text-1);
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
 }
 
-/* danger: redAccent (SnackBar de errores del login Flutter) */
+/* danger: destructivo */
 .app-btn--danger {
   background: var(--error);
   color: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .app-btn--danger:hover:not(:disabled) {
-  background: #ff6b6b;
+  background: #ff6b70;
 }
 
-/* success: green (cobrado / confirmaciones) */
+/* success: confirmaciones / cobro */
 .app-btn--success {
   background: var(--success);
   color: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .app-btn--success:hover:not(:disabled) {
-  background: #5cbf60;
+  background: #4ac45c;
 }
 
 .app-btn__spinner {

@@ -818,15 +818,20 @@ async function submitEdit(): Promise<void> {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px;
+  padding: 18px 24px 10px;
   background: var(--bg);
+
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
 }
 
 .mu-appbar-title {
   margin: 0;
   flex: 1;
-  font-size: 22px;
-  font-weight: 400;
+  font-size: var(--text-h1);
+  font-weight: 600;
+  letter-spacing: -0.02em;
   color: var(--text);
 }
 
@@ -854,7 +859,7 @@ async function submitEdit(): Promise<void> {
 }
 
 .mu-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--border-soft);
 }
 
 /* ===== Cuerpo centrado ===== */
@@ -972,10 +977,19 @@ async function submitEdit(): Promise<void> {
   align-items: center;
   gap: 12px;
   padding: 14px 8px 14px 16px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-soft); /* BorderSide #3A3A3A */
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  transition:
+    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+
+@media (hover: hover) {
+  .mu-card:hover {
+    border-color: var(--border);
+    background: var(--surface-hover);
+  }
 }
 
 /* Avatar-inicial (CircleAvatar del brief): primary alpha, gris si inactivo */
@@ -986,16 +1000,17 @@ async function submitEdit(): Promise<void> {
   width: 44px;
   height: 44px;
   flex: none;
-  border-radius: 999px;
-  background: rgba(255, 87, 34, 0.22);
-  color: var(--primary);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-soft);
+  color: var(--text-2);
   font-size: 18px;
   font-weight: 700;
 }
 
 .mu-avatar--inactive {
   background: rgba(158, 158, 158, 0.25); /* Colors.grey alpha */
-  color: #9e9e9e;
+  color: var(--text-3);
 }
 
 .mu-item-info {
@@ -1009,9 +1024,10 @@ async function submitEdit(): Promise<void> {
 /* Nombre MAYÚSCULAS bold (L460-471); tachado si inactivo (estilo
    mc-item-name--inactive de ManageCatalogView) */
 .mu-item-name {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1030,58 +1046,67 @@ async function submitEdit(): Promise<void> {
 }
 
 /* Badge de rol (color por rol — brief) */
+/* Badge de rol: neutro con punto de color (una sola jerarquía visual) */
 .mu-badge {
-  padding: 1px 8px;
-  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid var(--border-soft);
+  color: var(--text-2);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
-.mu-badge--admin {
-  background: rgba(255, 87, 34, 0.2); /* rojo/primario */
-  border: 1px solid var(--primary);
-  color: var(--primary);
+.mu-badge::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--text-3);
 }
 
-.mu-badge--manager {
-  background: rgba(255, 152, 0, 0.18); /* naranja --warning */
-  border: 1px solid var(--warning);
-  color: var(--warning);
+.mu-badge--admin::before {
+  background: var(--primary);
 }
 
-.mu-badge--cashier {
-  background: rgba(33, 150, 243, 0.18); /* azul --info */
-  border: 1px solid var(--info);
-  color: var(--info);
+.mu-badge--manager::before {
+  background: var(--warning);
 }
 
-.mu-badge--waiter {
-  background: rgba(76, 175, 80, 0.18); /* verde --success */
-  border: 1px solid var(--success);
-  color: var(--success);
+.mu-badge--cashier::before {
+  background: var(--info);
 }
 
-.mu-badge--kitchen {
-  background: rgba(158, 158, 158, 0.18); /* gris */
-  border: 1px solid #9e9e9e;
-  color: #bdbdbd;
+.mu-badge--waiter::before {
+  background: var(--success);
 }
 
-/* Badge Activo/Inactivo (L504-536: verde/rojo alpha) */
+.mu-badge--kitchen::before {
+  background: var(--text-3);
+}
+
+/* Badge Activo/Inactivo */
 .mu-status {
-  padding: 1px 8px;
-  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .mu-status--active {
-  background: rgba(76, 175, 80, 0.15);
+  background: var(--success-soft);
   color: var(--success);
 }
 
 .mu-status--inactive {
-  background: rgba(255, 82, 82, 0.15);
+  background: rgba(255, 82, 82, 0.13);
   color: var(--error);
 }
 
@@ -1122,7 +1147,7 @@ async function submitEdit(): Promise<void> {
 }
 
 .mu-item-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--border-soft);
 }
 
 .mu-item-btn--delete {
@@ -1168,8 +1193,8 @@ async function submitEdit(): Promise<void> {
   width: 100%;
   height: 44px;
   padding: 0 12px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--border);
+  background: var(--elevated);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius);
   color: var(--text);
   font-family: var(--font);
@@ -1180,6 +1205,7 @@ async function submitEdit(): Promise<void> {
 
 .mu-input:focus {
   border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(255, 100, 45, 0.16);
 }
 
 .mu-input[readonly] {
@@ -1192,8 +1218,8 @@ async function submitEdit(): Promise<void> {
   display: flex;
   align-items: center;
   padding: 0 6px 0 0;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--border);
+  background: var(--elevated);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius);
   transition: border-color 0.15s ease;
 }
@@ -1273,7 +1299,7 @@ async function submitEdit(): Promise<void> {
   width: 16px;
   height: 16px;
   border-radius: 999px;
-  background: #bdbdbd;
+  background: var(--text-2);
   transition: transform 0.15s ease, background 0.15s ease;
 }
 
@@ -1349,7 +1375,7 @@ async function submitEdit(): Promise<void> {
 }
 
 .mu-chip--selected {
-  background: rgba(255, 87, 34, 0.25);
+  background: var(--primary-soft);
   border-color: var(--primary);
   color: #ffffff;
 }
@@ -1368,10 +1394,11 @@ async function submitEdit(): Promise<void> {
   padding: 12px 24px;
   border-radius: var(--radius);
   font-family: var(--font);
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
+  min-height: 44px;
 }
 
 .mu-btn--primary {

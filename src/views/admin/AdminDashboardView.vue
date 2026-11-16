@@ -72,6 +72,8 @@
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
+  ArrowLeft,
+  ChevronRight,
   DollarSign,
   FileBarChart,
   LayoutGrid,
@@ -186,7 +188,7 @@ const SECTIONS: AdminSection[] = [
 
 <template>
   <div class="ad-page">
-    <!-- ===== AppBar réplica L142-158: elevation 0, bg scaffold ===== -->
+    <!-- ===== Topbar: back + título + contexto ===== -->
     <header class="ad-appbar">
       <button
         type="button"
@@ -196,35 +198,26 @@ const SECTIONS: AdminSection[] = [
         data-testid="ad-back"
         @click="goBack"
       >
-        <svg
-          viewBox="0 0 24 24"
-          width="24"
-          height="24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <path d="m12 19-7-7 7-7" />
-          <path d="M19 12H5" />
-        </svg>
+        <ArrowLeft :size="18" aria-hidden="true" />
       </button>
-      <h1 class="ad-title">Administración</h1>
+      <div class="ad-appbar-text">
+        <h1 class="ad-title">Administración</h1>
+        <p class="ad-subtitle">Configura el sistema y administra el negocio</p>
+      </div>
     </header>
 
-    <!-- ===== Body ListView padding 24 (L159-160) ===== -->
+    <!-- ===== Body ===== -->
     <main class="ad-body" data-testid="ad-body">
       <section v-for="section in SECTIONS" :key="section.title" class="ad-section">
-        <!-- Section header réplica L171-191 -->
+        <!-- Section header -->
         <div class="ad-section-header">
-          <component :is="section.icon" :size="22" class="ad-section-icon" aria-hidden="true" />
+          <component :is="section.icon" :size="15" class="ad-section-icon" aria-hidden="true" />
           <h2 class="ad-section-title">{{ section.title }}</h2>
+          <span class="ad-section-count">{{ section.tiles.length }}</span>
         </div>
 
-        <!-- Grid réplica L195-203 (desviación auto-fill documentada arriba) -->
-        <div class="ad-grid">
+        <!-- Lista de acciones (filas, no cuadrados grises) -->
+        <div class="ad-list">
           <component
             :is="tile.to != null ? 'router-link' : 'button'"
             v-for="tile in section.tiles"
@@ -242,23 +235,33 @@ const SECTIONS: AdminSection[] = [
                   : tile.label
             "
           >
-            <component :is="tile.icon" :size="48" class="ad-tile-icon" aria-hidden="true" />
-            <span class="ad-tile-label">{{ tile.label }}</span>
-            <span v-if="tile.phase != null" class="ad-tile-badge">
-              Próximamente · Fase {{ tile.phase }}
+            <span class="ad-tile-icon">
+              <component :is="tile.icon" :size="18" aria-hidden="true" />
             </span>
+            <span class="ad-tile-body">
+              <span class="ad-tile-label">{{ tile.label }}</span>
+              <span v-if="tile.phase != null" class="ad-tile-badge">
+                Próximamente · Fase {{ tile.phase }}
+              </span>
+            </span>
+            <ChevronRight class="ad-tile-arrow" :size="16" aria-hidden="true" />
           </component>
         </div>
-
-        <!-- Gap 24 entre secciones (SizedBox L209) -->
-        <div class="ad-section-gap" aria-hidden="true"></div>
       </section>
     </main>
   </div>
 </template>
 
 <style scoped>
-/* Scaffold grey[900] full-screen (L141). Sin rail: standalone. */
+/* ==========================================================================
+   Administración · hub de acciones (Premium Minimalist / Orange)
+   --------------------------------------------------------------------------
+   Composición: topbar ligera (back + título + subtítulo) y, por sección, una
+   lista agrupada de filas (icono · label · chevron) en lugar de la retícula
+   de cuadrados grises. Se conservan TODOS los tiles, rutas, testids
+   (ad-tile-*), el badge de fase y los tooltips `title`.
+   ========================================================================== */
+
 .ad-page {
   min-height: 100vh;
   display: flex;
@@ -267,174 +270,296 @@ const SECTIONS: AdminSection[] = [
   font-family: var(--font);
 }
 
-/* ===== AppBar (L142-158): bg = scaffold, SIN sombra (elevation 0) ===== */
+/* ===== Topbar ============================================================ */
 .ad-appbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px;
-  background: var(--bg);
-  box-shadow: none;
+  gap: 12px;
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 18px 24px 10px;
 }
 
-/* IconButton back (L143-153): 48px, icono blanco */
 .ad-back {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
+  width: 34px;
+  height: 34px;
   flex: none;
   padding: 0;
   background: transparent;
-  border: none;
-  border-radius: 999px;
-  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--text-2);
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition:
+    color var(--dur) var(--ease),
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
 
 .ad-back:hover {
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.07);
+  border-color: var(--border-soft);
+}
+
+.ad-back:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.ad-appbar-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
 }
 
 .ad-title {
   margin: 0;
-  font-size: 22px;
-  font-weight: 400;
-  color: var(--text);
+  font-size: var(--text-h1);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--text-1);
 }
 
-/* ===== Body ListView padding 24 ===== */
+.ad-subtitle {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-3);
+}
+
+/* ===== Body ============================================================== */
 .ad-body {
   flex: 1;
-  padding: 24px;
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 8px 24px max(32px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
 }
 
-/* PHONE: padding compacto para que los tiles respiren a 360px */
-@media (max-width: 699px) {
-  .ad-body {
-    padding: 12px;
-  }
-
-  .ad-grid {
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  }
-}
-
-/* ===== Section (L168-210) ===== */
+/* ===== Sección =========================================================== */
 .ad-section {
   display: flex;
   flex-direction: column;
-  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
 }
 
-/* Section header (L171-191): padding v16 h8, icono 22 primary + gap 10 +
-   título 20 bold white70 */
 .ad-section-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 16px 8px;
+  gap: 8px;
+  padding: 0 4px;
 }
 
 .ad-section-icon {
   flex: none;
-  color: var(--primary); /* colorScheme.primary → deepOrange */
+  color: var(--text-3);
 }
 
 .ad-section-title {
   margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.7); /* Colors.white70 */
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
 
-/* Grid réplica L195-203: DESVIACIÓN MENOR — auto-fill minmax(220px, 1fr) en
-   lugar de maxCrossAxisExtent 250 (CSS no lo soporta); gap 16 igual, tiles
-   con aspect-ratio 1.2 igual (doc-comment arriba). */
-.ad-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 16px;
+.ad-section-count {
+  margin-left: auto;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
-/* ===== Tile = ModuleCard (home_screen2.dart L51-87) ===== */
+/* ===== Lista agrupada de acciones ======================================== */
+.ad-list {
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+/* Fila: tile de icono + label (+badge) + chevron */
 .ad-tile {
   position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 0;
-  aspect-ratio: 1.2; /* childAspectRatio 1.2 */
-  padding: 12px;
-  background: #303030; /* CardTheme grey[850] del original (todos uniformes:
-                          el campo color de AppModule es código muerto) */
+  gap: 14px;
+  width: 100%;
+  min-height: 58px;
+  padding: 12px 16px;
+  background: transparent;
   border: none;
-  border-radius: 12px; /* L65 */
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.3),
-    0 1px 2px rgba(0, 0, 0, 0.24); /* elevation 2 CardTheme */
-  color: var(--text);
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--text-1);
   font-family: var(--font);
+  text-align: left;
   text-decoration: none;
   cursor: pointer;
-  transition: box-shadow 0.2s ease;
+  transition: background var(--dur) var(--ease);
 }
 
-/* Hover InkWell estándar: elevation 4 sutil (sin hover deepOrange) */
-.ad-tile:hover {
-  box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.3),
-    0 2px 4px rgba(0, 0, 0, 0.24); /* elevation 4 sutil */
+.ad-tile:last-child {
+  border-bottom: none;
 }
 
-/* Contenido centrado (L66-82): icono 48 primary + SizedBox 16 + título bold
-   16 centrado */
+@media (hover: hover) {
+  .ad-tile:hover {
+    background: var(--surface-hover);
+  }
+
+  .ad-tile:hover .ad-tile-icon {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #ffffff;
+  }
+
+  .ad-tile:hover .ad-tile-arrow {
+    color: var(--text-1);
+    transform: translateX(2px);
+  }
+}
+
+.ad-tile:active {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Tile de icono: 34px con tinte de acento sutil (no cuadrado gris) */
 .ad-tile-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
   flex: none;
-  color: var(--primary); /* theme.colorScheme.primary */
+  border-radius: var(--radius-sm);
+  background: var(--primary-soft);
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
+  color: var(--primary);
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.ad-tile-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
 }
 
 .ad-tile-label {
-  margin-top: 16px; /* SizedBox(height: 16) */
-  font-size: 16px; /* titleMedium */
-  font-weight: 700;
-  line-height: 1.2;
-  text-align: center;
-  color: var(--text);
-  max-width: 100%;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  color: var(--text-1);
   overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  text-overflow: ellipsis;
 }
 
-/* Badge placeholder: texto pequeño bajo el título */
 .ad-tile-badge {
-  margin-top: 6px;
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1.2;
-  text-align: center;
-  color: rgba(255, 255, 255, 0.5);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--text-3);
 }
 
-/* Tile deshabilitado: opacity 0.45, cursor default (sin hover elevado) */
+.ad-tile-arrow {
+  flex: none;
+  color: var(--text-3);
+  opacity: 0.7;
+  transition:
+    color var(--dur) var(--ease),
+    transform var(--dur) var(--ease),
+    opacity var(--dur) var(--ease);
+}
+
+/* Placeholder de fase futura: legible pero no accionable */
 .ad-tile--disabled {
-  opacity: 0.45;
   cursor: default;
+  opacity: 0.55;
+}
+
+.ad-tile--disabled .ad-tile-icon {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--border-soft);
+  color: var(--text-3);
 }
 
 .ad-tile--disabled:hover {
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.3),
-    0 1px 2px rgba(0, 0, 0, 0.24);
+  background: transparent;
 }
 
-/* Gap 24 entre secciones (SizedBox L209) */
-.ad-section-gap {
-  height: 24px;
+/* ===== Tablet / móvil ==================================================== */
+@media (max-width: 899px) {
+  .ad-body {
+    max-width: 100%;
+    padding: 4px 20px max(28px, env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 699px) {
+  .ad-appbar {
+    padding: 14px 16px 6px;
+  }
+
+  .ad-title {
+    font-size: 20px;
+  }
+
+  .ad-subtitle {
+    font-size: var(--text-xs);
+  }
+
+  .ad-body {
+    padding: 4px 16px max(24px, env(safe-area-inset-bottom));
+    gap: 22px;
+  }
+
+  /* Filas con área táctil cómoda y chevron siempre visible */
+  .ad-tile {
+    min-height: 60px;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .ad-tile-arrow {
+    opacity: 1;
+  }
+
+  .ad-tile-label {
+    font-size: 14.5px;
+  }
+}
+
+@media (max-width: 380px) {
+  .ad-tile {
+    gap: 10px;
+    padding: 12px 10px;
+  }
+
+  .ad-tile-icon {
+    width: 32px;
+    height: 32px;
+  }
 }
 </style>

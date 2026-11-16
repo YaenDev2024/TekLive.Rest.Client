@@ -163,6 +163,7 @@ function cancel(): void {
 
 .dlg-input:focus {
   border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(255, 100, 45, 0.16);
   border-width: 1.4px;
 }
 

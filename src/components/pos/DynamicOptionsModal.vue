@@ -1429,7 +1429,7 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
   align-items: center;
   justify-content: center;
   padding: 60px 40px;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--elevated);
 }
 
 .wiz {
@@ -1488,7 +1488,7 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
   flex-direction: column;
   width: 200px;
   background: #101010;
-  border-right: 2px solid #424242;
+  border-right: 2px solid var(--bg-surface-2);
   border-bottom-left-radius: 28px;
 }
 
@@ -1514,7 +1514,7 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
 .wiz-ticket__divider {
   flex: none;
   height: 1px;
-  background: #424242;
+  background: var(--bg-surface-2);
 }
 
 .wiz-ticket__scroll {
@@ -1544,7 +1544,7 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
 .wiz-ticket__check {
   flex: none;
   margin-top: 1px;
-  color: #9e9e9e;
+  color: var(--text-3);
 }
 
 .wiz-ticket__text {
@@ -1565,11 +1565,11 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
   justify-content: space-between;
   gap: 8px;
   padding: 16px;
-  border-top: 1px solid #424242;
+  border-top: 1px solid var(--bg-surface-2);
 }
 
 .wiz-ticket__subtotal {
-  color: #bdbdbd;
+  color: var(--text-2);
   font-size: 14px;
 }
 
@@ -1630,10 +1630,10 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
   align-items: center;
   margin-top: 16px;
   padding: 14px 16px;
-  background: rgba(33, 150, 243, 0.12);
-  border: 2px solid rgba(33, 150, 243, 0.35);
+  background: var(--info-soft);
+  border: 2px solid var(--info-soft);
   border-radius: 14px;
-  box-shadow: 0 0 0 1px rgba(33, 150, 243, 0.08), 0 0 10px rgba(33, 150, 243, 0.08);
+  box-shadow: 0 0 0 1px var(--info-soft), 0 0 10px var(--info-soft);
 }
 
 .wiz-banner__icon {
@@ -1703,7 +1703,7 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
     gap: 10px;
     padding: 10px 12px;
     background: #101010; /* grey[950] como el ticket */
-    border-bottom: 1px solid #424242;
+    border-bottom: 1px solid var(--bg-surface-2);
   }
 
   .wiz-topbar__expand {
@@ -1765,7 +1765,7 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
     overflow-y: auto;
     padding: 12px 16px;
     background: #101010;
-    border-bottom: 1px solid #424242;
+    border-bottom: 1px solid var(--bg-surface-2);
   }
 
   .wiz-summary__scroll {
@@ -1775,7 +1775,7 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
 
   .wiz-summary__empty {
     margin: 0;
-    color: #9e9e9e;
+    color: var(--text-3);
     font-size: 12px;
   }
 
@@ -1800,7 +1800,7 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
   .wiz-summary__check {
     flex: none;
     margin-top: 1px;
-    color: #9e9e9e;
+    color: var(--text-3);
   }
 
   .wiz-summary__text {
@@ -1935,7 +1935,7 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
   gap: 8px;
   aspect-ratio: 1.05;
   padding: 8px;
-  background: #424242;
+  background: var(--bg-surface-2);
   border: 1.5px solid #616161;
   border-radius: 16px;
   box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
@@ -1953,7 +1953,7 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
 
 .wiz-card__badge {
   padding: 4px 8px;
-  background: #388e3c;
+  background: var(--success);
   border-radius: 6px;
   color: #fff;
   font-size: 11px;
@@ -2099,7 +2099,7 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--elevated);
 }
 
 .sub-dialog {
@@ -2124,7 +2124,7 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
 
 .sub-dialog__q {
   margin: 0;
-  color: #9e9e9e;
+  color: var(--text-3);
   font-size: 14px;
 }
 
@@ -2154,7 +2154,7 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
 
 .sub-dialog__mixto-title {
   margin: 8px 0 0;
-  color: #ffc107;
+  color: var(--amber);
   font-size: 12px;
   font-weight: 700;
 }
@@ -2204,7 +2204,7 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
 }
 
 .sub-btn--green {
-  background: #388e3c;
+  background: var(--success);
 }
 
 .sub-btn--blue {
@@ -2218,7 +2218,7 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
 .sub-btn--ghost {
   background: transparent;
   border: 1px solid #616161;
-  color: #bdbdbd;
+  color: var(--text-2);
 }
 
 .sub-btn--block {
@@ -2230,7 +2230,7 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
 .sub-mixto__current {
   padding: 12px;
   background: rgba(27, 94, 32, 0.3);
-  border: 1px solid #388e3c;
+  border: 1px solid var(--success);
   border-radius: 8px;
 }
 
@@ -2307,8 +2307,8 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
   justify-content: space-between;
   gap: 12px;
   padding: 12px;
-  background: #424242;
-  border: 1.5px solid #757575;
+  background: var(--bg-surface-2);
+  border: 1.5px solid var(--text-3);
   border-radius: 8px;
 }
 
@@ -2318,7 +2318,7 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
 }
 
 .sub-aparte__name {
-  color: #bdbdbd;
+  color: var(--text-2);
   font-size: 14px;
 }
 

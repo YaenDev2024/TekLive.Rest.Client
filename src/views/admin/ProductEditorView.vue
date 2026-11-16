@@ -1607,16 +1607,22 @@ async function confirmDelete(): Promise<void> {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px;
+  padding: 18px 24px 10px;
   background: var(--bg);
+
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
 }
 
 .pe-appbar-title {
   margin: 0;
   flex: 1;
-  font-size: 22px;
-  font-weight: 400;
-  color: var(--text);
+  min-width: 0;
+  font-size: var(--text-h1);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1627,6 +1633,26 @@ async function confirmDelete(): Promise<void> {
   align-items: center;
   gap: 4px;
   flex: none;
+}
+
+/* En móvil el título cede espacio a la acción primaria (Nuevo Template).
+   La acción baja a una segunda fila para no truncar el título. */
+@media (max-width: 560px) {
+  .pe-appbar {
+    flex-wrap: wrap;
+    row-gap: 10px;
+    padding: 16px 16px 8px;
+  }
+
+  .pe-appbar-title {
+    flex: 1 1 auto;
+    font-size: 19px;
+  }
+
+  .pe-appbar-actions {
+    flex: 0 0 100%;
+    justify-content: flex-end;
+  }
 }
 
 /* IconButton 48px circular, hover white08 (patrón ManageCatalogView) */
@@ -1647,7 +1673,7 @@ async function confirmDelete(): Promise<void> {
 }
 
 .pe-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--border-soft);
 }
 
 /* ===== Cuerpo centrado (máx ~800px, mismo ancho que ManageCatalogView) ===== */
@@ -1669,10 +1695,11 @@ async function confirmDelete(): Promise<void> {
   padding: 12px 24px;
   border-radius: var(--radius);
   font-family: var(--font);
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
+  min-height: 44px;
 }
 
 .pe-btn--primary {
@@ -1685,12 +1712,13 @@ async function confirmDelete(): Promise<void> {
 }
 
 .pe-btn--danger {
-  background: var(--error);
-  color: #ffffff;
+  background: var(--error-soft);
+  border-color: color-mix(in srgb, var(--error) 40%, transparent);
+  color: var(--error);
 }
 
 .pe-btn--danger:hover:not(:disabled) {
-  filter: brightness(1.1);
+  border-color: var(--error);
 }
 
 .pe-btn--ghost {
@@ -1704,44 +1732,51 @@ async function confirmDelete(): Promise<void> {
   border-color: var(--text-faint);
 }
 
-/* UI-parity: verde del AppBar (Colors.green #4CAF50, L122) */
+/* UI-parity: verde del AppBar (Colors.green var(--success), L122) */
+/* 'Crear Template' del empty: superficie con acento (no compite con el CTA) */
 .pe-btn--green {
-  background: #4caf50;
-  color: #ffffff;
+  background: var(--card);
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  color: var(--primary);
 }
 
 .pe-btn--green:hover:not(:disabled) {
-  filter: brightness(1.08);
+  background: var(--primary-subtle);
+  border-color: var(--primary);
 }
 
-/* deepOrangeAccent #FF6E40: 'Crear Template' del empty (L250-256) */
+/* deepOrangeAccent var(--primary): 'Crear Template' del empty (L250-256) */
 .pe-btn--accent {
-  background: #ff6e40;
-  color: #ffffff;
+  background: var(--primary);
+  color: var(--on-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .pe-btn--accent:hover:not(:disabled) {
-  filter: brightness(1.08);
+  background: var(--primary-hover);
 }
 
-/* 'Editar' Colors.blue #2196F3 (L414-422) */
+/* 'Editar' Colors.blue var(--info) (L414-422) */
 .pe-btn--blue {
-  background: #2196f3;
-  color: #ffffff;
+  background: var(--card);
+  border-color: color-mix(in srgb, var(--info) 40%, transparent);
+  color: var(--info);
 }
 
 .pe-btn--blue:hover:not(:disabled) {
-  filter: brightness(1.08);
+  background: var(--info-soft);
+  border-color: var(--info);
 }
 
-/* 'Eliminar' Colors.red #F44336 (L425-433) */
+/* 'Eliminar' — acción destructiva: superficie con acento error */
 .pe-btn--red {
-  background: #f44336;
-  color: #ffffff;
+  background: var(--error-soft);
+  border-color: color-mix(in srgb, var(--error) 40%, transparent);
+  color: var(--error);
 }
 
 .pe-btn--red:hover:not(:disabled) {
-  filter: brightness(1.08);
+  border-color: var(--error);
 }
 
 .pe-btn--compact {
@@ -1781,7 +1816,7 @@ async function confirmDelete(): Promise<void> {
 
 /* ===== Empty con icono (L230-258): inventory_2 64px grey[600] ===== */
 .pe-empty-icon {
-  color: #757575; /* Colors.grey.shade600 */
+  color: var(--text-3); /* Colors.grey.shade600 */
 }
 
 .pe-state-error-icon {
@@ -1850,8 +1885,8 @@ async function confirmDelete(): Promise<void> {
   width: 100%;
   height: 48px;
   padding: 0 44px 0 40px;
-  background: rgba(0, 0, 0, 0.3); /* fill del tema, igual que el resto de inputs */
-  border: 1px solid var(--border);
+  background: var(--elevated); /* fill del tema, igual que el resto de inputs */
+  border: 1px solid var(--border-soft);
   border-radius: 10px; /* OutlineInputBorder radius 10 L218 */
   color: var(--text);
   font-family: var(--font);
@@ -1865,6 +1900,7 @@ async function confirmDelete(): Promise<void> {
 .pe-search-input:focus {
   outline: none;
   border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(255, 100, 45, 0.16);
 }
 
 .pe-search-clear {
@@ -1887,7 +1923,7 @@ async function confirmDelete(): Promise<void> {
 }
 
 .pe-search-clear:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--border-soft);
   color: var(--text);
 }
 
@@ -1896,7 +1932,7 @@ async function confirmDelete(): Promise<void> {
   margin: 0;
   padding: 32px 24px;
   text-align: center;
-  color: #bdbdbd; /* Colors.grey.shade400 */
+  color: var(--text-2); /* Colors.grey.shade400 */
   font-size: 15px;
 }
 
@@ -1910,14 +1946,24 @@ async function confirmDelete(): Promise<void> {
   gap: 16px; /* margin bottom 16 de cada Card L282 */
 }
 
-/* ===== Card (L282-437): bg grey[900] #212121, radius 12, columna ===== */
+/* ===== Card (L282-437): bg grey[900] var(--bg), radius 12, columna ===== */
 .pe-card {
   display: flex;
   flex-direction: column;
-  background: var(--bg); /* Colors.grey[900] = #212121 L281 */
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
   overflow: hidden;
+  transition:
+    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+
+@media (hover: hover) {
+  .pe-card:hover {
+    border-color: var(--border);
+    background: var(--surface-hover);
+  }
 }
 
 /* Imagen 150px cover con ClipRRect radius 12 top (L289-304) */
@@ -1933,13 +1979,13 @@ async function confirmDelete(): Promise<void> {
   display: block;
 }
 
-/* Fallback image_not_supported: container grey[800] #424242 + icono */
+/* Fallback image_not_supported: container grey[800] var(--bg-surface-2) + icono */
 .pe-card-media-fallback {
   display: flex;
   align-items: center;
   justify-content: center;
   height: 100%;
-  background: #424242; /* Colors.grey.shade800 */
+  background: var(--bg-surface-2); /* Colors.grey.shade800 */
   color: var(--text-faint);
 }
 
@@ -1967,35 +2013,37 @@ async function confirmDelete(): Promise<void> {
 }
 
 .pe-item-name {
-  font-size: 18px; /* fontSize 18 bold L329 */
-  font-weight: 700;
-  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-1);
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap; /* maxLines 1 */
+  white-space: nowrap;
 }
 
 .pe-item-name--inactive {
   text-decoration: line-through;
 }
 
-/* Precio deepOrangeAccent #FF6E40, fontSize 16 bold (L331-333) */
+/* Precio deepOrangeAccent var(--primary), fontSize 16 bold (L331-333) */
 .pe-card-price {
-  font-size: 16px;
-  font-weight: 700;
-  color: #ff6e40;
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary);
 }
 
 /* Badge scope: purple900 α0.35 + borde purple700 (L342-355) */
 .pe-card-scope {
   flex: none;
-  padding: 4px 8px;
+  padding: 3px 9px;
   margin-right: 8px;
-  border: 1px solid #7b1fa2; /* Colors.purple.shade700 */
-  border-radius: 8px;
-  background: rgba(74, 20, 90, 0.35); /* purple900 #4A148C α 0.35 */
-  color: var(--text);
-  font-size: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-3);
+  font-size: 11px;
   white-space: nowrap;
 }
 
@@ -2003,20 +2051,23 @@ async function confirmDelete(): Promise<void> {
    sin pluralizar ('1 grupos' como el original '${n} grupos' L365) */
 .pe-card-groups {
   flex: none;
-  padding: 6px 12px;
-  border: 1px solid #1976d2; /* Colors.blue.shade700 */
-  border-radius: 8px;
-  background: rgba(13, 71, 161, 0.3); /* blue900 #0D47A1 α 0.3 */
-  color: var(--text);
-  font-size: 12px;
+  padding: 3px 9px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 /* Descripción grey400 13 maxLines 2 (L373-382) */
 .pe-card-desc {
-  margin: 12px 0;
-  color: #bdbdbd; /* Colors.grey.shade400 */
-  font-size: 13px;
+  margin: 10px 0;
+  color: var(--text-3);
+  font-size: var(--text-sm);
+  line-height: 1.5;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -2031,10 +2082,11 @@ async function confirmDelete(): Promise<void> {
 }
 
 .pe-card-chip {
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: #424242; /* Colors.grey.shade800 */
-  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid var(--border-soft);
+  color: var(--text-3);
   font-size: 11px;
 }
 
@@ -2092,51 +2144,58 @@ async function confirmDelete(): Promise<void> {
   width: 28px;
 }
 
-/* Indicador circular numerado: activo deepOrangeAccent #FF6E40 */
+/* Indicador circular numerado: activo deepOrangeAccent var(--primary) */
 .pe-step-ind {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   flex: none;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
-  color: var(--text-muted);
-  font-size: 13px;
-  font-weight: 700;
-  transition: background 0.15s ease, color 0.15s ease;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-soft);
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
 }
 
 .pe-step-ind--active {
-  background: #ff6e40;
-  color: #ffffff;
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
 }
 
 .pe-step-ind--done {
-  background: rgba(255, 110, 64, 0.35);
-  color: #ffccb8;
+  background: var(--primary-soft);
+  border-color: color-mix(in srgb, var(--primary) 45%, transparent);
+  color: var(--primary);
 }
 
 /* Conector vertical entre indicadores (dentro del rail) */
 .pe-step-line {
-  width: 2px;
+  width: 1px;
   flex: 1;
   min-height: 24px;
   margin: 4px 0;
-  background: rgba(255, 255, 255, 0.16);
+  background: var(--border-soft);
 }
 
 .pe-step-title {
   margin-left: 12px;
-  padding-top: 5px;
-  font-size: 15px;
-  color: var(--text-muted);
+  padding-top: 3px;
+  font-size: var(--text-sm);
+  color: var(--text-3);
 }
 
 .pe-step-title--active {
-  color: var(--text);
-  font-weight: 700;
+  color: var(--text-1);
+  font-weight: 600;
 }
 
 .pe-step-body {
@@ -2177,8 +2236,8 @@ async function confirmDelete(): Promise<void> {
   width: 100%;
   height: 44px;
   padding: 0 12px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--border);
+  background: var(--elevated);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius);
   color: var(--text);
   font-family: var(--font);
@@ -2200,6 +2259,7 @@ async function confirmDelete(): Promise<void> {
 
 .pe-input:focus {
   border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(255, 100, 45, 0.16);
 }
 
 .pe-input::placeholder {
@@ -2243,7 +2303,7 @@ async function confirmDelete(): Promise<void> {
   width: 16px;
   height: 16px;
   border-radius: 999px;
-  background: #bdbdbd;
+  background: var(--text-2);
   transition: transform 0.15s ease, background 0.15s ease;
 }
 
@@ -2275,9 +2335,11 @@ async function confirmDelete(): Promise<void> {
 
 .pe-groups-title {
   margin: 0;
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
 
 /* L952-957 */
@@ -2288,15 +2350,16 @@ async function confirmDelete(): Promise<void> {
   font-size: 14px;
 }
 
-/* Card por grupo: grey[850] #303030 (L978), padding 16, mb 16 */
+/* Card por grupo: grey[850] var(--bg-surface-2) (L978), padding 16, mb 16 */
 .pe-group-card {
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: 16px;
-  margin-bottom: 16px;
-  border-radius: 12px;
-  background: #303030;
+  margin-bottom: 12px;
+  border-radius: var(--radius-md);
+  background: var(--elevated);
+  border: 1px solid var(--border-soft);
 }
 
 .pe-group-head {
@@ -2330,7 +2393,7 @@ async function confirmDelete(): Promise<void> {
 }
 
 .pe-item-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--border-soft);
 }
 
 .pe-item-btn--delete {
@@ -2365,11 +2428,12 @@ async function confirmDelete(): Promise<void> {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: rgba(255, 110, 64, 0.3);
-  color: var(--text);
-  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background: var(--primary-soft);
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, transparent);
+  color: var(--text-1);
+  font-size: var(--text-xs);
 }
 
 .pe-chip-remove {
@@ -2394,7 +2458,7 @@ async function confirmDelete(): Promise<void> {
 /* L1101-1105 */
 .pe-chips-empty {
   margin: 0;
-  color: #9e9e9e;
+  color: var(--text-3);
   font-size: 13px;
 }
 
@@ -2410,15 +2474,18 @@ async function confirmDelete(): Promise<void> {
   flex-direction: column;
   gap: 10px;
   padding: 16px;
-  border-radius: 12px;
-  background: #303030;
+  border-radius: var(--radius-md);
+  background: var(--elevated);
+  border: 1px solid var(--border-soft);
 }
 
 .pe-summary-title {
   margin: 0 0 4px;
-  font-size: 16px;
-  font-weight: 700;
-  color: #ff6e40;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
 
 .pe-summary-row {
@@ -2455,7 +2522,7 @@ async function confirmDelete(): Promise<void> {
   flex-direction: column;
   gap: 12px;
   padding: 12px;
-  border: 1px solid #ff6e40;
+  border: 1px solid var(--primary);
   border-radius: 12px;
 }
 
@@ -2475,7 +2542,7 @@ async function confirmDelete(): Promise<void> {
   width: 100%;
   height: 200px;
   border-radius: 10px;
-  background: #424242;
+  background: var(--bg-surface-2);
   color: var(--text-muted);
 }
 
@@ -2549,7 +2616,7 @@ async function confirmDelete(): Promise<void> {
   padding: 8px 12px;
   border-radius: 8px;
   background: rgba(255, 110, 64, 0.2);
-  color: #ff6e40;
+  color: var(--primary);
   font-size: 13px;
   font-weight: 700;
 }
@@ -2561,8 +2628,8 @@ async function confirmDelete(): Promise<void> {
   gap: 6px;
   padding: 8px 12px;
   border-radius: 8px;
-  background: #424242;
-  border: 1px solid #757575;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--text-3);
   color: var(--text);
   font-size: 12px;
   font-weight: 600;
@@ -2571,8 +2638,8 @@ async function confirmDelete(): Promise<void> {
 }
 
 .pe-dialog-all--on {
-  background: #ff6e40;
-  border-color: #ff6e40;
+  background: var(--primary);
+  border-color: var(--primary);
   color: #ffffff;
 }
 
@@ -2582,24 +2649,33 @@ async function confirmDelete(): Promise<void> {
   gap: 8px;
 }
 
-/* FilterChip (L456-494): label 12px, bg grey[850] #303030, selected
+/* FilterChip (L456-494): label 12px, bg grey[850] var(--bg-surface-2), selected
    deepOrangeAccent; borde deepOrange (sel) / grey700 */
 .pe-filterchip {
   display: inline-flex;
   align-items: center;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: #303030;
-  border: 1px solid #616161;
-  color: var(--text);
-  font-size: 12px;
+  min-height: 30px;
+  padding: 4px 11px;
+  border-radius: var(--radius-full);
+  background: transparent;
+  border: 1px solid var(--border-soft);
+  color: var(--text-2);
+  font-size: var(--text-xs);
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.pe-filterchip:hover {
+  border-color: var(--border);
+  color: var(--text-1);
 }
 
 .pe-filterchip--on {
-  background: #ff6e40;
-  border-color: #ff6e40;
+  background: var(--primary);
+  border-color: var(--primary);
   color: #ffffff;
   font-weight: 600;
 }

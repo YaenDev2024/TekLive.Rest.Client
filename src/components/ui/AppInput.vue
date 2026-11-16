@@ -82,8 +82,9 @@ const describedBy = computed(() => (props.error != null ? errorId : undefined))
 
 .app-input__label {
   display: block;
-  font-size: 0.9rem;
-  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-2);
   margin-bottom: 6px;
 }
 
@@ -95,16 +96,27 @@ const describedBy = computed(() => (props.error != null ? errorId : undefined))
   background: var(--input-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+
+.app-input__control:hover {
+  border-color: var(--border-strong);
 }
 
 .app-input__control:focus-within {
   border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
 .app-input--error .app-input__control {
   border-color: var(--error);
-  border-width: 2px;
+}
+
+.app-input--error .app-input__control:focus-within {
+  box-shadow: 0 0 0 3px var(--error-soft);
 }
 
 .app-input__control input {
@@ -112,10 +124,11 @@ const describedBy = computed(() => (props.error != null ? errorId : undefined))
   min-width: 0;
   border: 0;
   background: transparent;
-  padding: 13px 0;
-  color: var(--text);
+  padding: 11px 0;
+  color: var(--text-1);
   font-family: var(--font);
-  font-size: 1rem;
+  font-size: 16px; /* 16px evita auto-zoom en iOS */
+  letter-spacing: -0.01em;
 }
 
 .app-input__control input:focus {
@@ -123,7 +136,7 @@ const describedBy = computed(() => (props.error != null ? errorId : undefined))
 }
 
 .app-input__control input::placeholder {
-  color: var(--text-faint);
+  color: var(--text-3);
 }
 
 /* Edge/Chromium inyecta su propio botón "revelar contraseña" (::ms-reveal)
@@ -136,14 +149,14 @@ const describedBy = computed(() => (props.error != null ? errorId : undefined))
 }
 
 .app-input__control input:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
 }
 
 .app-input__prefix,
 .app-input__suffix {
   display: inline-flex;
   align-items: center;
-  color: var(--text-muted);
+  color: var(--text-3);
 }
 
 /* El botón del suffix llega por SLOT (scope del padre): sin :deep() el CSS
@@ -159,13 +172,15 @@ const describedBy = computed(() => (props.error != null ? errorId : undefined))
   border: 0;
   border-radius: 8px;
   padding: 0;
-  color: var(--text-muted);
+  color: var(--text-3);
   cursor: pointer;
-  transition: color 0.15s ease, background-color 0.15s ease;
+  transition:
+    color var(--dur) var(--ease),
+    background-color var(--dur) var(--ease);
 }
 
 .app-input__suffix :deep(button:hover) {
-  color: var(--text);
+  color: var(--text-1);
   background: rgba(255, 255, 255, 0.06);
 }
 
@@ -179,14 +194,14 @@ const describedBy = computed(() => (props.error != null ? errorId : undefined))
 }
 
 .app-input__helper {
-  margin: 5px 0 0;
-  font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.7);
+  margin: 6px 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-3);
 }
 
 .app-input__error {
-  margin: 5px 0 0;
-  font-size: 0.8rem;
+  margin: 6px 0 0;
+  font-size: var(--text-xs);
   color: var(--error);
 }
 </style>

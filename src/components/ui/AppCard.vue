@@ -27,9 +27,10 @@ withDefaults(defineProps<Props>(), {
 <style scoped>
 .app-card {
   position: relative;
-  background: var(--bg-surface);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 

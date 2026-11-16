@@ -64,6 +64,12 @@ export interface CatalogConditionalRule {
 export interface CatalogTemplate {
   id: number
   name: string
+  /**
+   * Descripción del producto. El backend YA la envía (RestCatalogTemplate.Description
+   * en BusinessSuite.Shared); esta declaración solo alinea el tipo del cliente con
+   * el contrato real. Es lectura: no se escribe ni se modifica nada.
+   */
+  description?: string | null
   basePrice: number
   categoryId: number
   hasImage: boolean

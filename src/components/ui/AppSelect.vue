@@ -145,8 +145,7 @@ onBeforeUnmount(close)
   width: 100%;
 }
 
-/* Trigger: mismo look que .mc-input/.ecf__input (44px, fill negro .3,
-   borde, radius, texto 15px blanco). */
+/* Trigger: campo premium 44px, superficie elevada, borde discreto. */
 .aps {
   display: flex;
   align-items: center;
@@ -155,15 +154,32 @@ onBeforeUnmount(close)
   width: 100%;
   height: 44px;
   padding: 0 12px;
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--input-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  color: var(--text);
+  color: var(--text-1);
   font-family: var(--font);
   font-size: 15px;
   text-align: left;
   cursor: pointer;
   touch-action: manipulation;
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+
+.aps:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.aps:focus-visible {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.aps[aria-expanded='true'] {
+  border-color: var(--primary);
 }
 
 .aps:disabled {
@@ -179,24 +195,23 @@ onBeforeUnmount(close)
 }
 
 .aps__label--empty {
-  color: var(--text-faint);
+  color: var(--text-3);
 }
 
 .aps__caret {
   flex: none;
-  color: var(--text-faint);
-  transition: transform 0.15s ease;
+  color: var(--text-3);
+  transition: transform var(--dur) var(--ease);
 }
 
 .aps__caret--open {
   transform: rotate(180deg);
 }
 
-/* Menú: dropdownColor grey[850] (#303030), borde, radius 12, sombra —
-   réplica visual del dropdown del tema Flutter. Anclado al wrapper. */
+/* Menú: superficie elevada, borde discreto, sombra natural. */
 .aps-menu {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + 6px);
   left: 0;
   right: 0;
   z-index: 60;
@@ -205,16 +220,16 @@ onBeforeUnmount(close)
   max-height: 240px;
   overflow-y: auto;
   padding: 6px;
-  background: #303030;
+  background: var(--elevated);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.55);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
   -webkit-overflow-scrolling: touch;
 }
 
 .aps-menu--up {
   top: auto;
-  bottom: calc(100% + 4px);
+  bottom: calc(100% + 6px);
 }
 
 .aps-menu__item {
@@ -225,24 +240,33 @@ onBeforeUnmount(close)
   min-height: 44px;
   padding: 0 12px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--text);
+  color: var(--text-1);
   font-family: var(--font);
   font-size: 15px;
   text-align: left;
   cursor: pointer;
   touch-action: manipulation;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.aps-menu__item:hover {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .aps-menu__item:active {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.09);
 }
 
 .aps-menu__item--selected {
-  background: rgba(255, 87, 34, 0.22); /* deepOrange .22 */
-  color: #fff;
+  background: var(--primary-soft);
+  color: var(--text-1);
   font-weight: 600;
+}
+
+.aps-menu__item--selected:hover {
+  background: color-mix(in srgb, var(--primary) 20%, transparent);
 }
 
 .aps-menu__label {
@@ -254,6 +278,6 @@ onBeforeUnmount(close)
 
 .aps-menu__check {
   flex: none;
-  color: var(--accent, #ff5722);
+  color: var(--primary);
 }
 </style>

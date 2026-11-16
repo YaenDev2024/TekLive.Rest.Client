@@ -480,15 +480,20 @@ function scopeBadge(category: RestAdminCategory): string {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px;
+  padding: 18px 24px 10px;
   background: var(--bg);
+
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
 }
 
 .cat-appbar-title {
   margin: 0;
   flex: 1;
-  font-size: 22px;
-  font-weight: 400;
+  font-size: var(--text-h1);
+  font-weight: 600;
+  letter-spacing: -0.02em;
   color: var(--text);
 }
 
@@ -516,7 +521,7 @@ function scopeBadge(category: RestAdminCategory): string {
 }
 
 .cat-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--border-soft);
 }
 
 /* ===== Cuerpo centrado (máx ~800px como ManageCatalogView) ===== */
@@ -565,8 +570,8 @@ function scopeBadge(category: RestAdminCategory): string {
   width: 100%;
   height: 44px;
   padding: 0 12px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--border);
+  background: var(--elevated);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius);
   color: var(--text);
   font-family: var(--font);
@@ -577,6 +582,7 @@ function scopeBadge(category: RestAdminCategory): string {
 
 .cat-input:focus {
   border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(255, 100, 45, 0.16);
 }
 
 /* ===== Botones (ElevatedButton theme: deepOrange radius 12 bold) ===== */
@@ -588,10 +594,11 @@ function scopeBadge(category: RestAdminCategory): string {
   padding: 12px 24px;
   border-radius: var(--radius);
   font-family: var(--font);
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
+  min-height: 44px;
 }
 
 /* ElevatedButton L155-161: padding vertical 16, fontSize 18 */
@@ -698,9 +705,9 @@ function scopeBadge(category: RestAdminCategory): string {
   align-items: center;
   gap: 12px;
   padding: 12px 8px 12px 16px;
-  background: var(--bg-surface);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  background: var(--card);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-soft);
 }
 
 /* CircleAvatar (Icons.edit azul / delete rojo en el original: aquí avatar
@@ -712,9 +719,10 @@ function scopeBadge(category: RestAdminCategory): string {
   width: 44px;
   height: 44px;
   flex: none;
-  border-radius: 999px;
-  background: rgba(255, 87, 34, 0.22); /* deepOrange alpha (categoría) */
-  color: var(--primary);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-soft); /* deepOrange alpha (categoría) */
+  color: var(--text-2);
 }
 
 .cat-item-info {
@@ -773,7 +781,7 @@ function scopeBadge(category: RestAdminCategory): string {
 }
 
 .cat-item-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--border-soft);
 }
 
 .cat-item-btn--delete {

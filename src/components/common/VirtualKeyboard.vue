@@ -195,7 +195,7 @@ function close(): void {
   padding: 6px 12px;
   margin: 0 -12px 8px;
   background: #303030; /* grey[850] */
-  border-bottom: 1px solid #424242; /* grey[800] */
+  border-bottom: 1px solid var(--bg-surface-2); /* grey[800] */
   border-radius: 14px 14px 0 0;
 }
 
@@ -221,7 +221,7 @@ function close(): void {
   border: none;
   border-radius: 20px;
   background: transparent;
-  color: #bdbdbd; /* grey[400] */
+  color: var(--text-2); /* grey[400] */
   cursor: pointer;
 }
 
@@ -272,7 +272,7 @@ function close(): void {
   height: 45px;
   border: 1px solid #616161; /* grey[700] */
   border-radius: 8px;
-  background: #424242; /* grey[800] */
+  background: var(--bg-surface-2); /* grey[800] */
   color: #ffffff;
   font-size: 17px;
   font-weight: 500;
@@ -293,23 +293,23 @@ function close(): void {
 
 .vk__key--bs {
   background: #616161; /* backspace grey[700] (L525) */
-  border-color: #757575;
+  border-color: var(--text-3);
 }
 
 .vk__key--bs:hover {
-  background: #757575;
+  background: var(--text-3);
 }
 
 /* Especiales (réplica _buildSpecialKey L389-435): grey[700] base;
    activas deepOrangeAccent con borde deepOrange[300]. */
 .vk__key--special {
   background: #616161; /* grey[700] */
-  border-color: #757575;
+  border-color: var(--text-3);
   font-size: 15px;
 }
 
 .vk__key--special:hover {
-  background: #757575;
+  background: var(--text-3);
 }
 
 .vk__key--active {

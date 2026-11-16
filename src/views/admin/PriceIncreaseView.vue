@@ -316,7 +316,6 @@ const hasConfigs = computed(() => store.configs.length > 0)
 
           <section class="pi-form-card" data-testid="pi-form">
             <div class="pi-field">
-              <span class="pi-label">Alcance</span>
               <ScopeSelector v-model="scope" />
             </div>
 
@@ -405,15 +404,20 @@ const hasConfigs = computed(() => store.configs.length > 0)
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px;
+  padding: 18px 24px 10px;
   background: var(--bg);
+
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
 }
 
 .pi-appbar-title {
   margin: 0;
   flex: 1;
-  font-size: 22px;
-  font-weight: 400;
+  font-size: var(--text-h1);
+  font-weight: 600;
+  letter-spacing: -0.02em;
   color: var(--text);
 }
 
@@ -441,7 +445,7 @@ const hasConfigs = computed(() => store.configs.length > 0)
 }
 
 .pi-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--border-soft);
 }
 
 /* ===== Cuerpo centrado (máx ~800px) ===== */
@@ -457,13 +461,14 @@ const hasConfigs = computed(() => store.configs.length > 0)
 /* ===== NOTA informativa del brief (discreta, azul info alpha) ===== */
 .pi-note {
   margin: 12px 16px 0;
-  padding: 8px 12px;
+  padding: 10px 13px;
   border-radius: var(--radius);
-  background: rgba(33, 150, 243, 0.1);
-  border: 1px solid rgba(33, 150, 243, 0.35);
-  color: var(--info);
-  font-size: 12px;
-  line-height: 1.4;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-left: 3px solid var(--info);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  line-height: 1.5;
 }
 
 /* ===== Lista: ListView padding 16 ===== */
@@ -510,10 +515,12 @@ const hasConfigs = computed(() => store.configs.length > 0)
 
 /* Section title (L176-179 / L241-247): 20 bold */
 .pi-section-title {
-  margin: 0 0 4px;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text);
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
 
 .pi-section-title--form {
@@ -523,8 +530,9 @@ const hasConfigs = computed(() => store.configs.length > 0)
 /* Hint gris 13px (L184-188 / L249-252) */
 .pi-section-hint {
   margin: 0 0 16px;
-  font-size: 13px;
-  color: var(--text-faint);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-3);
   white-space: pre-line;
 }
 
@@ -534,10 +542,11 @@ const hasConfigs = computed(() => store.configs.length > 0)
   align-items: center;
   gap: 12px;
   padding: 20px;
-  background: var(--bg-surface);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  color: var(--text-muted);
+  background: var(--card);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-soft);
+  color: var(--text-3);
+  font-size: var(--text-sm);
 }
 
 /* ===== Card de config (ListTile L207-235) ===== */
@@ -554,10 +563,20 @@ const hasConfigs = computed(() => store.configs.length > 0)
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 8px 12px 16px;
-  background: var(--bg-surface);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  padding: 12px 10px 12px 16px;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  transition:
+    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+
+@media (hover: hover) {
+  .pi-card:hover {
+    border-color: var(--border);
+    background: var(--surface-hover);
+  }
 }
 
 /* CircleAvatar deepOrange .15 (L210-216) */
@@ -568,9 +587,10 @@ const hasConfigs = computed(() => store.configs.length > 0)
   width: 44px;
   height: 44px;
   flex: none;
-  border-radius: 999px;
-  background: rgba(255, 87, 34, 0.15);
-  color: var(--primary);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-soft);
+  color: var(--text-2);
 }
 
 .pi-item-info {
@@ -631,7 +651,7 @@ const hasConfigs = computed(() => store.configs.length > 0)
 }
 
 .pi-item-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--border-soft);
 }
 
 .pi-item-btn--delete {
@@ -641,9 +661,9 @@ const hasConfigs = computed(() => store.configs.length > 0)
 /* ===== Form card (Card + Padding 20, L254-347) ===== */
 .pi-form-card {
   padding: 20px;
-  background: var(--bg-surface);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  background: var(--card);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-soft);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -656,9 +676,11 @@ const hasConfigs = computed(() => store.configs.length > 0)
 }
 
 .pi-label {
-  font-size: 14px;
+  font-size: var(--text-xs);
   font-weight: 600;
-  color: var(--text); /* 'Alcance' w600 L261 */
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
 
 /* InputDecorationTheme réplica: fill black alpha .3, outline grey[700],
@@ -667,18 +689,21 @@ const hasConfigs = computed(() => store.configs.length > 0)
   width: 100%;
   height: 44px;
   padding: 0 12px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--border);
+  background: var(--elevated);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius);
-  color: var(--text);
+  color: var(--text-1);
   font-family: var(--font);
-  font-size: 15px;
+  font-size: var(--text-body);
   outline: none;
-  transition: border-color 0.15s ease;
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 
 .pi-input:focus {
   border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(255, 100, 45, 0.16);
 }
 
 /* Input con suffix '%' (L322-323) */
@@ -694,17 +719,18 @@ const hasConfigs = computed(() => store.configs.length > 0)
 
 .pi-suffix {
   position: absolute;
-  right: 12px;
-  color: var(--text-faint);
-  font-size: 15px;
+  right: 13px;
+  color: var(--text-3);
+  font-size: var(--text-sm);
   pointer-events: none;
 }
 
 /* helperText (L326-327): 'Ejemplo: 10 → ...' */
 .pi-helper {
   margin: 0;
-  font-size: 12px;
-  color: var(--text-faint);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--text-3);
 }
 
 /* ===== Botones (ElevatedButton theme: deepOrange radius 12 bold) ===== */
@@ -716,10 +742,11 @@ const hasConfigs = computed(() => store.configs.length > 0)
   padding: 12px 24px;
   border-radius: var(--radius);
   font-family: var(--font);
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
+  min-height: 44px;
 }
 
 /* ElevatedButton 'Aplicar aumento' L334-343: align right, padding 28/16 */
