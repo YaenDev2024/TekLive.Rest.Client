@@ -51,24 +51,31 @@ import {
 } from 'lucide-vue-next'
 import { ApiError } from '../../api/client'
 import type {
+  CatalogTemplate,
   OrderDetail,
   OrderDetailItem,
+  OrderItemPayload,
   OrderStatus,
   PaymentMethod,
   PendingOrderListItem,
 } from '../../api/pos-types'
-import { POS_PLANT_ID } from '../../stores/catalog'
+import { POS_PLANT_ID, useCatalogStore } from '../../stores/catalog'
+import { useCartStore } from '../../stores/cart'
 import { useCashStore } from '../../stores/cash'
 import { useOrdersStore } from '../../stores/orders'
 import { useToastStore } from '../../stores/toast'
 import { AppBanner, AppSelect, AppSpinner } from '../../components/ui'
+import AppModal from '../../components/pos/AppModal.vue'
 import CancelOrderModal from '../../components/pos/CancelOrderModal.vue'
+import DynamicOptionsModal from '../../components/pos/DynamicOptionsModal.vue'
 import OrderProductPicker from '../../components/pos/OrderProductPicker.vue'
 import { printPendingKitchenTicket, printSaleTickets } from '../../services/ticket'
 
 const ordersStore = useOrdersStore()
 const cashStore = useCashStore()
 const toast = useToastStore()
+const catalogStore = useCatalogStore()
+const cartStore = useCartStore()
 
 // --- Filtros (réplica _filterStatus / _selectedDate / _searchController) ------
 
@@ -122,6 +129,31 @@ function onDateChange(event: Event): void {
   }
 }
 
+/**
+ * Abre el calendario nativo. El input[type=date] vive oculto (opacity 0) para
+ * conservar el label dd/MM/yyyy del diseño, y Chrome NO abre el picker con un
+ * click normal sobre un input invisible: solo responde a su indicador interno
+ * o a showPicker(). Sin este método el filtro de fecha era inutilizable.
+ */
+const dateInputRef = ref<HTMLInputElement | null>(null)
+
+function openDatePicker(): void {
+  const input = dateInputRef.value
+  if (input == null) return
+  // showPicker requiere gesto de usuario: aquí venimos del @click del botón.
+  if (typeof input.showPicker === 'function') {
+    try {
+      input.showPicker()
+      return
+    } catch {
+      // Algunos WebViews (Tauri/Android) lo exponen y lo rechazan: fallback.
+    }
+  }
+  input.focus()
+  input.click()
+}
+
+
 function onTodayClick(): void {
   selectedDate.value = todayIso()
   void refresh()
@@ -154,15 +186,31 @@ onMounted(() => {
   void refresh()
   // Gate de caja (ronda cash): asegura current para el cobro de pendientes.
   if (cashStore.current == null) void cashStore.fetchCurrent()
+  // El lápiz de "Editar opciones" resuelve el template del item contra el
+  // catálogo (mismo criterio que OrderProductPicker). Si el usuario entró
+  // directo a Órdenes sin montar el POS, el catálogo está vacío y el botón no
+  // aparecería: se carga aquí una sola vez (fetch-once por planta).
+  if (!catalogStore.hasCacheForPlant(POS_PLANT_ID)) {
+    void catalogStore.fetchCatalog(POS_PLANT_ID)
+  }
   pollTimer = setInterval(() => {
     void refresh()
   }, POLL_MS)
+  // Reloj del timer (1 s): mantiene avanzando el MM:SS de las externas sin
+  // depender del polling de datos.
+  clockTimer = setInterval(() => {
+    nowTick.value = Date.now()
+  }, 1000)
 })
 
 onBeforeUnmount(() => {
   if (pollTimer != null) {
     clearInterval(pollTimer)
     pollTimer = null
+  }
+  if (clockTimer != null) {
+    clearInterval(clockTimer)
+    clockTimer = null
   }
 })
 
@@ -191,6 +239,18 @@ const EXTERNAL_TYPES = ['EXTERNO', 'DIDI', 'UBER']
 void EXTERNAL_TYPES // documental: tipos con timer cuando exista tipoDeOrden en Rest
 const TIMER_GREEN_MINUTES = 20
 
+/**
+ * Reloj reactivo: `Date.now()` NO es reactivo, así que si el template lo llama
+ * directamente el timer solo se repinta cuando el polling (15 s) trae datos
+ * nuevos — y podía quedarse congelado varios segundos o en 00:00.
+ *
+ * Este ref avanza cada segundo y es la ÚNICA fuente de "ahora" del cálculo.
+ * Se detiene en onBeforeUnmount (junto al polling) para no dejar intervalos
+ * vivos al salir de la vista.
+ */
+const nowTick = ref(Date.now())
+let clockTimer: ReturnType<typeof setInterval> | null = null
+
 function orderTypeOf(order: PendingOrderListItem): string {
   return (order as unknown as { orderType?: string | null }).orderType ?? 'LOCAL'
 }
@@ -206,16 +266,20 @@ function needsTimer(order: PendingOrderListItem): boolean {
   return isExternal(order) && order.orderStatus === 'pendiente'
 }
 
-/** Verde si <20 min, rojo si ≥20 (L366-379); gris si no es externa (L367-369). */
+/** Verde si &lt;20 min, rojo si ≥20 (L366-379); gris si no es externa (L367-369). */
 function borderColorOf(order: PendingOrderListItem): string {
   if (!needsTimer(order)) return '#616161' // Colors.grey[700]
-  const elapsed = Date.now() - new Date(order.createdAt).getTime()
+  const elapsed = nowTick.value - new Date(order.createdAt).getTime()
   return elapsed < TIMER_GREEN_MINUTES * 60_000 ? '#4caf50' : '#f44336'
 }
 
 /** MM:SS transcurrido (L382-387). */
 function formatElapsedTime(order: PendingOrderListItem): string {
-  const elapsed = Math.max(0, Date.now() - new Date(order.createdAt).getTime())
+  const created = new Date(order.createdAt).getTime()
+  if (Number.isNaN(created)) return '--:--'
+  // max(0) protege contra createdAt futuro (desfase de reloj servidor/cliente):
+  // sin esto un salto negativo se ve igual que una orden recién creada.
+  const elapsed = Math.max(0, nowTick.value - created)
   const totalSeconds = Math.floor(elapsed / 1000)
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
@@ -471,14 +535,169 @@ function itemExtraLines(item: OrderDetailItem): Array<{ extraId: number; name: s
   return item.extras ?? []
 }
 
-// --- Deuda backend: edición de opciones por item (pencil) — toast informativo
+// --- Editar opciones de un item (lápiz) ---------------------------------------
+//
+// El detalle NO devuelve `selectedOptions` estructurales: las opciones viajan
+// como resumen legacy en `notes` (`OPT::Grupo:Valor | ...`). Por eso la edición
+// reutiliza el wizard del POS en modo edición: `initialSummary` restaura las
+// selecciones desde ese mismo resumen (DynamicOptionsModal.restoreSelections
+// FromSummary), y al confirmar el wizard escribe en el CARRITO local. Este
+// contenedor intercepta esa línea (baseline de keys), la saca del carrito y la
+// aplica a la orden remota: DELETE del item viejo + POST del nuevo con
+// selectedOptions. Nunca se inventan opciones: si el template no tiene grupos
+// el lápiz no se muestra (ver template del item en el template de la tabla).
 
-/** El pencil del .dart reabre el wizard en modo edición (sincroniza precio/
- * opciones). Ronda 1: los items se ajustan por qty/eliminar/agregar; editar
- * opciones de un item existente queda como deuda (requiere backend que
- * retorne selectedOptions estructurales en el detalle — hoy solo notas). */
-function todoEditOrder(): void {
-  toast.info('Edición de opciones por item disponible próximamente')
+/** Item en edición (template resuelto + valores iniciales). */
+const editingItem = ref<{
+  order: PendingOrderListItem
+  item: OrderDetailItem
+  template: CatalogTemplate
+} | null>(null)
+
+/** Keys del carrito al abrir el wizard (detección del insert al confirmar). */
+const editBaselineKeys = ref<Set<string>>(new Set())
+
+/** Template del catálogo para un item (por productId). */
+function templateForItem(item: OrderDetailItem): CatalogTemplate | null {
+  if (item.productId == null) return null
+  const templates = catalogStore.catalog?.templates ?? []
+  return templates.find((t) => t.id === item.productId) ?? null
+}
+
+/**
+ * Resumen de OPCIONES de un renglón (contenido del bloque `OPT::`), que es lo
+ * único que entiende el wizard como `initialSummary`. Mezclar la nota libre
+ * (NOTE::) rompe el parser por grupos y el wizard arranca sin selección.
+ */
+function optionsSummaryOf(notes: string | null | undefined): string {
+  if (notes == null || notes === '') return ''
+  const blocks = notes
+    .split('||')
+    .map((part) => part.trim())
+    .filter((part) => part.startsWith('OPT::'))
+  if (blocks.length === 0) return ''
+  return blocks
+    .map((block) => block.slice('OPT::'.length).trim())
+    .filter((block) => block !== '')
+    .join(' | ')
+}
+
+/** true si el item se puede editar con el wizard (template con grupos). */
+function canEditOptions(item: OrderDetailItem): boolean {
+  const template = templateForItem(item)
+  return template != null && template.optionGroups.length > 0
+}
+
+/**
+ * Nota LIBRE del usuario de un renglón, sin el bloque de opciones.
+ *
+ * El POS compone las notas como `OPT::resumen || NOTE::nota` (cart.buildItemNotes)
+ * y las versiones viejas podían traer el texto suelto. Al editar opciones las
+ * opciones se regeneran completas, así que aquí solo se rescata la nota libre:
+ * se descarta el bloque `OPT::` y se limpia el prefijo `NOTE::`.
+ */
+function userNoteOf(notes: string | null | undefined): string {
+  if (notes == null || notes.trim() === '') return ''
+  return notes
+    .split('||')
+    .map((part) => {
+      // Un bloque puede arrastrar opciones pegadas ('NOTE::texto | OPT::...'):
+      // las opciones se regeneran, así que se corta antes del primer OPT::.
+      const optAt = part.indexOf('OPT::')
+      const head = optAt >= 0 ? part.slice(0, optAt) : part
+      return head
+        .replace(/^NOTE::/, '')
+        .replace(/^NOTA::/, '')
+        .replace(/\|+\s*$/, '') // separadores residuales al cortar
+        .trim()
+    })
+    .filter((part) => part !== '')
+    .join(' | ')
+}
+
+async function openEditOptions(order: PendingOrderListItem, item: OrderDetailItem): Promise<void> {
+  if (!isEditable(order) || editingOrderId.value != null) return
+  if (!catalogStore.hasCacheForPlant(POS_PLANT_ID)) {
+    await catalogStore.fetchCatalog(POS_PLANT_ID)
+  }
+  const template = templateForItem(item)
+  if (template == null) {
+    toast.error('No se encontró el producto en el catálogo.')
+    return
+  }
+  if (template.optionGroups.length === 0) {
+    toast.info('Este producto no tiene opciones que editar.')
+    return
+  }
+  editBaselineKeys.value = new Set(cartStore.items.map((it) => it.key))
+  editingItem.value = { order, item, template }
+}
+
+/**
+ * Cierre del wizard de edición: el wizard SIEMPRE escribe en el carrito local
+ * (cart.addDynamicItem). Si apareció una línea nueva del template → fue
+ * Confirmar: se extrae, se quita del carrito y se aplica a la orden remota.
+ * Si no apareció → el usuario canceló y no se toca nada.
+ */
+async function onEditOptionsClose(): Promise<void> {
+  const ctx = editingItem.value
+  editingItem.value = null
+  if (ctx == null) return
+
+  const inserted = cartStore.items.find(
+    (it) =>
+      !editBaselineKeys.value.has(it.key) &&
+      it.productId === ctx.template.id &&
+      it.selectedOptions != null,
+  )
+  if (inserted == null) return // canceló
+
+  // La línea es de la orden remota, no de la venta en curso.
+  cartStore.removeItem(inserted.key)
+
+  const selectedOptions = inserted.selectedOptions ?? []
+  const summary = (inserted.dynamicOptionsSummary ?? '').trim()
+
+  // Formato de notas del POS (cart.buildItemNotes): bloques `OPT::` y `NOTE::`
+  // unidos por ' || '. Las opciones se REGENERAN desde el wizard (el bloque
+  // OPT:: viejo se descarta) y solo se conserva la nota libre del usuario; así
+  // no se duplican las opciones al reemplazar el renglón.
+  const userNote = userNoteOf(ctx.item.notes)
+  const noteParts: string[] = []
+  if (userNote !== '') noteParts.push(`NOTE::${userNote}`)
+  if (summary !== '') noteParts.push(`OPT::${summary}`)
+  const newNotes = noteParts.length > 0 ? noteParts.join(' || ') : undefined
+
+  const payload: OrderItemPayload = {
+    productId: ctx.template.id,
+    quantity: ctx.item.quantity,
+    extras: (ctx.item.extras ?? []).map((e) => ({ extraId: e.extraId })),
+    complements: [],
+    ...(newNotes != null ? { notes: newNotes } : {}),
+    ...(selectedOptions.length > 0 ? { selectedOptions } : {}),
+  }
+
+  editingOrderId.value = ctx.order.id
+  try {
+    // No hay PATCH de opciones: se reemplaza el renglón (DELETE + POST).
+    await ordersStore.removeOrderItem(ctx.order.id, ctx.item.id)
+    const detail = await ordersStore.addOrderItem(ctx.order.id, payload)
+    applyDetail(detail)
+    toast.success('Opciones actualizadas')
+    void refresh()
+  } catch (err) {
+    editErrorToast(err, 'actualizar las opciones')
+    // El DELETE pudo pasar y el POST fallar: el renglón viejo ya no existe.
+    // Se invalida el cache y se recarga del server para no mostrar un estado
+    // local ficticio (la expansión re-pide el detalle real).
+    ordersStore.invalidateDetailCache(ctx.order.id)
+    if (expandedId.value === ctx.order.id) {
+      expandedId.value = null
+      await toggleExpand(ctx.order.id)
+    }
+  } finally {
+    editingOrderId.value = null
+  }
 }
 
 /**
@@ -687,17 +906,32 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
       <!-- Fila: calendario + fecha + Hoy + dropdown estatus -->
       <div class="po-filter-row">
         <Calendar :size="18" class="po-calendar-icon" aria-hidden="true" />
-        <label class="po-date-btn">
+        <div class="po-date-btn">
+          <!-- Trigger real: el input[type=date] está oculto (opacity 0) para
+               conservar el label dd/MM/yyyy del diseño. Chrome solo abre el
+               calendario al pulsar su indicador interno, invisible en este
+               caso, así que el picker se abre por showPicker() desde el click
+               del botón (gesto de usuario válido). -->
+          <button
+            type="button"
+            class="po-date-trigger"
+            data-testid="orders-date-open"
+            aria-label="Seleccionar fecha"
+            @click="openDatePicker"
+          >
+            <span class="po-date-label">{{ formatDateLabel(selectedDate) }}</span>
+          </button>
           <input
+            ref="dateInputRef"
             type="date"
             class="po-date-input"
             :value="selectedDate"
-            aria-label="Seleccionar fecha"
+            tabindex="-1"
+            aria-hidden="true"
             data-testid="orders-date"
             @change="onDateChange"
           />
-          <span class="po-date-label">{{ formatDateLabel(selectedDate) }}</span>
-        </label>
+        </div>
         <button
           type="button"
           class="po-today-btn"
@@ -870,10 +1104,13 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 
                 <span v-if="isEditable(order)" class="po-item-actions">
                   <button
+                    v-if="canEditOptions(item)"
                     type="button"
                     class="po-item-edit"
-                    :aria-label="`Editar ${item.productName}`"
-                    @click="todoEditOrder"
+                    :aria-label="`Editar opciones de ${item.productName}`"
+                    :data-testid="`item-edit-${item.id}`"
+                    :disabled="editingOrderId === order.id"
+                    @click="openEditOptions(order, item)"
                   >
                     <Pencil :size="20" aria-hidden="true" />
                   </button>
@@ -1006,6 +1243,17 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
       @added="onPickerAdded"
     />
 
+    <!-- Wizard de opciones en modo EDICIÓN (lápiz del item): restaura las
+         opciones desde el resumen legacy `OPT::` de las notas y, al confirmar,
+         reemplaza el renglón de la orden (DELETE + POST con selectedOptions). -->
+    <DynamicOptionsModal
+      v-if="editingItem != null"
+      :template="editingItem.template"
+      :initial-summary="optionsSummaryOf(editingItem.item.notes)"
+      :initial-note="''"
+      @close="onEditOptionsClose"
+    />
+
     <!-- Modal de pago (réplica _showAmountReceivedDialog) -->
     <div
       v-if="modal.kind === 'pay'"
@@ -1106,10 +1354,10 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   flex-direction: column;
   height: 100%;
   min-height: 100vh;
-  background: var(--bg); /* grey[900] #212121 */
+  background: var(--bg); /* grey[900] var(--bg) */
 }
 
-/* AppBar (grey[850] #303030, title 20 bold, refresh a la derecha) */
+/* AppBar (grey[850] var(--bg-surface-2), title 20 bold, refresh a la derecha) */
 .po-appbar {
   display: flex;
   align-items: center;
@@ -1130,8 +1378,9 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  /* Objetivo táctil 44px (icono 20px dentro). */
+  width: 44px;
+  height: 44px;
   padding: 0;
   background: transparent;
   border: none;
@@ -1145,7 +1394,7 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   background: var(--card-overlay);
 }
 
-/* ============ BARRA FILTROS (container bg #303030, padding 12) ============ */
+/* ============ BARRA FILTROS (container bg var(--bg-surface-2), padding 12) ============ */
 .po-filters {
   display: flex;
   flex-direction: column;
@@ -1154,7 +1403,7 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   background: var(--bg-surface);
 }
 
-/* Buscador: fill #212121, radius 8, borde #616161, icono búsqueda 18 gris */
+/* Buscador: fill var(--bg), radius 8, borde #616161, icono búsqueda 18 gris */
 .po-search {
   position: relative;
 }
@@ -1170,23 +1419,32 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 
 .po-search-input {
   width: 100%;
-  padding: 8px 10px 8px 34px;
-  background: var(--bg); /* grey[900] */
-  border: 1px solid var(--border); /* #616161 */
-  border-radius: 8px;
-  color: var(--text);
+  height: 40px;
+  padding: 0 10px 0 34px;
+  background: var(--elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  color: var(--text-1);
   font-family: var(--font);
   font-size: 14px;
   outline: none;
-  transition: border-color 0.15s ease;
-}
-
-.po-search-input::placeholder {
-  color: #9e9e9e; /* grey[500] */
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 
 .po-search-input:focus {
   border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(255, 100, 45, 0.16);
+}
+
+.po-search-input::placeholder {
+  color: var(--text-3); /* grey[500] */
+}
+
+.po-search-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(255, 100, 45, 0.16);
 }
 
 .po-filter-row {
@@ -1201,14 +1459,14 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   flex: none;
 }
 
-/* Botón fecha (ElevatedButton.icon grey[800]) — label + input date invisible */
+/* Botón fecha (ElevatedButton.icon grey[800]) — trigger real + input date oculto */
 .po-date-btn {
   position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 10px;
-  background: #424242; /* grey[800] */
+  padding: 0;
+  background: var(--bg-surface-2); /* grey[800] */
   border-radius: 8px;
   color: var(--text);
   font-size: 12px;
@@ -1216,20 +1474,47 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   overflow: hidden;
 }
 
+/* Trigger clicable: el usuario toca la fecha, no un input invisible.
+   min-height 44 = objetivo táctil del POS (guía del rediseño). */
+.po-date-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 12px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.po-date-trigger:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+/* El input solo existe como ancla del picker nativo (showPicker). Mantiene el
+   data-testid del contrato y el evento @change; nunca recibe clics directos. */
 .po-date-input {
   position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
+  left: 0;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
   border: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .po-today-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   background: transparent;
   border: none;
@@ -1265,7 +1550,7 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 }
 
 .po-state-empty-icon {
-  color: #9e9e9e; /* grey[500] */
+  color: var(--text-3); /* grey[500] */
 }
 
 .po-state-text {
@@ -1275,7 +1560,7 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 
 .po-state-empty {
   margin: 0;
-  color: #bdbdbd; /* grey[400] */
+  color: var(--text-2); /* grey[400] */
   font-size: 16px;
 }
 
@@ -1302,26 +1587,37 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 
 /* ===== PendingOrderCard: bg grey[850], radius 12, elev 4, borde 2px ===== */
 .po-card {
-  background: var(--bg-surface);
-  border: 2px solid #616161;
-  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: border-color var(--dur) var(--ease);
 }
 
-/* Header (bg grey[800] #424242, borde inferior grey[700]) */
+.po-card--expanded {
+  border-color: var(--border);
+}
+
+/* Header (bg grey[800] var(--bg-surface-2), borde inferior grey[700]) */
 .po-card-header {
   display: flex;
   align-items: flex-start;
   gap: 12px;
   width: 100%;
   padding: 16px;
-  background: #424242;
+  background: transparent;
   border: none;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-soft);
   cursor: pointer;
   text-align: left;
   font-family: var(--font);
+  transition: background var(--dur) var(--ease);
+}
+
+@media (hover: hover) {
+  .po-card-header:hover {
+    background: rgba(255, 255, 255, 0.03);
+  }
 }
 
 .po-chevron {
@@ -1346,58 +1642,67 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 }
 
 .po-folio {
-  color: var(--text);
-  font-size: 18px;
-  font-weight: 700;
+  color: var(--text-1);
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Badge tipo (L2271-2326): local gris / externo azul / uber-didi naranja /
    transfer púrpura */
+/* Badge de tipo: neutro; el color solo aparece en el indicador puntual */
 .po-type-badge {
-  padding: 4px 12px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text);
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid var(--border-soft);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--text-2);
 }
 
 .po-type-badge--local {
-  background: #616161; /* grey[700] */
+  border-color: var(--border-soft);
 }
 
 .po-type-badge--externo {
-  background: #1976d2; /* blue[700] */
+  color: var(--info);
+  border-color: color-mix(in srgb, var(--info) 35%, transparent);
 }
 
 .po-type-badge--uber-didi {
-  background: #ef6c00; /* orange[700] */
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 35%, transparent);
 }
 
 .po-type-badge--transfer {
-  background: #7b1fa2; /* purple[700] */
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 35%, transparent);
 }
 
 .po-customer {
-  color: #dcdcdc; /* grey[300] */
-  font-size: 14px;
+  color: var(--text-2);
+  font-size: 13px;
 }
 
-/* Timer chip externo (L474-509): borde/bg color del borde, MM:SS bold */
+/* Timer chip externo: pill con el color del estado */
 .po-timer {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   align-self: flex-start;
-  padding: 4px 8px;
+  padding: 3px 8px;
   border: 1px solid currentColor;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.06);
-  font-size: 13px;
-  font-weight: 700;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 .po-created {
-  color: #9e9e9e; /* grey[500] */
+  color: var(--text-3); /* grey[500] */
   font-size: 12px;
 }
 
@@ -1407,20 +1712,21 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 12px;
-  border: 1px solid #757575; /* grey[600] */
-  border-radius: 999px;
-  background: rgba(117, 117, 117, 0.15);
-  color: #bdbdbd; /* grey[400] */
-  font-size: 20px;
-  font-weight: 700;
+  padding: 5px 11px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-1);
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 
 .po-total-badge--pending {
-  border-color: #388e3c; /* green[700] */
-  background: rgba(27, 94, 32, 0.15); /* green[900] alpha .15 */
-  color: #388e3c;
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  background: var(--primary-soft);
+  color: var(--primary);
 }
 
 /* ===== Contenido expandible (padding 16) ===== */
@@ -1431,9 +1737,11 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 
 .po-content-title {
   margin: 0 0 12px;
-  color: var(--text);
-  font-size: 16px;
-  font-weight: 700;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
 
 .po-expand-state {
@@ -1448,7 +1756,7 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 .po-no-items {
   margin: 0;
   text-align: center;
-  color: #9e9e9e;
+  color: var(--text-3);
 }
 
 .po-items {
@@ -1466,9 +1774,9 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   align-items: flex-start;
   gap: 12px;
   padding: 12px;
-  background: #424242;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  background: var(--elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
 }
 
 /* Acciones del item (pencil + trash): fila derecha */
@@ -1490,8 +1798,9 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  /* Objetivo táctil 44px: el icono se queda en 22px dentro del área. */
+  width: 44px;
+  height: 44px;
   padding: 0;
   background: transparent;
   border: none;
@@ -1501,7 +1810,7 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 }
 
 .po-item-qty-btn--remove {
-  color: #ef9a9a; /* red[400] aprox (Flutter red.shade400) */
+  color: var(--text-2);
 }
 
 .po-item-qty-btn--remove:hover {
@@ -1509,11 +1818,11 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 }
 
 .po-item-qty-btn--add {
-  color: #81c784; /* green[300] aprox (Flutter green.shade400) */
+  color: var(--text-2);
 }
 
 .po-item-qty-btn--add:hover {
-  color: var(--success);
+  color: var(--primary);
 }
 
 .po-item-qty {
@@ -1545,7 +1854,7 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 }
 
 .po-item-note {
-  color: #bdbdbd; /* grey[400] */
+  color: var(--text-2); /* grey[400] */
   font-size: 12px;
   font-style: italic;
 }
@@ -1554,14 +1863,23 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  /* Objetivo táctil 44px (el lápiz mide 20px dentro). */
+  width: 44px;
+  height: 44px;
   padding: 0;
   background: transparent;
   border: none;
-  border-radius: 999px;
-  color: #42a5f5; /* blue[600] aprox (Flutter blue.shade600) */
+  border-radius: var(--radius-sm);
+  /* text-2 (no text-3): el lápiz es una acción real y debe leerse como tal —
+     text-3 daba ~3.2:1 sobre la card (bajo WCAG AA). */
+  color: var(--text-2);
   cursor: pointer;
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+
+.po-item-edit:hover {
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .po-item-edit:hover {
@@ -1573,14 +1891,15 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin-left: 8px;
+  /* Objetivo táctil 44px (el icono mide 20px dentro). */
+  width: 44px;
+  height: 44px;
+  margin-left: 4px;
   padding: 0;
   background: transparent;
   border: none;
   border-radius: 999px;
-  color: #e53935; /* red.shade600 */
+  color: var(--error); /* red.shade600 */
   cursor: pointer;
 }
 
@@ -1606,12 +1925,12 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 }
 
 .pay-btn--danger:hover:not(:disabled) {
-  background: #e53935;
+  background: var(--error);
 }
 
 .pay-btn--danger:disabled {
   background: #616161;
-  color: #bdbdbd;
+  color: var(--text-2);
   cursor: not-allowed;
 }
 
@@ -1646,7 +1965,7 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 }
 
 .po-total {
-  color: #388e3c; /* green[700] */
+  color: var(--success); /* green[700] */
   font-size: 20px;
   font-weight: 700;
 }
@@ -1654,55 +1973,66 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 .po-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 9px 14px;
+  /* Objetivo táctil 44px (guía táctil del POS). */
+  min-height: 44px;
+  padding: 8px 13px;
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius);
   font-family: var(--font);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
 }
 
-/* Agregar: outlined teal (L676-684) */
+/* Agregar: acción secundaria neutra */
 .po-btn--add {
-  color: #26a69a; /* teal aprox */
-  border-color: #00897b; /* teal[700] */
+  color: var(--text-2);
+  border-color: var(--border-soft);
 }
 
 .po-btn--add:hover {
-  background: rgba(38, 166, 154, 0.15);
+  color: var(--text-1);
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.04);
 }
 
-/* Ticket Cliente: outlined blue (L685-693) */
+/* Ticket Cliente */
 .po-btn--ticket-client {
-  color: #42a5f5; /* blue */
-  border-color: #1976d2; /* blue[700] */
+  color: var(--info);
+  border-color: color-mix(in srgb, var(--info) 35%, transparent);
 }
 
 .po-btn--ticket-client:hover {
-  background: rgba(66, 165, 245, 0.15);
+  background: var(--info-soft);
+  border-color: var(--info);
 }
 
-/* Ticket Cocina: outlined orange (L694-702) */
+/* Ticket Cocina */
 .po-btn--ticket-kitchen {
-  color: #ffa726; /* orange */
-  border-color: #ef6c00; /* orange[700] */
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 35%, transparent);
 }
 
 .po-btn--ticket-kitchen:hover {
-  background: rgba(255, 167, 38, 0.15);
+  background: rgba(255, 186, 77, 0.12);
+  border-color: var(--warning);
 }
 
-/* Cancelar Orden: text button rojo (L720-727) */
+/* Cancelar Orden: acción destructiva */
 .po-btn--cancel {
   color: var(--error);
+  border-color: transparent;
 }
 
 .po-btn--cancel:hover {
-  background: rgba(255, 82, 82, 0.15);
+  background: var(--error-soft);
 }
 
 .po-cancel-icon {
@@ -1710,14 +2040,23 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 }
 
 /* Cobrar: ElevatedButton verde (L728-738) */
+/* Cobrar: CTA principal del POS (naranja, única acción sólida de la card) */
 .po-btn--pay {
-  background: var(--success);
-  color: #ffffff;
-  padding: 12px 24px;
+  background: var(--primary);
+  color: var(--on-primary);
+  min-height: 44px;
+  padding: 10px 22px;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.po-btn--pay:hover:not(:disabled) {
+  background: var(--primary-hover);
+  box-shadow: var(--shadow-accent);
 }
 
 .po-btn--pay:hover {
-  background: #43a047;
+  background: var(--success);
 }
 
 /* ============ MODAL DE PAGO (réplica _showAmountReceivedDialog) ============ */
@@ -1729,7 +2068,7 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--elevated);
 }
 
 .pay-card {
@@ -1737,18 +2076,19 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   flex-direction: column;
   width: 100%;
   max-width: 440px;
-  background: var(--bg-surface); /* grey[850] */
+  background: var(--card);
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
 }
 
 .pay-title {
   margin: 0;
   padding: 16px 20px;
-  color: var(--text);
-  font-size: 1.15rem;
-  font-weight: 700;
+  color: var(--text-1);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   border-bottom: 1px solid var(--border-soft);
 }
 
@@ -1761,13 +2101,14 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 
 .pay-total-line {
   margin: 0;
-  color: var(--text);
-  font-size: 18px;
-  font-weight: 700;
+  color: var(--text-1);
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .pay-total-line strong {
-  color: var(--text);
+  color: var(--text-1);
 }
 
 .pay__methods {
@@ -1777,32 +2118,43 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 }
 
 .pay__method {
+  min-height: 44px;
   padding: 10px;
-  background: var(--input-bg);
-  border: 1px solid var(--border);
+  background: var(--elevated);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius);
-  color: var(--text-muted);
+  color: var(--text-2);
   font-family: var(--font);
-  font-size: 0.9rem;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.pay__method:hover {
+  border-color: var(--border);
+  color: var(--text-1);
 }
 
 .pay__method--selected {
   border-color: var(--primary);
-  background: rgba(255, 87, 34, 0.12);
+  background: var(--primary-soft);
   color: var(--primary);
 }
 
 /* Monto recibido (TextField outline grey[600], prefix $, verde) */
 .pay-amount {
   padding: 12px 14px;
-  background: var(--input-bg);
-  border: 1px solid var(--border);
+  background: var(--elevated);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius);
-  color: var(--text);
-  font-size: 1.3rem;
-  font-weight: 700;
+  color: var(--text-1);
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   text-align: right;
   min-height: 24px;
 }
@@ -1814,19 +2166,30 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 }
 
 .pay-key {
+  min-height: 46px;
   padding: 12px 0;
-  background: var(--bg-surface-2);
+  background: var(--elevated);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius);
-  color: var(--text);
+  color: var(--text-1);
   font-family: var(--font);
-  font-size: 1rem;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
   cursor: pointer;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
 
 .pay-key:hover {
-  background: var(--border-soft);
+  background: var(--bg-surface-2);
+  border-color: var(--border);
+}
+
+.pay-key:active {
+  background: var(--primary-soft);
+  border-color: var(--primary);
 }
 
 .pay-key--clear {
@@ -1844,12 +2207,13 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   align-items: center;
   justify-content: space-between;
   padding: 12px;
-  background: rgba(76, 175, 80, 0.2); /* green alpha .2 */
-  border: 1px solid var(--success);
-  border-radius: 8px;
-  color: var(--text);
-  font-size: 16px;
-  font-weight: 700;
+  background: var(--success-soft);
+  border: 1px solid color-mix(in srgb, var(--success) 45%, transparent);
+  border-radius: var(--radius-sm);
+  color: var(--success);
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .pay-change span:last-child {
@@ -1859,8 +2223,9 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 }
 
 .pay-change--missing {
-  background: rgba(255, 82, 82, 0.2); /* red alpha .2 */
-  border-color: var(--error);
+  background: var(--error-soft);
+  border-color: color-mix(in srgb, var(--error) 45%, transparent);
+  color: var(--error);
 }
 
 .pay-change--missing span:last-child {
@@ -1876,19 +2241,29 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 
 .pay-btn {
   flex: 1;
+  min-height: 46px;
   padding: 12px 20px;
   border-radius: var(--radius);
   font-family: var(--font);
-  font-size: 0.95rem;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
 }
 
 .pay-btn--ghost {
   background: transparent;
   border-color: var(--border);
-  color: var(--text-muted);
+  color: var(--text-2);
+}
+
+.pay-btn--ghost:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-1);
 }
 
 .pay-btn--ghost:hover:not(:disabled) {
@@ -1903,12 +2278,12 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 }
 
 .pay-btn--confirm:hover:not(:disabled) {
-  background: #43a047;
+  background: var(--success);
 }
 
 .pay-btn--confirm:disabled {
   background: #616161;
-  color: #bdbdbd;
+  color: var(--text-2);
   cursor: not-allowed;
 }
 
