@@ -208,6 +208,7 @@ async function logout(): Promise<void> {
   display: flex;
   flex-direction: row;
   height: 100vh;
+  height: 100dvh;
   background: var(--bg);
   overflow: hidden;
 }
@@ -222,10 +223,12 @@ async function logout(): Promise<void> {
   overflow: hidden;
 }
 
-/* PHONE: deja espacio para el bottom nav fijo (SafeArea réplica) */
+/* PHONE: el bottom nav es fijo, así que la vista reserva su altura DENTRO del
+   viewport. Debe ser height:100% (no auto): con auto el hijo de altura fija
+   desbordaba y el nav tapaba el CTA del panel de orden. */
 @media (max-width: 699px) {
   .pos-shell-view {
-    height: auto;
+    height: 100%;
     padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
   }
 }

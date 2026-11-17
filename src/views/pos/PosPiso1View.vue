@@ -1051,11 +1051,15 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
    principal y a la selección.
    ========================================================================== */
 
-/* Layout raíz: menú flexible + panel de orden fijo */
+/* Layout raíz: menú flexible + panel de orden fijo.
+   Altura 100% (no 100vh): el shell ya define el alto del viewport y reserva el
+   espacio del bottom nav en móvil. Con 100vh la vista se salía 64px y el nav
+   tapaba el CTA del panel. */
 .pos {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
   background: var(--bg);
 }
 
