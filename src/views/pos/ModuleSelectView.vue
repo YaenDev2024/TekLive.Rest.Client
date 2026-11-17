@@ -5,17 +5,18 @@
  * LÓGICA: réplica fiel de lib/screens/module_selection_screen.dart
  * (CrazyWings) — permisos, gate de caja por piso y navegación intactos.
  *
- * PRESENTACIÓN: rediseño visual 2026-11-16 (rama ui-exp, experimento local) —
- * estética SaaS empresarial sobre la identidad dark + deepOrange:
- * - Topbar slim sticky (logo + usuario + ghost logout) con borde inferior
- *   sutil en vez de sombra pesada; safe-area respetada.
- * - Intro con título + subtítulo alineados al grid (jerarquía SaaS).
- * - Grid fluido auto-fill (desktop/tablet) que aprovecha el ancho sin
- *   huecos; móvil = filas horizontales full-width (look app nativa).
- * - Cards: icon-tile redondeado (accent al 12%), títulos left-aligned,
- *   hover con lift sutil + icon-tile que pasa a sólido, arrow chevron,
- *   focus-visible, :active presión, reduced-motion.
- * - Badge DIRECTO con punto indicador en la esquina superior derecha.
+ * PRESENTACIÓN: rediseño visual 2026-11-17 (mismo lenguaje premium del hub de
+ * Administración, prioridad móvil):
+ * - Topbar sticky con logo + botón de salida circular de 44px; safe-area.
+ * - Encabezado de identidad (avatar con iniciales + nombre + rol), igual que
+ *   AdminDashboardView: una sola lectura, sin duplicar el título de página.
+ * - Etiqueta de sección "Módulos" (uppercase, tracking amplio) como el hub.
+ * - Cards fila (icono + texto + chevron) en columnas de 900px centradas:
+ *   1 columna en móvil, 2 en tablet/desktop. Tile de icono CLARO en
+ *   Administración (la firma de la referencia) y tiles neutros en el resto.
+ * - Badge DIRECTO dentro de la fila del título (ya no flota sobre la esquina).
+ * - Naranja SOLO en el punto del badge, el foco de teclado y el CTA del empty
+ *   state: el acento no compite con la navegación.
  *
  * Estructura replicada del original (referencia Flutter):
  * - Permisos (L186-195) mapeados a los roles del JWT Rest:
@@ -60,6 +61,31 @@ const toast = useToastStore()
 const displayName = computed(() => session.displayName ?? '')
 const headerRoleLabel = computed(() => roleLabel(session.role))
 
+/** Iniciales del avatar (solo presentación, mismo criterio que el hub admin). */
+const initials = computed(() => {
+  const parts = (session.displayName ?? '').trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[1][0]).toUpperCase()
+})
+
+/** Saludo por hora local (presentación; no altera ningún flujo). */
+const greeting = computed(() => {
+  const h = new Date().getHours()
+  if (h < 12) return 'Buen día'
+  if (h < 19) return 'Buenas tardes'
+  return 'Buenas noches'
+})
+
+/** Total de módulos visibles para el usuario (mismo criterio que el v-if). */
+const moduleCount = computed(() => {
+  let n = 0
+  if (canAccessAdmin.value) n += 1
+  if (canAccessPOS.value) n += 1 + floors.value.length
+  else if (canAccessFloor.value) n += 1
+  return n
+})
+
 async function logout(): Promise<void> {
   floorsStore.reset()
   cashStore.reset()
@@ -83,7 +109,6 @@ const canAccessAdmin = computed(() =>
 // --- Carga inicial (réplica: FloorProvider.loadFloors al entrar) ----------------
 
 onMounted(() => {
-  syncLayoutFlags()
   void floorsStore.fetchFloors()
 })
 
@@ -91,19 +116,8 @@ const floors = computed(() => floorsStore.floors)
 const isLoadingFloors = computed(() => floorsStore.loading)
 
 // --- Layout responsivo -----------------------------------------------------------
-// Los breakpoints viven SOLO en CSS (@media): sin listener de resize (el
-// anterior tenía leak). Las clases isMobile/isTablet se escriben una vez al
-// montar como hooks semánticos (SSR-safe); el CSS es la fuente de verdad.
-
-const isMobile = ref(false)
-const isTablet = ref(false)
-
-function syncLayoutFlags(): void {
-  if (typeof window === 'undefined') return
-  isMobile.value = window.innerWidth < 600
-  isTablet.value = window.innerWidth >= 600 && window.innerWidth < 1200
-}
-syncLayoutFlags()
+// Los breakpoints viven SOLO en CSS (@media): no hay flags de ancho en JS ni
+// listener de resize (el anterior tenía leak). El CSS es la fuente de verdad.
 
 // --- Gate de caja por piso (réplica _openPosForFloor L44-79) --------------------
 
@@ -199,55 +213,70 @@ function floorSubtitle(floor: RestFloorResponse): string {
 
 <template>
   <div class="ms-page">
-    <!-- ===== Topbar slim: logo + usuario + logout ====================== -->
+    <!-- ===== Topbar: marca + salida ==================================== -->
     <header class="ms-topbar">
-      <div class="ms-brand">
-        <img class="ms-logo" src="/logo.png" alt="Crazy Wings" />
-        <div class="ms-user-meta">
-          <span class="ms-user-name">{{ displayName }}</span>
-          <span class="ms-user-role">{{ headerRoleLabel }}</span>
+      <div class="ms-topbar-inner">
+        <div class="ms-brand">
+          <img class="ms-logo" src="/logo.png" alt="Crazy Wings" />
+          <div class="ms-brand-text">
+            <span class="ms-brand-name">Crazy Wings</span>
+            <span class="ms-brand-sub">TekLive Rest</span>
+          </div>
         </div>
+        <button
+          type="button"
+          class="ms-logout"
+          aria-label="Cerrar Sesión"
+          title="Cerrar Sesión"
+          data-testid="ms-logout"
+          @click="logout"
+        >
+          <LogOut :size="18" aria-hidden="true" />
+          <span class="ms-logout-label">Salir</span>
+        </button>
       </div>
-      <button
-        type="button"
-        class="ms-logout"
-        aria-label="Cerrar Sesión"
-        title="Cerrar Sesión"
-        data-testid="ms-logout"
-        @click="logout"
-      >
-        <LogOut :size="isMobile ? 18 : 20" aria-hidden="true" />
-        <span class="ms-logout-label">Salir</span>
-      </button>
     </header>
 
-    <!-- ===== Intro + Grid de módulos ==================================== -->
+    <!-- ===== Identidad + módulos ======================================== -->
     <main class="ms-main">
       <div class="ms-container">
-        <header class="ms-intro">
-          <h1 class="ms-title">Selecciona un módulo</h1>
-          <p class="ms-subtitle">Elige el área de trabajo para continuar</p>
+        <header class="ms-id">
+          <span class="ms-avatar" aria-hidden="true">{{ initials }}</span>
+          <div class="ms-id-text">
+            <p class="ms-greeting">{{ greeting }}</p>
+            <h1 class="ms-title">{{ displayName }}</h1>
+            <p class="ms-role">{{ headerRoleLabel }}</p>
+          </div>
         </header>
 
+        <div class="ms-section-head">
+          <h2 class="ms-section-title">Módulos</h2>
+          <span v-if="moduleCount > 0" class="ms-section-count">{{ moduleCount }}</span>
+          <span class="ms-section-hint">Toca un módulo para entrar</span>
+        </div>
+
         <div class="ms-grid">
-          <!-- Administración: highlight + badge DIRECTO -->
+          <!-- Administración: tile claro (firma de la referencia) + badge DIRECTO -->
           <button
             v-if="canAccessAdmin"
             type="button"
-            class="ms-card ms-card--highlight"
-            :class="{ 'ms-card--mobile': isMobile, 'ms-card--tablet': isTablet }"
+            class="ms-card"
             data-testid="ms-card-admin"
             @click="openAdminModule"
           >
-            <span class="ms-badge"><span class="ms-badge-dot" aria-hidden="true"></span>DIRECTO</span>
-            <span class="ms-icon-tile ms-icon-tile--solid">
-              <ShieldCheck :size="26" />
+            <span class="ms-icon-tile ms-icon-tile--light">
+              <ShieldCheck :size="20" aria-hidden="true" />
             </span>
             <span class="ms-card-text">
-              <span class="ms-card-title">Administración</span>
-              <span class="ms-card-subtitle">Acceso independiente</span>
+              <span class="ms-card-head">
+                <span class="ms-card-title">Administración</span>
+                <span class="ms-badge">
+                  <span class="ms-badge-dot" aria-hidden="true"></span>DIRECTO
+                </span>
+              </span>
+              <span class="ms-card-subtitle">Catálogo, usuarios, caja y nómina</span>
             </span>
-            <ChevronRight class="ms-card-arrow" :size="18" aria-hidden="true" />
+            <ChevronRight class="ms-card-arrow" :size="17" aria-hidden="true" />
           </button>
 
           <!-- Cuentas por Cobrar: gate caja piso 2 → órdenes -->
@@ -255,18 +284,19 @@ function floorSubtitle(floor: RestFloorResponse): string {
             v-if="canAccessPOS"
             type="button"
             class="ms-card"
-            :class="{ 'ms-card--mobile': isMobile, 'ms-card--tablet': isTablet }"
             data-testid="ms-card-pagos"
             @click="openPaymentsModule"
           >
             <span class="ms-icon-tile">
-              <Banknote :size="26" />
+              <Banknote :size="20" aria-hidden="true" />
             </span>
             <span class="ms-card-text">
-              <span class="ms-card-title">Cuentas por Cobrar</span>
+              <span class="ms-card-head">
+                <span class="ms-card-title">Cuentas por Cobrar</span>
+              </span>
               <span class="ms-card-subtitle">Cobros pendientes de mesas</span>
             </span>
-            <ChevronRight class="ms-card-arrow" :size="18" aria-hidden="true" />
+            <ChevronRight class="ms-card-arrow" :size="17" aria-hidden="true" />
           </button>
 
           <!-- Un card por piso -->
@@ -276,18 +306,19 @@ function floorSubtitle(floor: RestFloorResponse): string {
               :key="floor.floorId"
               type="button"
               class="ms-card"
-              :class="{ 'ms-card--mobile': isMobile, 'ms-card--tablet': isTablet }"
               :data-testid="`ms-card-floor-${floor.floorId}`"
               @click="openModuleForFloor(floor)"
             >
               <span class="ms-icon-tile">
-                <Store :size="26" />
+                <Store :size="20" aria-hidden="true" />
               </span>
               <span class="ms-card-text">
-                <span class="ms-card-title">{{ floor.name }}</span>
+                <span class="ms-card-head">
+                  <span class="ms-card-title">{{ floor.name }}</span>
+                </span>
                 <span class="ms-card-subtitle">{{ floorSubtitle(floor) }}</span>
               </span>
-              <ChevronRight class="ms-card-arrow" :size="18" aria-hidden="true" />
+              <ChevronRight class="ms-card-arrow" :size="17" aria-hidden="true" />
             </button>
           </template>
 
@@ -296,18 +327,19 @@ function floorSubtitle(floor: RestFloorResponse): string {
             v-if="!canAccessPOS && canAccessFloor"
             type="button"
             class="ms-card"
-            :class="{ 'ms-card--mobile': isMobile, 'ms-card--tablet': isTablet }"
             data-testid="ms-card-piso2-mesero"
             @click="navigateToRestaurant"
           >
             <span class="ms-icon-tile">
-              <UtensilsCrossed :size="26" />
+              <UtensilsCrossed :size="20" aria-hidden="true" />
             </span>
             <span class="ms-card-text">
-              <span class="ms-card-title">Piso 2</span>
+              <span class="ms-card-head">
+                <span class="ms-card-title">Piso 2</span>
+              </span>
               <span class="ms-card-subtitle">Sistema de mesas</span>
             </span>
-            <ChevronRight class="ms-card-arrow" :size="18" aria-hidden="true" />
+            <ChevronRight class="ms-card-arrow" :size="17" aria-hidden="true" />
           </button>
 
           <!-- Empty state: sin pisos asignados -->
@@ -357,316 +389,401 @@ function floorSubtitle(floor: RestFloorResponse): string {
 
 <style scoped>
 /* ==========================================================================
-   Rediseño 2026-11-16 · SaaS dark + deepOrange (identidad CrazyWings)
-   Tokens locales de la vista (derivados del design system global):
+   Home de módulos · lenguaje premium del hub de Administración
+   --------------------------------------------------------------------------
+   Misma gramática visual que AdminDashboardView: contenedor de 900px,
+   encabezado con avatar + nombre + rol, etiqueta de sección en mayúsculas,
+   filas en tarjeta de 16px con tile de icono y chevron.
+
+   Naranja estratégico: SOLO el punto del badge DIRECTO, el foco de teclado y
+   el CTA del empty state. La navegación no compite con el acento.
    ========================================================================== */
 
 .ms-page {
-  --ms-tile-bg: var(--primary-soft);
-  --ms-card-hover-shadow: var(--shadow-md);
   min-height: 100vh;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--bg);
+  font-family: var(--font);
 }
 
-/* ===== Topbar slim sticky ================================================ */
+/* ===== Topbar: marca + salida ============================================ */
 .ms-topbar {
   position: sticky;
   top: 0;
   z-index: 10;
+  background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-soft);
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+.ms-topbar-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 12px;
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
   padding: 10px 24px;
-  padding-top: max(10px, env(safe-area-inset-top));
-  padding-left: max(24px, env(safe-area-inset-left));
-  padding-right: max(24px, env(safe-area-inset-right));
-  background: var(--bg-surface);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border-soft);
 }
 
 .ms-brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
 }
 
 .ms-logo {
-  height: 36px;
-  width: 36px;
+  width: 34px;
+  height: 34px;
   flex: none;
-  border-radius: 9px;
+  border-radius: 10px;
   object-fit: cover;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  background: var(--elevated);
 }
 
-.ms-user-meta {
+.ms-brand-text {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 0;
   min-width: 0;
 }
 
-.ms-user-name {
-  font-size: var(--text-body);
+.ms-brand-name {
+  font-size: 13.5px;
   font-weight: 600;
-  letter-spacing: -0.012em;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
   color: var(--text-1);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.ms-user-role {
-  font-size: var(--text-xs);
+.ms-brand-sub {
+  font-size: 11px;
+  line-height: 1.25;
   color: var(--text-3);
-  letter-spacing: 0.01em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* Logout ghost ultra-ligero: sin borde; fondo sutil solo al hover. */
+/* Salida: circular de 44px (objetivo táctil), etiqueta solo con espacio. */
 .ms-logout {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 7px;
-  height: 36px;
-  padding: 0 12px;
+  height: 44px;
+  min-width: 44px;
+  padding: 0;
   flex: none;
   background: transparent;
-  border: none;
-  border-radius: var(--radius);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
   color: var(--text-2);
   font-family: var(--font);
-  font-size: var(--text-sm);
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   transition:
     color var(--dur) var(--ease),
-    background var(--dur) var(--ease);
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
 
 .ms-logout:hover {
   color: var(--text-1);
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border);
 }
 
 .ms-logout:active {
-  background: rgba(255, 255, 255, 0.11);
-  transform: scale(0.98);
+  background: rgba(255, 255, 255, 0.1);
 }
 
-.ms-logout:active {
-  transform: scale(0.97);
+.ms-logout:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .ms-logout-label {
   display: none;
 }
 
-/* ===== Intro + contenedor ================================================ */
+/* ===== Contenedor ======================================================== */
 .ms-main {
   flex: 1;
   display: flex;
   justify-content: center;
-  padding: 0 24px 32px;
+  padding: 0 24px max(32px, env(safe-area-inset-bottom));
 }
 
 .ms-container {
   width: 100%;
-  max-width: 1200px;
-  padding-top: 48px;
+  max-width: 900px;
+  padding-top: 18px;
 }
 
-.ms-intro {
-  margin-bottom: 24px;
+/* ===== Identidad (avatar + nombre + rol) ================================= */
+.ms-id {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 2px 22px;
+  min-width: 0;
+}
+
+.ms-avatar {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  color: var(--text-1);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.ms-id-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.ms-greeting {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
 }
 
 .ms-title {
   margin: 0;
-  font-size: var(--text-display);
+  font-size: 17px;
   font-weight: 600;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.022em;
+  line-height: 1.25;
   color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.ms-subtitle {
-  margin: 7px 0 0;
-  font-size: var(--text-body);
+.ms-role {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ===== Etiqueta de sección =============================================== */
+.ms-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 2px;
+  margin-bottom: 10px;
+}
+
+.ms-section-title {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
   color: var(--text-2);
 }
 
-/* ===== Grid fluido (desktop: auto-fill, aprovecha el ancho sin huecos) ==== */
+.ms-section-count {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.ms-section-hint {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ===== Grid de módulos =================================================== */
 .ms-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 16px;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  align-items: start;
 }
 
 /* ===== Card de módulo ===================================================== */
-/* El card completo es un <button>: TODA la superficie es interactiva y
-   conserva los eventos existentes (navigate/gate). */
+/* Toda la superficie es el <button>: se conservan los handlers existentes. */
 .ms-card {
   position: relative;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  min-height: 152px;
-  padding: 20px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 11px 13px;
   background: var(--card);
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-lg);
-  cursor: pointer;
+  border-radius: 16px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  color: var(--text-1);
   font-family: var(--font);
   text-align: left;
+  cursor: pointer;
   transition:
-    border-color var(--dur) var(--ease),
-    box-shadow var(--dur) var(--ease),
-    transform var(--dur) var(--ease),
-    background var(--dur) var(--ease);
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
 
-/* Hover/active con puntero real (evita sticky-hover en táctil). */
 @media (hover: hover) {
-  /* Lift sutil + borde acentuado + sombra discreta. Sin saltos de layout:
-     todo crece hacia afuera (shadow) sin mover el contenido. */
   .ms-card:hover {
-    border-color: color-mix(in srgb, var(--primary) 50%, var(--border-soft));
     background: var(--surface-hover);
-    box-shadow: var(--shadow-md);
-    transform: translateY(-2px);
-  }
-
-  .ms-card:hover .ms-icon-tile {
-    background: var(--primary);
-    color: #ffffff;
+    border-color: var(--border);
   }
 
   .ms-card:hover .ms-card-arrow {
-    opacity: 1;
-    transform: translateX(0);
-    color: var(--primary);
+    color: var(--text-1);
+    transform: translateX(2px);
   }
 }
 
-/* Presión táctil/click: hundimiento leve + borde acento. */
 .ms-card:active {
-  transform: translateY(0) scale(0.985);
-  border-color: color-mix(in srgb, var(--primary) 60%, var(--border-soft));
+  background: rgba(255, 255, 255, 0.05);
 }
 
-/* Teclado: anillo de foco nítido (refuerza el global). */
 .ms-card:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
-  border-color: color-mix(in srgb, var(--primary) 65%, var(--border-soft));
+  border-color: transparent;
 }
 
-/* Administración: identidad destacada (tinte de acento sutil, sin gradiente). */
-.ms-card--highlight {
-  background: var(--primary-subtle);
-  border-color: color-mix(in srgb, var(--primary) 38%, transparent);
-}
-
-.ms-card--highlight:hover {
-  background: color-mix(in srgb, var(--primary) 26%, #272727);
-  border-color: color-mix(in srgb, var(--primary) 65%, transparent);
-}
-
-/* ===== Icon tile (contenedor del icono, look SaaS) ======================== */
+/* ===== Tile de icono ===================================================== */
 .ms-icon-tile {
   display: grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   flex: none;
-  border-radius: var(--radius-md);
-  background: var(--ms-tile-bg);
-  color: var(--primary);
-  transition:
-    background var(--dur) var(--ease),
-    color var(--dur) var(--ease);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-1);
+  transition: background var(--dur) var(--ease);
 }
 
-.ms-icon-tile--solid {
-  background: var(--primary);
-  color: #ffffff;
+@media (hover: hover) {
+  .ms-card:hover .ms-icon-tile {
+    background: rgba(255, 255, 255, 0.11);
+  }
+}
+
+/* Variante clara: la firma visual de la referencia (solo Administración). */
+.ms-icon-tile--light {
+  background: #f2f2f2;
+  border-color: transparent;
+  color: #171717;
+}
+
+@media (hover: hover) {
+  .ms-card:hover .ms-icon-tile--light {
+    background: #ffffff;
+  }
 }
 
 .ms-icon-tile--muted {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.06);
+  color: var(--text-3);
 }
 
-/* ===== Textos de la card (wrapper columna: título sobre subtítulo) ======== */
+/* ===== Textos ============================================================ */
 .ms-card-text {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-width: 100%;
-  margin-top: auto; /* empuja el bloque de textos al fondo en desktop */
+  flex: 1;
+  min-width: 0;
+}
+
+.ms-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .ms-card-title {
-  font-size: var(--text-h2);
-  font-weight: 600;
-  letter-spacing: -0.015em;
-  line-height: 1.25;
+  font-size: 14.5px;
+  font-weight: 500;
+  letter-spacing: -0.012em;
+  line-height: 1.3;
   color: var(--text-1);
-  max-width: 100%;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .ms-card-subtitle {
-  font-size: var(--text-sm);
+  font-size: 12.5px;
   line-height: 1.35;
   color: var(--text-2);
   max-width: 100%;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* Chevron: aparece al hover (desktop, @media hover) / fijo tenue (táctil). */
 .ms-card-arrow {
-  position: absolute;
-  right: 14px;
-  bottom: 14px;
-  color: var(--text-faint);
-  opacity: 0;
-  transform: translateX(-4px);
+  flex: none;
+  color: var(--text-3);
   transition:
-    opacity 0.2s cubic-bezier(0.2, 0.6, 0.2, 1),
-    transform 0.2s cubic-bezier(0.2, 0.6, 0.2, 1),
-    color 0.2s cubic-bezier(0.2, 0.6, 0.2, 1);
+    color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
 }
 
-/* ===== Badge DIRECTO ======================================================= */
+/* ===== Badge DIRECTO (en la fila del título, no flotando) ================= */
 .ms-badge {
-  position: absolute;
-  top: 16px;
-  right: 16px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 9px;
+  gap: 5px;
+  flex: none;
+  padding: 2px 8px;
   background: var(--primary-soft);
-  border: 1px solid color-mix(in srgb, var(--primary) 32%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, transparent);
   border-radius: var(--radius-full);
   color: var(--primary);
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.055em;
+  line-height: 1.5;
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -674,21 +791,20 @@ function floorSubtitle(floor: RestFloorResponse): string {
 .ms-badge-dot {
   width: 5px;
   height: 5px;
-  border-radius: var(--radius-full);
+  flex: none;
+  border-radius: 999px;
   background: var(--primary);
 }
 
-/* ===== Empty state ========================================================== */
+/* ===== Empty state ======================================================= */
 .ms-empty {
   grid-column: 1 / -1;
   width: 100%;
-  max-width: 460px;
-  margin: 24px auto 0;
+  padding: 28px 20px;
   background: var(--card);
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  padding: 32px 24px;
+  border-radius: 18px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -698,36 +814,43 @@ function floorSubtitle(floor: RestFloorResponse): string {
 
 .ms-empty p {
   margin: 0;
+  max-width: 34ch;
   color: var(--text-2);
-  font-size: var(--text-body);
+  font-size: 13.5px;
+  line-height: 1.45;
 }
 
 .ms-empty-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: 10px 18px;
+  min-height: 44px;
+  padding: 0 18px;
   background: var(--primary);
   color: var(--on-primary);
   border: none;
   border-radius: var(--radius);
   font-family: var(--font);
-  font-size: var(--text-sm);
+  font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
   transition:
     background var(--dur) var(--ease),
-    box-shadow var(--dur) var(--ease),
     transform var(--dur-fast) var(--ease);
 }
 
 .ms-empty-btn:hover:not(:disabled) {
   background: var(--primary-hover);
-  box-shadow: var(--shadow-accent);
 }
 
 .ms-empty-btn:active:not(:disabled) {
   transform: scale(0.97);
+}
+
+.ms-empty-btn:focus-visible {
+  outline: 2px solid var(--text-1);
+  outline-offset: 2px;
 }
 
 .ms-empty-btn:disabled {
@@ -742,170 +865,123 @@ function floorSubtitle(floor: RestFloorResponse): string {
   padding: 32px 0;
 }
 
-/* ===== Footer sin permisos =================================================== */
+/* ===== Footer sin permisos =============================================== */
 .ms-footer {
-  padding: 24px;
+  padding: 20px 24px;
   padding-bottom: max(24px, env(safe-area-inset-bottom));
   text-align: center;
   color: var(--text-3);
-  font-size: var(--text-sm);
+  font-size: 13px;
 }
 
 /* ==========================================================================
-   Responsivo
+   Tablet / desktop
    ========================================================================== */
 
-/* Laptop chico (1366): intro algo más compacta. */
-@media (max-width: 1439px) {
-  .ms-container {
-    padding-top: 32px;
-  }
-}
-
-/* Tablet 600-1199: 2 columnas fijas. */
-@media (min-width: 600px) and (max-width: 1199px) {
-  .ms-container {
-    padding-top: 32px;
-  }
-
-  .ms-title {
-    font-size: var(--text-h1);
-  }
-
+/* Dos columnas cuando hay ancho real; las filas no se estiran de más. */
+@media (min-width: 700px) {
   .ms-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px;
-  }
-
-  .ms-card {
-    min-height: 144px;
-    padding: 16px;
-  }
-
-  .ms-icon-tile {
-    width: 44px;
-    height: 44px;
-    border-radius: var(--radius);
-  }
-
-  .ms-card-title {
-    font-size: 17px;
-  }
-
-  .ms-card-subtitle {
-    font-size: 12.5px;
-  }
-
-  .ms-badge {
-    top: 12px;
-    right: 12px;
-  }
-}
-
-/* Móvil <600: filas horizontales full-width (look app nativa). */
-@media (max-width: 599px) {
-  .ms-topbar {
-    padding: 10px 16px;
-    padding-left: max(16px, env(safe-area-inset-left));
-    padding-right: max(16px, env(safe-area-inset-right));
-  }
-
-  .ms-logo {
-    height: 36px;
-    width: 36px;
-  }
-
-  .ms-user-name {
-    font-size: 14px;
-  }
-
-  .ms-user-role {
-    font-size: 12px;
+    gap: 12px;
   }
 
   .ms-logout {
-    width: 38px;
-    padding: 0;
-    justify-content: center;
+    padding: 0 14px;
+  }
+
+  .ms-logout-label {
+    display: inline;
+  }
+}
+
+/* Pantallas altas de escritorio: el contenido se queda anclado arriba (como
+   Linear/Vercel). Se evita el hueco inferior con un pie de contexto sutil. */
+@media (min-width: 700px) {
+  .ms-container {
+    padding-top: 26px;
+  }
+}
+
+@media (min-width: 700px) and (hover: hover) {
+  .ms-card {
+    min-height: 68px;
+  }
+}
+
+/* ==========================================================================
+   Móvil
+   ========================================================================== */
+
+@media (max-width: 699px) {
+  .ms-topbar-inner {
+    padding: 8px 16px;
   }
 
   .ms-main {
-    padding: 0 16px 24px;
+    padding: 0 16px max(24px, env(safe-area-inset-bottom));
   }
 
   .ms-container {
-    padding-top: 22px;
+    padding-top: 14px;
   }
 
-  .ms-intro {
-    margin-bottom: 18px;
+  .ms-id {
+    padding-bottom: 18px;
   }
 
   .ms-title {
-    font-size: 22px;
+    font-size: 16px;
   }
 
-  .ms-subtitle {
-    font-size: var(--text-sm);
+  .ms-section-hint {
+    display: none;
   }
 
-  .ms-grid {
-    grid-template-columns: 1fr;
+  .ms-card {
+    min-height: 62px;
+    padding: 10px 12px;
+    gap: 11px;
+  }
+}
+
+/* 360px: se aprieta el padding, NUNCA el objetivo táctil (44px). */
+@media (max-width: 380px) {
+  .ms-topbar-inner {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .ms-main {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .ms-brand-sub {
+    display: none;
+  }
+
+  .ms-card {
+    padding: 10px 11px;
     gap: 10px;
   }
 
-  /* Fila: icon-tile izquierda, textos centro, chevron derecha. */
-  .ms-card {
-    flex-direction: row;
-    align-items: center;
-    gap: 12px;
-    min-height: 72px;
-    padding: 12px 14px;
-    border-radius: 14px;
-  }
-
-  .ms-card:hover {
-    transform: none; /* sin lift en táctil */
-  }
-
   .ms-icon-tile {
-    width: 44px;
-    height: 44px;
+    width: 38px;
+    height: 38px;
     border-radius: 12px;
   }
 
   .ms-card-title {
-    margin-top: 0;
-    font-size: 15.5px;
-  }
-
-  .ms-card-subtitle {
-    font-size: 12.5px;
-    -webkit-line-clamp: 1;
-  }
-  .ms-card-text {
-    margin-top: 0;
-    flex: 1;
-    min-width: 0; /* permite que título/subtítulo trunquen con ellipsis */
-  }
-
-  .ms-card-arrow {
-    position: static;
-    margin-left: auto;
-    opacity: 1;
-    transform: none;
-    color: var(--text-faint);
+    font-size: 14px;
   }
 
   .ms-badge {
-    top: -7px;
-    right: 10px;
-    font-size: 10px;
-    padding: 3px 8px;
+    padding: 2px 6px;
+    letter-spacing: 0.04em;
   }
 }
 
-/* ===== Accesibilidad ========================================================= */
+/* ===== Accesibilidad ===================================================== */
 @media (prefers-reduced-motion: reduce) {
   .ms-card,
   .ms-icon-tile,
@@ -915,19 +991,8 @@ function floorSubtitle(floor: RestFloorResponse): string {
     transition: none;
   }
 
-  .ms-card:hover {
+  .ms-card:hover .ms-card-arrow {
     transform: none;
-  }
-
-  .ms-card:active {
-    transform: none;
-  }
-}
-
-/* Label "Salir" solo con espacio suficiente (desktop/Tauri). */
-@media (min-width: 720px) {
-  .ms-logout-label {
-    display: inline;
   }
 }
 </style>
