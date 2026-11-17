@@ -1072,6 +1072,11 @@ const differenceColor = computed<string>(() =>
 
 .cash-terminal-name {
   flex: 1;
+  /* Sin min-width: 0 un flex item no baja de su ancho intrínseco: el input
+     reserva ~218px por el tamaño por defecto y empujaba el monto y el boton
+     fuera del card en pantallas angostas (medido: +33px desborde a 390px,
+     +63px a 360px). Con min-width: 0 el nombre cede espacio. */
+  min-width: 0;
   width: auto;
   text-align: left;
 }
@@ -1085,8 +1090,9 @@ const differenceColor = computed<string>(() =>
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  /* Objetivo tactil 44px (el icono mide 16px dentro). */
+  width: 44px;
+  height: 44px;
   flex: none;
   padding: 0;
   background: transparent;
@@ -1413,6 +1419,11 @@ const differenceColor = computed<string>(() =>
 
   .cash-money-input {
     width: 100%;
+  }
+
+  /* La altura del input no cambia: el objetivo tactil 44px se mantiene. */
+  .cash-terminal-amount {
+    width: 108px;
   }
 
   .cash-denom-head {

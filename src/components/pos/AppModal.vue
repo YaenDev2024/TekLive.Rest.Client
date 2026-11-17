@@ -155,11 +155,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   }
 }
 
-/* Móvil: modal casi full-screen (usable con teclado en pantalla). */
+/* Móvil: modal casi full-screen (usable con teclado en pantalla).
+   align-items: center — antes era flex-end y los diálogos sin inputs (avisos,
+   confirmaciones) quedaban pegados al borde inferior con un hueco enorme
+   arriba, que se lee como "no está centrado". El teclado abierto sigue
+   empujando el modal al topé superior con la regla html.vk-open de style.css
+   (mayor especificidad), así que no se pierde el comportamiento con teclado. */
 @media (max-width: 599px) {
   .app-modal {
     padding: 12px;
-    align-items: flex-end;
+    align-items: center;
   }
 
   .app-modal__card {
