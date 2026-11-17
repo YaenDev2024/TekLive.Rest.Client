@@ -701,26 +701,30 @@ function scopeBadge(item: RestAdminCatalogItem): string {
   font-family: var(--font);
 }
 
-/* ===== AppBar (L435-450): bg scaffold, elevation 0, acciones a la derecha ===== */
+/* ===== AppBar ===== */
 .mc-appbar {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 18px 24px 10px;
-  background: var(--bg);
-
   width: 100%;
   max-width: 800px;
   margin: 0 auto;
+  padding: max(16px, env(safe-area-inset-top)) 24px 6px;
+  background: var(--bg);
 }
 
 .mc-appbar-title {
   margin: 0;
   flex: 1;
-  font-size: var(--text-h1);
+  min-width: 0;
+  font-size: 19px;
   font-weight: 600;
-  letter-spacing: -0.02em;
-  color: var(--text);
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mc-appbar-actions {
@@ -729,25 +733,34 @@ function scopeBadge(item: RestAdminCatalogItem): string {
   gap: 4px;
 }
 
-/* IconButton 48px circular, hover white08 (patrón AdminDashboardView) */
+/* IconButton circular 44px con borde sutil */
 .mc-icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   flex: none;
   padding: 0;
   background: transparent;
-  border: none;
+  border: 1px solid var(--border-soft);
   border-radius: 999px;
-  color: var(--text);
+  color: var(--text-2);
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition:
+    color var(--dur) var(--ease),
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
 
 .mc-icon-btn:hover {
-  background: var(--border-soft);
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border);
+}
+
+.mc-icon-btn:active {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 /* ===== Cuerpo centrado (máx ~800px como el original móvil/desktop) ===== */
@@ -760,29 +773,31 @@ function scopeBadge(item: RestAdminCatalogItem): string {
   margin: 0 auto;
 }
 
-/* ===== Panel 'Contexto de alcance' (L453-482): margin 16/12/16/0, padding 12,
-   borde grey[700] radius 10 ===== */
+/* ===== Panel 'Contexto de alcance': card de 16px ===== */
 .mc-scope-panel {
   margin: 12px 16px 0;
-  padding: 12px;
-  border: 1px solid var(--border); /* Colors.grey.shade700 */
-  border-radius: 10px;
+  padding: 14px;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px; /* SizedBox(height: 8) L464 */
+  gap: 10px;
 }
 
 .mc-scope-title {
   margin: 0;
-  font-size: 15px;
-  font-weight: 700; /* TextStyle(fontWeight: FontWeight.bold) L463 */
-  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
 
-/* ===== Buscador (L484-513): container bg surface, padding 16/12 ===== */
+/* ===== Buscador ===== */
 .mc-search-wrap {
-  padding: 12px 16px;
-  background: var(--bg-surface); /* Theme.colorScheme.surface grey[850] */
+  padding: 12px 16px 2px;
+  background: transparent;
 }
 
 .mc-search {
@@ -794,101 +809,125 @@ function scopeBadge(item: RestAdminCatalogItem): string {
   top: 50%;
   left: 12px;
   transform: translateY(-50%);
-  color: var(--text-faint);
+  color: var(--text-3);
   pointer-events: none;
 }
 
-/* TextField OutlineInputBorder radius 8 (L502-504), fill del tema
-   (black alpha .3 sobre surface → se ve oscuro) */
+/* La lupa ya no va naranja: el acento se reserva al filtro activo. */
 .mc-search-input {
   width: 100%;
-  height: 44px;
-  padding: 0 40px;
-  background: var(--elevated);
+  height: 46px;
+  padding: 0 44px;
+  background: var(--card);
   border: 1px solid var(--border-soft);
-  border-radius: 8px;
-  color: var(--text);
+  border-radius: 14px;
+  color: var(--text-1);
   font-family: var(--font);
   font-size: 15px;
   outline: none;
-  transition: border-color 0.15s ease;
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 
 .mc-search-input::placeholder {
-  color: var(--text-faint);
+  color: var(--text-3);
 }
 
 .mc-search-input:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(255, 100, 45, 0.16); /* focusedBorder deepOrange (main L121-125) */
+  box-shadow: 0 0 0 3px rgba(255, 100, 45, 0.16);
 }
 
 .mc-search-clear {
   position: absolute;
   top: 50%;
-  right: 8px;
+  right: 3px;
   transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 40px;
+  height: 40px;
   padding: 0;
   background: transparent;
   border: none;
   border-radius: 999px;
-  color: var(--text-faint);
+  color: var(--text-3);
   cursor: pointer;
+  transition:
+    color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
 }
 
 .mc-search-clear:hover {
-  color: var(--text);
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.07);
 }
 
-/* ===== Chips (L515-539): horizontal scroll, padding 16 ===== */
+/* ===== Chips de tipo: scroll horizontal, 44px táctil ===== */
 .mc-chips-wrap {
-  background: var(--bg-surface);
-  padding: 0 16px 4px;
+  background: transparent;
+  padding: 0 16px;
   overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.mc-chips-wrap::-webkit-scrollbar {
+  display: none;
 }
 
 .mc-chips {
   display: flex;
-  gap: 8px; /* Padding(right: 8) L524 */
-  padding: 12px 0;
+  gap: 8px;
+  padding: 12px 0 2px;
   width: max-content;
 }
 
-/* FilterChip réplica: selected = fill primary alpha + borde primary + texto
-   primary; unselected = outline grey y texto blanco. */
+/* Chip: contorno tenue por defecto; activo = tile claro (firma visual de
+   la referencia), no naranja sólido. */
 .mc-chip {
   flex: none;
-  padding: 7px 14px;
-  background: transparent;
-  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 16px;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
   border-radius: 999px;
-  color: var(--text);
+  color: var(--text-2);
   font-family: var(--font);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
+  letter-spacing: -0.005em;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
 }
 
 .mc-chip:hover {
-  border-color: var(--text-faint);
+  color: var(--text-1);
+  border-color: var(--border);
 }
 
 .mc-chip--active {
-  background: var(--primary-soft); /* selected fill deepOrange alpha */
-  border-color: var(--primary);
-  color: var(--primary);
+  background: #f2f2f2;
+  border-color: transparent;
+  color: #171717;
+  font-weight: 600;
 }
 
-/* ===== Lista (L542-616): Expanded + ListView padding 16 ===== */
+.mc-chip--active:hover {
+  background: #ffffff;
+  color: #171717;
+}
+
+/* ===== Lista ===== */
 .mc-list-wrap {
   flex: 1;
-  padding: 16px;
+  padding: 14px 16px 24px;
 }
 
 .mc-state {
@@ -896,61 +935,74 @@ function scopeBadge(item: RestAdminCatalogItem): string {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  padding: 64px 24px;
+  gap: 14px;
+  padding: 52px 24px;
   text-align: center;
 }
 
 .mc-empty {
   margin: 0;
-  color: var(--text);
-  font-size: 16px;
+  padding: 44px 20px;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 .mc-state-error-icon {
-  color: var(--error); /* Icons.error_outline rojo (L550) */
+  color: var(--error);
 }
 
 .mc-state-text {
   margin: 0;
-  color: var(--text);
+  max-width: 34ch;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.55;
 }
 
-/* ElevatedButton 'Reintentar' (L554-557): deepOrange radius 12 bold */
+/* Reintentar: botón secundario (el CTA principal de la vista es 'Agregar'). */
 .mc-retry {
-  padding: 12px 24px;
-  background: var(--primary);
-  color: var(--on-primary);
-  border: none;
-  border-radius: var(--radius);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 20px;
+  background: var(--elevated);
+  color: var(--text-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   font-family: var(--font);
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
 
 .mc-retry:hover {
-  background: var(--primary-hover);
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
 }
 
-/* ===== Card de item (CardTheme grey[850] elev 2 radius 12) + ListTile ===== */
+/* ===== Card de item ===== */
 .mc-list {
   margin: 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 12px; /* margin bottom 12 (L569) */
+  gap: 8px;
 }
 
 .mc-card {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 8px 12px 14px;
+  padding: 12px 6px 12px 12px;
   background: var(--card);
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-md);
+  border-radius: 16px;
   transition:
     border-color var(--dur) var(--ease),
     background var(--dur) var(--ease);
@@ -963,23 +1015,25 @@ function scopeBadge(item: RestAdminCatalogItem): string {
   }
 }
 
-/* Avatar neutro: el icono identifica el tipo, sin bloques de color saturado */
+/* Tile de icono: mismo lenguaje que el hub (oscuro aquí, para que el claro
+   siga siendo exclusivo del filtro activo). */
 .mc-avatar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 42px;
+  height: 42px;
   flex: none;
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border-soft);
-  color: var(--text-2);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-1);
 }
 
 .mc-avatar--inactive {
   background: transparent;
   border-style: dashed;
+  border-color: var(--border);
   color: var(--text-3);
   opacity: 0.6;
 }
@@ -994,43 +1048,48 @@ function scopeBadge(item: RestAdminCatalogItem): string {
 }
 
 .mc-item-name {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
+  color: var(--text-1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .mc-item-name--inactive {
-  text-decoration: line-through; /* TextDecoration.lineThrough (L582) */
+  text-decoration: line-through;
+  color: var(--text-2);
 }
 
 .mc-item-tipo {
-  font-size: 13px;
-  color: var(--text-muted);
+  font-size: 12.5px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Badge de alcance del item (Global / Sucursal / Piso N). */
 .mc-item-scope {
   margin-left: 6px;
   padding: 1px 7px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-soft);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-muted);
-  font-size: 11px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-weight: 500;
 }
 
 .mc-item-desc {
   font-size: 12px;
-  color: var(--text-2); /* Colors.grey[400] (L592) */
+  color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Trailing: IconButtons editar/eliminar (L598-611) */
+/* Trailing: editar/eliminar */
 .mc-item-actions {
   display: flex;
   align-items: center;
@@ -1038,27 +1097,31 @@ function scopeBadge(item: RestAdminCatalogItem): string {
   flex: none;
 }
 
+/* 44px táctil (antes 40px). */
 .mc-item-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   background: transparent;
   border: none;
   border-radius: 999px;
-  color: var(--text);
+  color: var(--text-2);
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
 }
 
 .mc-item-btn:hover {
-  background: var(--border-soft);
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .mc-item-btn--delete {
-  color: var(--error); /* Icon delete_outline color rojo (L607) */
+  color: var(--error);
 }
 
 /* ===== Dialog form ===== */
@@ -1074,10 +1137,11 @@ function scopeBadge(item: RestAdminCatalogItem): string {
   gap: 4px;
 }
 
-/* labelText: labelStyle grey[400] (main L114) */
+/* labelText */
 .mc-label {
   font-size: 12px;
-  color: var(--text-faint);
+  font-weight: 500;
+  color: var(--text-2);
 }
 
 .mc-input-wrap {
@@ -1101,13 +1165,15 @@ function scopeBadge(item: RestAdminCatalogItem): string {
   height: 44px;
   padding: 0 12px;
   background: var(--elevated);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
-  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-1);
   font-family: var(--font);
   font-size: 15px;
   outline: none;
-  transition: border-color 0.15s ease;
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 
 .mc-input--prefixed {
@@ -1200,28 +1266,33 @@ function scopeBadge(item: RestAdminCatalogItem): string {
 }
 
 .mc-switch-label {
-  font-size: 15px;
-  color: var(--text);
+  font-size: 14px;
+  color: var(--text-1);
 }
 
-/* ===== Confirm texto (L399) ===== */
+/* ===== Confirm texto ===== */
 .mc-confirm-text {
   margin: 0;
-  font-size: 15px;
-  line-height: 1.5;
-  color: var(--text);
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--text-2);
 }
 
-/* ===== Botones (ElevatedButton theme: deepOrange radius 12 bold) ===== */
+/* ===== Botones del diálogo ===== */
 .mc-btn {
-  padding: 12px 24px;
-  border-radius: var(--radius);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 20px;
+  min-height: 44px;
+  border-radius: var(--radius-md);
   font-family: var(--font);
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 600;
+  letter-spacing: -0.01em;
   cursor: pointer;
   border: 1px solid transparent;
-  min-height: 44px;
+  transition: background var(--dur) var(--ease);
 }
 
 .mc-btn--primary {
@@ -1234,7 +1305,7 @@ function scopeBadge(item: RestAdminCatalogItem): string {
 }
 
 .mc-btn--danger {
-  background: var(--error); /* ElevatedButton rojo del confirm (L406) */
+  background: var(--error);
   color: #ffffff;
 }
 
@@ -1245,12 +1316,12 @@ function scopeBadge(item: RestAdminCatalogItem): string {
 .mc-btn--ghost {
   background: transparent;
   border-color: var(--border);
-  color: var(--text-muted); /* TextButton */
+  color: var(--text-2);
 }
 
 .mc-btn--ghost:hover:not(:disabled) {
-  color: var(--text);
-  border-color: var(--text-faint);
+  color: var(--text-1);
+  border-color: var(--border-strong);
 }
 
 .mc-btn:disabled {
@@ -1258,34 +1329,37 @@ function scopeBadge(item: RestAdminCatalogItem): string {
   cursor: not-allowed;
 }
 
-/* ===== Responsive básico: móvil apila acciones y reduce paddings ===== */
+/* ===== Responsive: móvil ===== */
 @media (max-width: 560px) {
+  .mc-appbar {
+    padding: max(12px, env(safe-area-inset-top)) 16px 4px;
+  }
+
   .mc-appbar-title {
-    font-size: 19px;
+    font-size: 18px;
   }
 
   .mc-scope-panel {
-    margin: 8px 12px 0;
+    margin: 10px 14px 0;
+    padding: 13px;
   }
 
   .mc-search-wrap,
   .mc-chips-wrap,
   .mc-list-wrap {
-    padding-left: 12px;
-    padding-right: 12px;
+    padding-left: 14px;
+    padding-right: 14px;
   }
 
+  /* En móvil la card no se parte en dos filas: icono + texto + acciones
+     caben en una sola línea (más denso que el wrap anterior). */
   .mc-card {
-    flex-wrap: wrap;
-    gap: 10px;
-  }
-
-  .mc-item-info {
-    flex-basis: calc(100% - 66px);
+    gap: 11px;
+    padding: 11px 4px 11px 11px;
   }
 
   .mc-item-actions {
-    margin-left: 56px;
+    margin-left: 0;
   }
 }
 </style>

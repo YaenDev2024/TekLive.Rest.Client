@@ -1,75 +1,30 @@
 <script setup lang="ts">
 /**
- * AdminDashboardView · hub de Administración — réplica EXACTA de
- * lib/screens/admin/admin_dashboard_home.dart (CrazyWings) + ModuleCard de
- * lib/screens/home_screen2.dart L51-87.
+ * AdminDashboardView · hub de Administración.
  *
- * Estructura replicada:
- * - Scaffold bg grey[900] (L141: Theme.scaffoldBackgroundColor → var(--bg)
- *   #212121). STANDALONE full-screen FUERA del PosShell: sin rail (el
- *   original es una ruta raíz propia, no un hijo del layout del POS).
- * - AppBar réplica (L142-158): back arrow (tooltip 'Regresar a módulos') +
- *   título 'Administración', bg = scaffoldBackgroundColor, elevation 0 (sin
- *   sombra). goBack réplica L146-153: canPop ? pop : pushReplacementNamed
- *   → si window.history.state?.back existe router.back(), si no
- *   router.replace({ name: 'modules' }).
- * - Body ListView padding 24 (L159-160) con 5 secciones en el ORDEN EXACTO
- *   de L12-139 (organizedSections):
- *     1. 'Gestión de Productos'  (Icons.inventory_2_outlined → Package)
- *     2. 'Promociones y Ofertas' (Icons.campaign_outlined    → Megaphone)
- *     3. 'Usuarios'              (Icons.group_outlined       → Users)
- *     4. 'Gestión de Caja'       (Icons.point_of_sale_outlined → Wallet)
- *     5. 'Configuración'         (Icons.settings_outlined    → Settings)
- * - Section header réplica L171-191: icono 22px colorScheme.primary
- *   (deepOrange → var(--primary)) + gap 10 + título 20 bold white70
- *   (rgba(255,255,255,0.7)), padding vertical 16 / horizontal 8. Gap 24
- *   entre secciones (SizedBox L209).
- * - Grid réplica L195-203: SliverGridDelegateWithMaxCrossAxisExtent 250 /
- *   crossAxisSpacing 16 / mainAxisSpacing 16 / childAspectRatio 1.2.
- *   DESVIACIÓN MENOR #1 documentada: CSS no tiene un equivalente exacto de
- *   maxCrossAxisExtent, se usa `repeat(auto-fill, minmax(220px, 1fr))` con
- *   gap 16 y cada tile `aspect-ratio: 1.2` (mismo ratio; 220px ≈ la cota
- *   superior de 250 menos gap, produce el mismo acomodo de columnas en los
- *   anchos de escritorio objetivo).
- * - Tile = ModuleCard réplica home_screen2.dart L51-87: Card con color
- *   heredado del CardTheme global (grey[850]→ #303030 en este proyecto; el
- *   campo `color` de AppModule es CÓDIGO MUERTO — L20/28/36/50/64/72/86/94/
- *   102/116/124/132 — así que TODOS los tiles son uniformes #303030, no se
- *   pintan por-tile), radius 12 (L65), elevation 2 del CardTheme (box-shadow
- *   sutil), InkWell estándar (hover elevation 4 sutil, SIN hover deepOrange),
- *   contenido centrado: icono 48px colorScheme.primary + SizedBox 16 +
- *   nombreItem bold centrado (titleMedium→16px). Tile activo = router-link/
- *   button real; tile deshabilitado: opacity 0.45, cursor default, badge
- *   'Próximamente · Fase N' bajo el título + title/tooltip con detalle.
- * - DESVIACIÓN CONSCIENTE #2 (iconos lucide): el original mapea iconos por
- *   string ('CatalogManage'→Package, 'ProductEdit'→SquarePen,
- *   'CategoryCatalog'→LayoutGrid, 'PromoCreate'→Tag, 'UserCreate'→UserPlus,
- *   'UserManage'→UserCog, 'CashCut'→Wallet, 'CashSummary'→FileBarChart,
- *   'PayrollCreate'→ReceiptText, 'DollarConfig'→DollarSign,
- *   'PriceIncrease'→TrendingUp) y tiene un BUG en 'WaiterAssign' (el icono
- *   no existe en su mapa → se renderiza '?'): aquí se usa UserCheck como
- *   equivalente semántico de asignar meseros, corrigiendo el bug.
+ * Origen: réplica de lib/screens/admin/admin_dashboard_home.dart (CrazyWings) +
+ * ModuleCard de lib/screens/home_screen2.dart. Rediseño 2026-11 (pedido del
+ * dueño: "esa calidad y nivel de profesionalismo al entrar en Administración").
  *
- * Guard de rol (mismo patrón canAccessAdmin de ModuleSelectView.vue L80-82):
- * si session.role (lowercase) no está en ['restadmin','superadmin',
- * 'restmanager'] → router.replace({ name: 'modules' }).
+ * INVARIANTES QUE NO SE TOCAN (solo presentación):
+ * - Los 12 tiles, sus labels, rutas (`to`), fases (badge 'Próximamente · Fase N')
+ *   y tooltips `title` son EXACTAMENTE los mismos del modelo SECTIONS.
+ * - data-testid: `ad-back`, `ad-body`, `ad-tile-<slug>`.
+ * - Guard de rol (RestAdmin/SuperAdmin/RestManager) y goBack (canPop ? pop :
+ *   replace modules).
  *
- * Mapa tile → fase futura (placeholders con badge 'Próximamente · Fase N'):
- * - Fase 6:  Gestionar Catálogo (REAL desde Fase 6.1 → admin-catalogo),
- *            Editar Productos, Catalogo de Categorías (CRUD catálogo)
- * - Fase 7:  Crear Usuarios, Gestionar Usuarios (REALES desde Fase 7 →
- *            admin-usuarios-crear / admin-usuarios)
- * - Fase 8:  Asignar Meseros a Mesas
- * - Fase 9:  Crear Promociones (REAL desde Fase admin → admin-promociones),
- *            Configurar Dólar dedicado, Aumento de Precios (REAL desde
- *            Fase admin → admin-precio-aumento)
- * - Fase 10: Crear Nomina (REAL desde Fase admin → admin-nomina),
- *            Resumen de Caja (REAL desde Fase admin → admin-resumen-caja)
- * Tiles REALES ya navegables: Corte de Caja → { name: 'pos-caja' } (la
- * CashDrawerView réplica ya existe) y Configurar Dólar → { name:
- * 'pos-ajustes' } (el modal dólar ya vive ahí; tooltip 'Se abre en Ajustes').
+ * Lo que cambia es solo la composición visual:
+ * - Encabezado tipo dashboard (avatar + nombre + rol + refrescar) en lugar de
+ *   topbar plana.
+ * - Hero KPI con las ventas del día y barra de mezcla de cobro.
+ * - Dos KPIs secundarios (usuarios activos, artículos de catálogo).
+ * - Secciones con filas en tarjetas separadas e iconos en tile claro.
+ *
+ * KPIs: consumen endpoints ya existentes (cash/summary, users/admin/users,
+ * catalog/admin/items). Si alguno falla, el número queda en '—' y el hub sigue
+ * navegable: la carga nunca bloquea ni rompe la vista.
  */
-import { onMounted } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ArrowLeft,
@@ -80,6 +35,7 @@ import {
   Megaphone,
   Package,
   ReceiptText,
+  RefreshCw,
   Settings,
   SquarePen,
   Tag,
@@ -93,6 +49,7 @@ import {
 } from 'lucide-vue-next'
 import type { FunctionalComponent } from 'vue'
 import { session } from '../../services/auth'
+import { getAdminCatalogItems, getAdminUsers, getCashSummary } from '../../api/rest'
 
 const router = useRouter()
 
@@ -102,7 +59,9 @@ onMounted(() => {
   const role = (session.role ?? '').toLowerCase()
   if (!['restadmin', 'superadmin', 'restmanager'].includes(role)) {
     void router.replace({ name: 'modules' })
+    return
   }
+  void loadKpis()
 })
 
 // --- goBack réplica L146-153: canPop ? pop : pushReplacementNamed --------------
@@ -114,6 +73,134 @@ async function goBack(): Promise<void> {
   }
   await router.replace({ name: 'modules' })
 }
+
+// --- Identidad (solo lectura de la sesión) ------------------------------------
+
+const displayName = computed(() => session.displayName ?? 'Administrador')
+
+const roleLabel = computed(() => {
+  switch ((session.role ?? '').toLowerCase()) {
+    case 'restadmin':
+      return 'Administrador'
+    case 'superadmin':
+      return 'Superadministrador'
+    case 'restmanager':
+      return 'Gerente'
+    default:
+      return 'Administración'
+  }
+})
+
+const initials = computed(() => {
+  const parts = (session.displayName ?? 'A').trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return 'A'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[1][0]).toUpperCase()
+})
+
+// --- KPIs (endpoints existentes, null-tolerantes) -----------------------------
+
+interface KpiState {
+  /** Ventas del día (cash/summary.totals.granTotal). */
+  sales: number | null
+  /** Efectivo del día (para la barra de mezcla de cobro). */
+  cash: number | null
+  /** Sesiones de caja del día. */
+  sessions: number | null
+  /** Usuarios activos / totales. */
+  activeUsers: number | null
+  totalUsers: number | null
+  /** Artículos del catálogo. */
+  catalogItems: number | null
+}
+
+const kpi = reactive<KpiState>({
+  sales: null,
+  cash: null,
+  sessions: null,
+  activeUsers: null,
+  totalUsers: null,
+  catalogItems: null,
+})
+
+const kpiLoading = ref(true)
+
+/** HOY en yyyy-MM-dd (fecha de negocio local, igual que AdminSummaryView). */
+function todayIso(): string {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+/**
+ * Carga los KPIs en paralelo y de forma tolerante: cualquier fallo deja su
+ * valor en null ('—' en pantalla) sin afectar a los demás ni a la navegación.
+ */
+async function loadKpis(): Promise<void> {
+  kpiLoading.value = true
+  const [summary, users, items] = await Promise.allSettled([
+    getCashSummary({ date: todayIso(), scopeType: 'GLOBAL' }),
+    getAdminUsers(false),
+    getAdminCatalogItems(),
+  ])
+
+  if (summary.status === 'fulfilled') {
+    const totals = summary.value.data?.totals
+    kpi.sales = totals?.granTotal ?? null
+    kpi.cash = totals?.efectivo ?? null
+    kpi.sessions = summary.value.data?.sessions?.length ?? null
+  }
+
+  if (users.status === 'fulfilled') {
+    const list = users.value.data ?? []
+    kpi.totalUsers = list.length
+    kpi.activeUsers = list.filter((u) => u.isActive).length
+  }
+
+  if (items.status === 'fulfilled') {
+    const list = items.value.data ?? []
+    kpi.catalogItems = list.filter((i) => i.activo).length
+  }
+
+  kpiLoading.value = false
+}
+
+// --- Formato ------------------------------------------------------------------
+
+/** '—' cuando no hay dato (nunca inventar un 0 que parezca venta real). */
+function formatMoney(amount: number | null): string {
+  if (amount == null) return '—'
+  return new Intl.NumberFormat('es-MX', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount)
+}
+
+function formatCount(value: number | null): string {
+  return value == null ? '—' : String(value)
+}
+
+/** Porcentaje de efectivo sobre el total cobrado (0 si no hay datos). */
+const cashShare = computed<number>(() => {
+  if (kpi.sales == null || kpi.cash == null || kpi.sales <= 0) return 0
+  return Math.min(100, Math.round((kpi.cash / kpi.sales) * 100))
+})
+
+const heroBarStyle = computed(() => ({ width: `${cashShare.value}%` }))
+
+/** 'de N activos' para la tarjeta de usuarios. */
+const usersMeta = computed<string>(() => {
+  if (kpi.activeUsers == null || kpi.totalUsers == null) return 'Sin datos'
+  return `${kpi.activeUsers} de ${kpi.totalUsers} activos`
+})
+
+/** Comparte el porcentaje de activos para la micro-barra de usuarios. */
+const usersShare = computed<number>(() => {
+  if (kpi.activeUsers == null || kpi.totalUsers == null || kpi.totalUsers <= 0) return 0
+  return Math.round((kpi.activeUsers / kpi.totalUsers) * 100)
+})
 
 // --- Modelo declarativo (organizedSections L12-139) ----------------------------
 
@@ -148,7 +235,6 @@ const SECTIONS: AdminSection[] = [
     title: 'Promociones y Ofertas',
     icon: Megaphone,
     tiles: [
-      // Fase admin M1: tile real — CRUD de promociones (create_promo.dart).
       { label: 'Crear Promociones', icon: Tag, to: { name: 'admin-promociones' } },
     ],
   },
@@ -156,7 +242,6 @@ const SECTIONS: AdminSection[] = [
     title: 'Usuarios',
     icon: Users,
     tiles: [
-      // Fase 7: tiles reales — alta y administración de usuarios Rest.
       { label: 'Crear Usuarios', icon: UserPlus, to: { name: 'admin-usuarios-crear' } },
       { label: 'Gestionar Usuarios', icon: UserCog, to: { name: 'admin-usuarios' } },
     ],
@@ -165,9 +250,7 @@ const SECTIONS: AdminSection[] = [
     title: 'Gestión de Caja',
     icon: Wallet,
     tiles: [
-      // Tile real: la CashDrawerView réplica ya existe bajo el shell POS.
       { label: 'Corte de Caja', icon: Wallet, to: { name: 'pos-caja' } },
-      // Fase admin M3+M4: tiles reales — resumen y nómina (réplicas .dart).
       { label: 'Resumen de Caja', icon: FileBarChart, to: { name: 'admin-resumen-caja' } },
       { label: 'Crear Nomina', icon: ReceiptText, to: { name: 'admin-nomina' } },
     ],
@@ -176,9 +259,7 @@ const SECTIONS: AdminSection[] = [
     title: 'Configuración',
     icon: Settings,
     tiles: [
-      // Tile real: el modal dólar ya vive en Ajustes (réplica settings.dart).
       { label: 'Configurar Dólar', icon: DollarSign, to: { name: 'pos-ajustes' } },
-      // Fase admin M2: tile real — upsert de aumento por alcance.
       { label: 'Aumento de Precios', icon: TrendingUp, to: { name: 'admin-precio-aumento' } },
       { label: 'Asignar Meseros a Mesas', icon: UserCheck, phase: 8, phaseNote: 'Meseros por mesa' },
     ],
@@ -188,35 +269,133 @@ const SECTIONS: AdminSection[] = [
 
 <template>
   <div class="ad-page">
-    <!-- ===== Topbar: back + título + contexto ===== -->
+    <!-- ===== Encabezado: back + identidad + refrescar ===== -->
     <header class="ad-appbar">
       <button
         type="button"
-        class="ad-back"
+        class="ad-icon-btn"
         title="Regresar a módulos"
         aria-label="Regresar a módulos"
         data-testid="ad-back"
         @click="goBack"
       >
-        <ArrowLeft :size="18" aria-hidden="true" />
+        <ArrowLeft :size="19" aria-hidden="true" />
       </button>
-      <div class="ad-appbar-text">
-        <h1 class="ad-title">Administración</h1>
-        <p class="ad-subtitle">Configura el sistema y administra el negocio</p>
+
+      <div class="ad-id">
+        <span class="ad-avatar" aria-hidden="true">{{ initials }}</span>
+        <div class="ad-id-text">
+          <p class="ad-greeting">Buen día</p>
+          <h1 class="ad-title">{{ displayName }}</h1>
+          <p class="ad-role">{{ roleLabel }}</p>
+        </div>
       </div>
+
+      <button
+        type="button"
+        class="ad-icon-btn ad-icon-btn--soft"
+        title="Actualizar datos"
+        aria-label="Actualizar datos"
+        :disabled="kpiLoading"
+        @click="loadKpis"
+      >
+        <RefreshCw :size="18" aria-hidden="true" :class="{ 'ad-spin': kpiLoading }" />
+      </button>
     </header>
 
     <!-- ===== Body ===== -->
     <main class="ad-body" data-testid="ad-body">
+      <!-- Hero KPI: ventas del día -->
+      <router-link
+        :to="{ name: 'admin-resumen-caja' }"
+        class="ad-hero"
+        title="Ver el resumen de caja del día"
+      >
+        <div class="ad-hero-top">
+          <span class="ad-tile-icon ad-tile-icon--light">
+            <Wallet :size="20" aria-hidden="true" />
+          </span>
+          <span class="ad-hero-label">Ventas de hoy</span>
+          <span class="ad-hero-link">Ver detalle</span>
+          <ChevronRight :size="15" class="ad-hero-link-arrow" aria-hidden="true" />
+        </div>
+
+        <p class="ad-hero-value" :class="{ 'ad-skeleton': kpiLoading }">
+          <span class="ad-hero-currency">$</span>{{ kpiLoading ? '0.00' : formatMoney(kpi.sales) }}
+        </p>
+
+        <!-- Barra de mezcla de cobro: relleno naranja = efectivo, resto rayado -->
+        <div
+          class="ad-bar"
+          role="img"
+          :aria-label="`Efectivo ${cashShare}% del total cobrado`"
+        >
+          <span class="ad-bar-fill" :style="heroBarStyle" />
+        </div>
+
+        <div class="ad-hero-legend">
+          <span class="ad-legend-item">
+            <span class="ad-legend-dot ad-legend-dot--accent" aria-hidden="true" />
+            Efectivo {{ cashShare }}%
+          </span>
+          <span class="ad-legend-sep" aria-hidden="true">·</span>
+          <span class="ad-legend-item">
+            {{ kpi.sessions == null ? '—' : kpi.sessions }}
+            {{ kpi.sessions === 1 ? 'sesión' : 'sesiones' }}
+          </span>
+        </div>
+      </router-link>
+
+      <!-- KPIs secundarios -->
+      <div class="ad-kpis">
+        <router-link
+          :to="{ name: 'admin-usuarios' }"
+          class="ad-kpi"
+          title="Gestionar usuarios"
+        >
+          <div class="ad-kpi-top">
+            <span class="ad-tile-icon ad-tile-icon--light ad-tile-icon--sm">
+              <Users :size="17" aria-hidden="true" />
+            </span>
+            <ChevronRight :size="15" class="ad-kpi-arrow" aria-hidden="true" />
+          </div>
+          <p class="ad-kpi-label">Usuarios</p>
+          <p class="ad-kpi-value" :class="{ 'ad-skeleton': kpiLoading }">
+            {{ kpiLoading ? '—' : formatCount(kpi.activeUsers) }}
+          </p>
+          <div class="ad-mini-bar" aria-hidden="true">
+            <span class="ad-mini-bar-fill" :style="{ width: `${usersShare}%` }" />
+          </div>
+          <p class="ad-kpi-meta">{{ kpiLoading ? 'Cargando' : usersMeta }}</p>
+        </router-link>
+
+        <router-link
+          :to="{ name: 'admin-catalogo' }"
+          class="ad-kpi"
+          title="Gestionar catálogo"
+        >
+          <div class="ad-kpi-top">
+            <span class="ad-tile-icon ad-tile-icon--light ad-tile-icon--sm">
+              <Package :size="17" aria-hidden="true" />
+            </span>
+            <ChevronRight :size="15" class="ad-kpi-arrow" aria-hidden="true" />
+          </div>
+          <p class="ad-kpi-label">Artículos</p>
+          <p class="ad-kpi-value" :class="{ 'ad-skeleton': kpiLoading }">
+            {{ kpiLoading ? '—' : formatCount(kpi.catalogItems) }}
+          </p>
+          <div class="ad-mini-bar ad-mini-bar--ghost" aria-hidden="true" />
+          <p class="ad-kpi-meta">Activos en catálogo</p>
+        </router-link>
+      </div>
+
+      <!-- ===== Accesos por sección ===== -->
       <section v-for="section in SECTIONS" :key="section.title" class="ad-section">
-        <!-- Section header -->
         <div class="ad-section-header">
-          <component :is="section.icon" :size="15" class="ad-section-icon" aria-hidden="true" />
           <h2 class="ad-section-title">{{ section.title }}</h2>
           <span class="ad-section-count">{{ section.tiles.length }}</span>
         </div>
 
-        <!-- Lista de acciones (filas, no cuadrados grises) -->
         <div class="ad-list">
           <component
             :is="tile.to != null ? 'router-link' : 'button'"
@@ -254,12 +433,12 @@ const SECTIONS: AdminSection[] = [
 
 <style scoped>
 /* ==========================================================================
-   Administración · hub de acciones (Premium Minimalist / Orange)
+   Administración · dashboard premium (dark / orange estratégico)
    --------------------------------------------------------------------------
-   Composición: topbar ligera (back + título + subtítulo) y, por sección, una
-   lista agrupada de filas (icono · label · chevron) en lugar de la retícula
-   de cuadrados grises. Se conservan TODOS los tiles, rutas, testids
-   (ad-tile-*), el badge de fase y los tooltips `title`.
+   Lenguaje visual: tarjetas grandes con esquinas amplias, tiles de icono
+   claros (el acento de la referencia), números muy grandes en tabular, y
+   naranja SOLO en la barra de efectivo + el enlace "Ver detalle". No hay
+   botón sólido naranja en esta pantalla: el acento no compite con nada.
    ========================================================================== */
 
 .ad-page {
@@ -270,28 +449,29 @@ const SECTIONS: AdminSection[] = [
   font-family: var(--font);
 }
 
-/* ===== Topbar ============================================================ */
+/* ===== Encabezado ======================================================== */
+
 .ad-appbar {
   display: flex;
   align-items: center;
   gap: 12px;
   width: 100%;
-  max-width: 880px;
+  max-width: 900px;
   margin: 0 auto;
-  padding: 18px 24px 10px;
+  padding: max(20px, env(safe-area-inset-top)) 24px 4px;
 }
 
-.ad-back {
+.ad-icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   flex: none;
   padding: 0;
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
   color: var(--text-2);
   cursor: pointer;
   transition:
@@ -300,84 +480,338 @@ const SECTIONS: AdminSection[] = [
     border-color var(--dur) var(--ease);
 }
 
-.ad-back:hover {
+.ad-icon-btn:hover:not(:disabled) {
   color: var(--text-1);
-  background: rgba(255, 255, 255, 0.07);
-  border-color: var(--border-soft);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border);
 }
 
-.ad-back:active {
+.ad-icon-btn:active:not(:disabled) {
   background: rgba(255, 255, 255, 0.1);
 }
 
-.ad-appbar-text {
+.ad-icon-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.ad-icon-btn--soft {
+  margin-left: auto;
+}
+
+/* Identidad: avatar + nombre + rol */
+.ad-id {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.ad-avatar {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  color: var(--text-1);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.ad-id-text {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 1px;
   min-width: 0;
+}
+
+.ad-greeting {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
 }
 
 .ad-title {
   margin: 0;
-  font-size: var(--text-h1);
+  font-size: 17px;
   font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
+  letter-spacing: -0.022em;
+  line-height: 1.25;
   color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.ad-subtitle {
+.ad-role {
   margin: 0;
-  font-size: var(--text-sm);
-  color: var(--text-3);
+  font-size: 12.5px;
+  color: var(--text-2);
 }
 
 /* ===== Body ============================================================== */
+
 .ad-body {
   flex: 1;
   width: 100%;
-  max-width: 880px;
+  max-width: 900px;
   margin: 0 auto;
-  padding: 8px 24px max(32px, env(safe-area-inset-bottom));
+  padding: 18px 24px max(36px, env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
-  gap: 26px;
+  gap: 10px;
 }
 
-/* ===== Sección =========================================================== */
+/* ===== Hero KPI ========================================================== */
+
+.ad-hero {
+  display: block;
+  padding: 18px 18px 16px;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: 20px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  text-decoration: none;
+  color: inherit;
+  transition:
+    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+
+.ad-hero:hover {
+  border-color: var(--border);
+  background: var(--surface-hover);
+}
+
+.ad-hero-top {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 14px;
+}
+
+.ad-hero-label {
+  font-size: 14.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text-1);
+}
+
+.ad-hero-link {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--primary);
+}
+
+.ad-hero-link-arrow {
+  flex: none;
+  color: var(--primary);
+}
+
+.ad-hero-value {
+  margin: 0 0 15px;
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  font-size: clamp(30px, 9vw, 42px);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.ad-hero-currency {
+  font-size: 0.58em;
+  font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: -0.01em;
+}
+
+/* Barra: relleno naranja (efectivo) + track rayado (resto) */
+.ad-bar {
+  position: relative;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+  overflow: hidden;
+}
+
+.ad-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.075) 0 5px,
+    transparent 5px 10px
+  );
+  pointer-events: none;
+}
+
+.ad-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 1;
+  border-radius: 999px;
+  background: var(--primary);
+  transition: width var(--dur-slow) var(--ease);
+}
+
+.ad-hero-legend {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 11px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.ad-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ad-legend-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+.ad-legend-sep {
+  color: var(--text-3);
+}
+
+/* ===== KPIs secundarios ================================================== */
+
+.ad-kpis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.ad-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 15px 15px 14px;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: 18px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  text-decoration: none;
+  color: inherit;
+  transition:
+    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+
+.ad-kpi:hover {
+  border-color: var(--border);
+  background: var(--surface-hover);
+}
+
+.ad-kpi-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.ad-kpi-arrow {
+  flex: none;
+  color: var(--text-3);
+}
+
+.ad-kpi-label {
+  margin: 0 0 6px;
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text-1);
+}
+
+.ad-kpi-value {
+  margin: 0 0 10px;
+  font-size: clamp(24px, 7vw, 29px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.ad-mini-bar {
+  height: 5px;
+  margin-bottom: 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+/* Micro-barra neutra: el naranja ya está en el hero, no se repite aquí. */
+.ad-mini-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.28);
+  transition: width var(--dur-slow) var(--ease);
+}
+
+.ad-mini-bar--ghost {
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.09) 0 4px,
+    transparent 4px 8px
+  );
+}
+
+.ad-kpi-meta {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* ===== Secciones ========================================================= */
+
 .ad-section {
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  margin-top: 14px;
 }
 
 .ad-section-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 4px;
-}
-
-.ad-section-icon {
-  flex: none;
-  color: var(--text-3);
+  padding: 0 2px;
 }
 
 .ad-section-title {
   margin: 0;
-  font-size: var(--text-xs);
+  font-size: 12.5px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.055em;
   text-transform: uppercase;
   color: var(--text-2);
 }
 
 .ad-section-count {
-  margin-left: auto;
   min-width: 20px;
   padding: 1px 6px;
-  border-radius: var(--radius-full);
+  border-radius: 999px;
   background: rgba(255, 255, 255, 0.06);
   color: var(--text-3);
   font-size: 10.5px;
@@ -386,49 +820,38 @@ const SECTIONS: AdminSection[] = [
   text-align: center;
 }
 
-/* ===== Lista agrupada de acciones ======================================== */
+/* Lista: tarjetas separadas (no un bloque con divisores) */
 .ad-list {
   display: flex;
   flex-direction: column;
-  background: var(--card);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
+  gap: 8px;
 }
 
-/* Fila: tile de icono + label (+badge) + chevron */
 .ad-tile {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 13px;
   width: 100%;
-  min-height: 58px;
-  padding: 12px 16px;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid var(--border-soft);
+  min-height: 60px;
+  padding: 10px 14px;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: 16px;
   color: var(--text-1);
   font-family: var(--font);
   text-align: left;
   text-decoration: none;
   cursor: pointer;
-  transition: background var(--dur) var(--ease);
-}
-
-.ad-tile:last-child {
-  border-bottom: none;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
 
 @media (hover: hover) {
   .ad-tile:hover {
     background: var(--surface-hover);
-  }
-
-  .ad-tile:hover .ad-tile-icon {
-    background: var(--primary);
-    border-color: var(--primary);
-    color: #ffffff;
+    border-color: var(--border);
   }
 
   .ad-tile:hover .ad-tile-arrow {
@@ -441,21 +864,33 @@ const SECTIONS: AdminSection[] = [
   background: rgba(255, 255, 255, 0.05);
 }
 
-/* Tile de icono: 34px con tinte de acento sutil (no cuadrado gris) */
+/* Tile de icono claro: la firma visual de la referencia */
 .ad-tile-icon {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   flex: none;
-  border-radius: var(--radius-sm);
-  background: var(--primary-soft);
-  border: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
-  color: var(--primary);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-1);
   transition:
     background var(--dur) var(--ease),
-    border-color var(--dur) var(--ease),
     color var(--dur) var(--ease);
+}
+
+/* Variante clara — solo en los KPI (acento de la referencia). */
+.ad-tile-icon--light {
+  background: #f2f2f2;
+  border-color: transparent;
+  color: #171717;
+}
+
+.ad-tile-icon--sm {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
 }
 
 .ad-tile-body {
@@ -467,9 +902,9 @@ const SECTIONS: AdminSection[] = [
 }
 
 .ad-tile-label {
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 500;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.012em;
   line-height: 1.3;
   color: var(--text-1);
   overflow: hidden;
@@ -477,7 +912,7 @@ const SECTIONS: AdminSection[] = [
 }
 
 .ad-tile-badge {
-  font-size: var(--text-xs);
+  font-size: 11.5px;
   font-weight: 500;
   line-height: 1.3;
   color: var(--text-3);
@@ -486,80 +921,137 @@ const SECTIONS: AdminSection[] = [
 .ad-tile-arrow {
   flex: none;
   color: var(--text-3);
-  opacity: 0.7;
   transition:
     color var(--dur) var(--ease),
-    transform var(--dur) var(--ease),
-    opacity var(--dur) var(--ease);
+    transform var(--dur) var(--ease);
 }
 
 /* Placeholder de fase futura: legible pero no accionable */
 .ad-tile--disabled {
   cursor: default;
-  opacity: 0.55;
+  opacity: 0.5;
 }
 
 .ad-tile--disabled .ad-tile-icon {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.04);
   border-color: var(--border-soft);
   color: var(--text-3);
 }
 
 .ad-tile--disabled:hover {
-  background: transparent;
+  background: var(--card);
+  border-color: var(--border-soft);
+}
+
+/* ===== Carga ============================================================= */
+
+.ad-skeleton {
+  color: var(--text-3) !important;
+  opacity: 0.65;
+}
+
+.ad-spin {
+  animation: ad-spin 0.9s linear infinite;
+}
+
+@keyframes ad-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ad-spin {
+    animation: none;
+  }
+
+  .ad-bar-fill,
+  .ad-mini-bar-fill,
+  .ad-tile-arrow {
+    transition: none;
+  }
 }
 
 /* ===== Tablet / móvil ==================================================== */
+
 @media (max-width: 899px) {
-  .ad-body {
+  .ad-body,
+  .ad-appbar {
     max-width: 100%;
-    padding: 4px 20px max(28px, env(safe-area-inset-bottom));
   }
 }
 
 @media (max-width: 699px) {
   .ad-appbar {
-    padding: 14px 16px 6px;
-  }
-
-  .ad-title {
-    font-size: 20px;
-  }
-
-  .ad-subtitle {
-    font-size: var(--text-xs);
+    padding: max(14px, env(safe-area-inset-top)) 16px 2px;
+    gap: 10px;
   }
 
   .ad-body {
-    padding: 4px 16px max(24px, env(safe-area-inset-bottom));
-    gap: 22px;
+    padding: 14px 16px max(28px, env(safe-area-inset-bottom));
   }
 
-  /* Filas con área táctil cómoda y chevron siempre visible */
+  .ad-hero {
+    padding: 16px 15px 14px;
+    border-radius: 18px;
+  }
+
+  .ad-kpi {
+    padding: 13px 13px 12px;
+    border-radius: 16px;
+  }
+
+  .ad-kpi-label {
+    font-size: 13px;
+  }
+
   .ad-tile {
-    min-height: 60px;
-    gap: 12px;
-    padding: 12px;
+    min-height: 58px;
+    padding: 9px 12px;
+    gap: 11px;
+    border-radius: 14px;
   }
 
-  .ad-tile-arrow {
-    opacity: 1;
+  .ad-tile-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
   }
 
   .ad-tile-label {
-    font-size: 14.5px;
+    font-size: 14px;
   }
 }
 
 @media (max-width: 380px) {
-  .ad-tile {
-    gap: 10px;
-    padding: 12px 10px;
+  .ad-appbar {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .ad-body {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  /* El avatar sí puede encoger; los botones NO: el objetivo táctil de 44px
+     es innegociable, incluso a 360px. */
+  .ad-avatar {
+    width: 40px;
+    height: 40px;
+  }
+
+  .ad-title {
+    font-size: 16px;
+  }
+
+  .ad-kpi-value {
+    font-size: 24px;
   }
 
   .ad-tile-icon {
-    width: 32px;
-    height: 32px;
+    width: 36px;
+    height: 36px;
   }
 }
 </style>

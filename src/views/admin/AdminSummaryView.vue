@@ -212,11 +212,10 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
             Consultar
           </button>
         </div>
-        <div class="as-field">
-          <span class="as-label">Alcance del reporte</span>
-          <ScopeSelector v-model="scope" />
-        </div>
-        <p class="as-sucursal">Sucursal actual: {{ POS_SUCURSAL_ID }}</p>
+        <!-- ScopeSelector ya renderiza su label 'Alcance' y la línea
+             'Sucursal actual: N'; antes se repetían aquí (texto duplicado
+             visible). El dato sigue en el selector. -->
+        <ScopeSelector v-model="scope" />
       </section>
 
       <!-- ===== Resultado: spinner / error / vacío / datos ===== -->
@@ -360,21 +359,25 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 18px 24px 10px;
-  background: var(--bg);
-
   width: 100%;
   max-width: 900px;
   margin: 0 auto;
+  padding: max(16px, env(safe-area-inset-top)) 24px 6px;
+  background: var(--bg);
 }
 
 .as-appbar-title {
   margin: 0;
   flex: 1;
-  font-size: var(--text-h1);
+  min-width: 0;
+  font-size: 19px;
   font-weight: 600;
-  letter-spacing: -0.02em;
-  color: var(--text);
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .as-appbar-actions {
@@ -383,25 +386,34 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
   gap: 4px;
 }
 
-/* IconButton 48px circular, hover white08 (patrón ManageUsersView) */
+/* IconButton circular 44px (objetivo táctil) con borde sutil */
 .as-icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   flex: none;
   padding: 0;
   background: transparent;
-  border: none;
+  border: 1px solid var(--border-soft);
   border-radius: 999px;
-  color: var(--text);
+  color: var(--text-2);
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition:
+    color var(--dur) var(--ease),
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
 
 .as-icon-btn:hover {
-  background: var(--border-soft);
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border);
+}
+
+.as-icon-btn:active {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 /* ===== Cuerpo (máx ~900px: la tabla necesita algo más que el form) ===== */
@@ -414,12 +426,13 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
   margin: 0 auto;
 }
 
-/* ===== Filtros card (L252-354) ===== */
+/* ===== Filtros card ===== */
 .as-filters {
   margin: 12px 16px 0;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  padding: 14px;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -428,19 +441,21 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
 .as-filter-row {
   display: flex;
   align-items: flex-end;
-  gap: 12px;
+  gap: 10px;
 }
 
 .as-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  min-width: 0;
   flex: 1;
 }
 
 .as-label {
   font-size: 12px;
-  color: var(--text-faint);
+  font-weight: 500;
+  color: var(--text-2);
 }
 
 /* Input date (default HOY) con icono calendario */
@@ -448,29 +463,33 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
   position: relative;
   display: flex;
   align-items: center;
+  min-width: 0;
 }
 
 .as-date-icon {
   position: absolute;
   left: 12px;
-  color: var(--text-faint);
+  color: var(--text-3);
   pointer-events: none;
 }
 
-/* InputDecorationTheme réplica: fill black alpha .3, outline grey[700],
-   radius 12, focused deepOrange */
+/* InputDecorationTheme réplica: fill elevado, outline sutil, radius, foco
+   naranja en el borde (sin halo grande). */
 .as-input {
   width: 100%;
+  min-width: 0;
   height: 44px;
   padding: 0 12px;
   background: var(--elevated);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
-  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-1);
   font-family: var(--font);
   font-size: 15px;
   outline: none;
-  transition: border-color 0.15s ease;
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 
 .as-input:focus {
@@ -484,27 +503,23 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
   color-scheme: dark;
 }
 
-.as-sucursal {
-  margin: 0;
-  font-size: 14px;
-  color: var(--text);
-}
-
-/* ===== Botones (ElevatedButton theme: deepOrange radius 12 bold) ===== */
+/* ===== Botones ===== */
 .as-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 12px 24px;
-  border-radius: var(--radius);
+  padding: 0 20px;
+  border-radius: var(--radius-md);
   font-family: var(--font);
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 600;
+  letter-spacing: -0.01em;
   cursor: pointer;
   border: 1px solid transparent;
   flex: none;
   min-height: 44px;
+  transition: background var(--dur) var(--ease);
 }
 
 .as-btn--primary {
@@ -521,9 +536,12 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
   cursor: not-allowed;
 }
 
-/* ===== Lista: ListView padding 16 ===== */
+/* ===== Lista ===== */
 .as-list-wrap {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   padding: 16px;
 }
 
@@ -532,15 +550,17 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  padding: 64px 24px;
+  gap: 14px;
+  padding: 52px 24px;
   text-align: center;
 }
 
 .as-empty {
   margin: 0;
-  color: var(--text);
-  font-size: 16px;
+  padding: 44px 20px;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 .as-state-error-icon {
@@ -549,99 +569,146 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
 
 .as-state-text {
   margin: 0;
-  color: var(--text);
+  max-width: 34ch;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.55;
 }
 
-/* ElevatedButton 'Reintentar': deepOrange radius 12 bold */
+/* Reintentar: botón secundario, no el CTA principal de la pantalla. */
 .as-retry {
-  padding: 12px 24px;
-  background: var(--primary);
-  color: var(--on-primary);
-  border: none;
-  border-radius: var(--radius);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 20px;
+  background: var(--elevated);
+  color: var(--text-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   font-family: var(--font);
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
 
 .as-retry:hover {
-  background: var(--primary-hover);
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
 }
 
-/* Section title (L416-420 'Resumen del Dia'): 20 bold */
+/* Section title */
 .as-section-title {
-  margin: 0;
-  font-size: var(--text-xs);
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+/* ===== Totales: GRAN TOTAL como hero + métodos en grid ===== */
+.as-totals {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+/* El gran total ocupa toda la fila y se lee primero (jerarquía real). */
+.as-total-card--grand {
+  grid-column: 1 / -1;
+  order: -1;
+  padding: 16px 16px 15px;
+  gap: 2px;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: 18px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.as-total-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 13px;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  min-width: 0;
+}
+
+/* Cierra la retícula pareja cuando el número de métodos es impar:
+   'Otros' ocupa la fila completa en vez de dejar un hueco muerto. */
+.as-total-card:last-child:not(.as-total-card--grand) {
+  grid-column: 1 / -1;
+}
+
+.as-total-label {
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-2);
+}
+
+.as-total-value {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+
+/* GRAN TOTAL: número grande en blanco, etiqueta con punto naranja.
+   El naranja se reserva al acento, no al número (mejor lectura). */
+.as-total-card--grand .as-total-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-2);
 }
 
-/* ===== Totales: grid de cards (KPI réplica L424-446) ===== */
-.as-totals {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 12px;
-  margin-bottom: 24px;
-}
-
-.as-total-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.04); /* white .04 (L744) */
-  border: 1px solid rgba(255, 255, 255, 0.06); /* white .06 (L746) */
-  border-radius: 12px;
-}
-
-.as-total-label {
-  font-size: 12px;
-  color: var(--text-faint);
-}
-
-.as-total-value {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text);
-}
-
-/* GRAN TOTAL: grande/primario (réplica L563-574 deepOrange .15) */
-.as-total-card--grand {
-  background: var(--primary-soft);
-  border-color: var(--primary);
-}
-
-.as-total-card--grand .as-total-label {
-  color: var(--primary);
-  font-weight: 700;
+.as-total-card--grand .as-total-label::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--primary);
 }
 
 .as-total-card--grand .as-total-value {
-  font-size: 22px;
-  color: var(--primary);
+  font-size: clamp(28px, 8vw, 36px);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+  color: var(--text-1);
 }
 
 /* ===== Sesiones (cards) ===== */
 .as-list {
-  margin: 0 0 24px;
+  margin: 0 0 10px;
   padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .as-session {
-  padding: 12px 16px;
-  background: var(--card);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-soft);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  padding: 14px 15px;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: 16px;
 }
 
 .as-session-head {
@@ -652,9 +719,10 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
 }
 
 .as-session-user {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--text-1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -662,9 +730,14 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
 
 /* Badge OPEN verde / CERRADA gris */
 .as-session-status {
-  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.045em;
   flex: none;
 }
 
@@ -674,54 +747,61 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
 }
 
 .as-session-status--closed {
-  background: var(--border-soft);
-  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-2);
 }
 
 .as-session-meta {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
 }
 
 .as-session-folio {
-  font-weight: 700;
+  font-weight: 600;
+  color: var(--text-1);
 }
 
 .as-session-amounts {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+  gap: 6px;
 }
 
-/* Mini stat (réplica _miniStat L779-795) */
+/* Mini stat */
 .as-mini-stat {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 8px 10px;
+  padding: 8px 9px;
   background: rgba(255, 255, 255, 0.04);
   border-radius: 10px;
+  min-width: 0;
 }
 
 .as-mini-label {
-  font-size: 11px;
-  color: var(--text-faint);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-3);
 }
 
 .as-mini-value {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
-  color: var(--text);
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Diferencia != 0 → badge rojo */
 .as-mini-stat--diff {
-  background: rgba(255, 82, 82, 0.12);
-  border: 1px solid rgba(255, 82, 82, 0.4);
+  background: var(--error-soft);
+  border: 1px solid rgba(242, 86, 91, 0.3);
 }
 
 .as-mini-stat--diff .as-mini-value {
@@ -732,49 +812,57 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
 .as-user {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
+  gap: 10px;
+  padding: 13px 15px;
   background: var(--card);
-  border-radius: var(--radius-md);
   border: 1px solid var(--border-soft);
+  border-radius: 14px;
 }
 
 .as-user-name {
   flex: 1;
   min-width: 0;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text-1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .as-user-meta {
-  font-size: 12px;
-  color: var(--text-faint);
+  font-size: 11.5px;
+  color: var(--text-2);
   flex: none;
 }
 
+/* El total por usuario NO va naranja: el acento está en el hero. */
 .as-user-total {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--primary);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
   flex: none;
 }
 
-/* ===== Responsive básico: móvil apila filtros ===== */
+/* ===== Responsive: móvil ===== */
 @media (max-width: 560px) {
+  .as-appbar {
+    padding: max(12px, env(safe-area-inset-top)) 16px 4px;
+  }
+
   .as-appbar-title {
-    font-size: 19px;
+    font-size: 18px;
   }
 
   .as-filters {
-    margin: 8px 12px 0;
+    margin: 10px 14px 0;
+    padding: 13px;
   }
 
   .as-list-wrap {
-    padding: 12px;
+    padding: 14px;
   }
 
   .as-filter-row {
@@ -782,7 +870,16 @@ const porUsuario = computed(() => totals.value?.porUsuario ?? [])
     align-items: stretch;
   }
 
+  /* Consultar a todo el ancho: es el único CTA de la vista. */
+  .as-btn {
+    width: 100%;
+  }
+
   .as-totals {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .as-session-amounts {
     grid-template-columns: repeat(2, 1fr);
   }
 }

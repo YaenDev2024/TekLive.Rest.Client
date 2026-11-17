@@ -813,26 +813,30 @@ async function submitEdit(): Promise<void> {
   font-family: var(--font);
 }
 
-/* ===== AppBar: bg scaffold, elevation 0, refresh a la derecha ===== */
+/* ===== AppBar ===== */
 .mu-appbar {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 18px 24px 10px;
-  background: var(--bg);
-
   width: 100%;
   max-width: 800px;
   margin: 0 auto;
+  padding: max(16px, env(safe-area-inset-top)) 24px 6px;
+  background: var(--bg);
 }
 
 .mu-appbar-title {
   margin: 0;
   flex: 1;
-  font-size: var(--text-h1);
+  min-width: 0;
+  font-size: 19px;
   font-weight: 600;
-  letter-spacing: -0.02em;
-  color: var(--text);
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mu-appbar-actions {
@@ -841,25 +845,34 @@ async function submitEdit(): Promise<void> {
   gap: 4px;
 }
 
-/* IconButton 48px circular, hover white08 */
+/* IconButton circular 44px con borde sutil */
 .mu-icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   flex: none;
   padding: 0;
   background: transparent;
-  border: none;
+  border: 1px solid var(--border-soft);
   border-radius: 999px;
-  color: var(--text);
+  color: var(--text-2);
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition:
+    color var(--dur) var(--ease),
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
 
 .mu-icon-btn:hover {
-  background: var(--border-soft);
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border);
+}
+
+.mu-icon-btn:active {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 /* ===== Cuerpo centrado ===== */
@@ -872,31 +885,34 @@ async function submitEdit(): Promise<void> {
   margin: 0 auto;
 }
 
-/* ===== Buscador (L333-359: fill cardBg, radius 12, icono search) ===== */
+/* ===== Buscador ===== */
 .mu-search-wrap {
-  padding: 16px 16px 0;
+  padding: 14px 16px 0;
 }
 
 .mu-search {
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 48px;
+  height: 46px;
   padding: 0 14px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  transition: border-color 0.15s ease;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 
 .mu-search:focus-within {
   border-color: var(--primary);
-  border-width: 2px;
+  box-shadow: 0 0 0 3px rgba(255, 100, 45, 0.16);
 }
 
+/* La lupa ya no va naranja: el acento se reserva al foco y a los KPIs. */
 .mu-search-icon {
   flex: none;
-  color: var(--primary); /* Icon search color _primaryColor (L342) */
+  color: var(--text-3);
 }
 
 .mu-search-input {
@@ -904,14 +920,14 @@ async function submitEdit(): Promise<void> {
   min-width: 0;
   border: none;
   background: transparent;
-  color: var(--text);
+  color: var(--text-1);
   font-family: var(--font);
   font-size: 15px;
   outline: none;
 }
 
 .mu-search-input::placeholder {
-  color: var(--text-faint); /* hintStyle Colors.grey (L341) */
+  color: var(--text-3);
 }
 
 /* ===== Lista: Expanded + ListView padding 16 ===== */
@@ -932,8 +948,10 @@ async function submitEdit(): Promise<void> {
 
 .mu-empty {
   margin: 0;
-  color: var(--text);
-  font-size: 16px;
+  padding: 44px 20px;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 .mu-state-error-icon {
@@ -942,44 +960,55 @@ async function submitEdit(): Promise<void> {
 
 .mu-state-text {
   margin: 0;
-  color: var(--text);
+  max-width: 34ch;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.55;
 }
 
-/* ElevatedButton 'Reintentar' */
+/* Reintentar: botón secundario (el CTA principal no vive aquí). */
 .mu-retry {
-  padding: 12px 24px;
-  background: var(--primary);
-  color: var(--on-primary);
-  border: none;
-  border-radius: var(--radius);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 20px;
+  background: var(--elevated);
+  color: var(--text-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   font-family: var(--font);
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
 
 .mu-retry:hover {
-  background: var(--primary-hover);
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
 }
 
-/* ===== Card de usuario (Card _cardBg radius 12 border #3A3A3A, L434-444) ===== */
+/* ===== Card de usuario ===== */
 .mu-list {
   margin: 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .mu-card {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 8px 14px 16px;
+  padding: 13px 8px 13px 14px;
   background: var(--card);
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-md);
+  border-radius: 16px;
   transition:
     border-color var(--dur) var(--ease),
     background var(--dur) var(--ease);
@@ -992,7 +1021,7 @@ async function submitEdit(): Promise<void> {
   }
 }
 
-/* Avatar-inicial (CircleAvatar del brief): primary alpha, gris si inactivo */
+/* Avatar circular con iniciales */
 .mu-avatar {
   display: inline-flex;
   align-items: center;
@@ -1000,16 +1029,18 @@ async function submitEdit(): Promise<void> {
   width: 44px;
   height: 44px;
   flex: none;
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border-soft);
-  color: var(--text-2);
-  font-size: 18px;
-  font-weight: 700;
+  border-radius: 999px;
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  color: var(--text-1);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .mu-avatar--inactive {
-  background: rgba(158, 158, 158, 0.25); /* Colors.grey alpha */
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--border-soft);
   color: var(--text-3);
 }
 
@@ -1111,19 +1142,19 @@ async function submitEdit(): Promise<void> {
 }
 
 .mu-item-sub {
-  font-size: 13px;
-  color: var(--text-muted); /* white70 (L548-554) */
+  font-size: 12.5px;
+  color: var(--text-2);
 }
 
 .mu-item-email {
   font-size: 12px;
-  color: var(--text-faint);
+  color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Trailing: IconButtons (L558-610) */
+/* Trailing: IconButtons */
 .mu-item-actions {
   display: flex;
   align-items: center;
@@ -1131,23 +1162,27 @@ async function submitEdit(): Promise<void> {
   flex: none;
 }
 
+/* 44px táctil (antes 40px). */
 .mu-item-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   background: transparent;
   border: none;
   border-radius: 999px;
-  color: var(--text);
+  color: var(--text-2);
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
 }
 
 .mu-item-btn:hover {
-  background: var(--border-soft);
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .mu-item-btn--delete {
@@ -1186,7 +1221,8 @@ async function submitEdit(): Promise<void> {
 
 .mu-label {
   font-size: 12px;
-  color: var(--text-faint);
+  font-weight: 500;
+  color: var(--text-2);
 }
 
 .mu-input {
@@ -1194,13 +1230,15 @@ async function submitEdit(): Promise<void> {
   height: 44px;
   padding: 0 12px;
   background: var(--elevated);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
-  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-1);
   font-family: var(--font);
   font-size: 15px;
   outline: none;
-  transition: border-color 0.15s ease;
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 
 .mu-input:focus {
@@ -1219,13 +1257,16 @@ async function submitEdit(): Promise<void> {
   align-items: center;
   padding: 0 6px 0 0;
   background: var(--elevated);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
-  transition: border-color 0.15s ease;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 
 .mu-input-wrap:focus-within {
   border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(255, 100, 45, 0.16);
 }
 
 .mu-input--bare {
@@ -1235,23 +1276,27 @@ async function submitEdit(): Promise<void> {
   min-width: 0;
 }
 
+/* 44px táctil */
 .mu-eye {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   flex: none;
   background: none;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   padding: 0;
-  color: var(--text-muted);
+  color: var(--text-2);
   cursor: pointer;
+  transition:
+    color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
 }
 
 .mu-eye:hover {
-  color: var(--text);
+  color: var(--text-1);
   background: rgba(255, 255, 255, 0.06);
 }
 
@@ -1435,31 +1480,33 @@ async function submitEdit(): Promise<void> {
   cursor: not-allowed;
 }
 
-/* ===== Responsive básico (móvil first) ===== */
+/* ===== Responsive (móvil first) ===== */
 @media (max-width: 560px) {
+  .mu-appbar {
+    padding: max(12px, env(safe-area-inset-top)) 16px 4px;
+  }
+
   .mu-appbar-title {
-    font-size: 19px;
+    font-size: 18px;
   }
 
   .mu-search-wrap {
-    padding: 12px 12px 0;
+    padding: 12px 14px 0;
   }
 
   .mu-list-wrap {
-    padding: 12px;
+    padding: 14px;
   }
 
+  /* En móvil la card no se parte en dos filas: avatar + texto + acciones
+     caben en una sola línea (más denso y más legible que el wrap anterior). */
   .mu-card {
-    flex-wrap: wrap;
-    gap: 10px;
-  }
-
-  .mu-item-info {
-    flex-basis: calc(100% - 66px);
+    gap: 11px;
+    padding: 12px 6px 12px 12px;
   }
 
   .mu-item-actions {
-    margin-left: 56px;
+    margin-left: 0;
   }
 
   .mu-row {
