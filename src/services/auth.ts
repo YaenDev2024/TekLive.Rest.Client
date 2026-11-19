@@ -19,6 +19,7 @@
 
 import { reactive } from 'vue'
 import { getAccessToken, setAccessToken } from '../api/client'
+import { clearProductImages } from '../api/productImages'
 import { getMe } from '../api/rest'
 
 const LS_EMPLOYEE_NUMBER = 'rest.employeeNumber'
@@ -205,6 +206,10 @@ export function clearSession(): void {
   session.accessToken = null
   session.refreshToken = null
   setAccessToken(null)
+  // Los object URLs de las imágenes de producto viven en memoria toda la
+  // sesión (ver api/productImages): al cerrar sesión se revocan y se olvidan
+  // para no retener los blobs del usuario anterior en el POS.
+  clearProductImages()
   // El refresh persistido muere con el logout explícito (si el usuario cierra
   // sesión, nadie más debe poder resumir esa sesión en este dispositivo).
   writeLS(LS_REFRESH_TOKEN, null)

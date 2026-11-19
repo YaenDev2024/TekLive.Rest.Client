@@ -20,7 +20,7 @@
  * against live responses. Error JSON uses `{ message }` (middleware + controllers).
  */
 
-import { apiDelete, apiGet, apiPatch, apiPost, apiPut, type ApiResult } from './client'
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut, apiUpload, type ApiResult } from './client'
 import type {
   Catalog,
   CloseCashSessionPayload,
@@ -737,6 +737,61 @@ export async function deleteAdminProduct(
     `/api/rest/catalog/admin/products/${encodeURIComponent(productId)}`,
   )
   return { status, data: data.data }
+}
+
+// ---------------------------------------------------------------------------
+// Admin · Imágenes de producto (BE-1: BusinessSuite
+// POST/DELETE api/rest/catalog/admin/products/{id}/image y
+// GET api/rest/catalog/templates/{id}/image).
+//
+// El binario NUNCA se consume con `<img src>`: /api/rest/* exige X-Api-Key +
+// Bearer, headers que un <img> no envía. La lectura pasa por apiDownload y la
+// caché de object URLs de src/api/productImages.ts.
+// ---------------------------------------------------------------------------
+
+/** Datos que devuelve el backend tras guardar la imagen (200). */
+export interface UploadedProductImageResponse {
+  /** Ruta relativa de API: /api/rest/catalog/templates/{id}/image. */
+  imageUrl: string
+  bytes: number
+  width: number
+  height: number
+}
+
+/**
+ * POST …/admin/products/{id}/image — multipart/form-data con el campo `file`.
+ *
+ * 400 esperados (se muestran tal cual al usuario):
+ *  · "No se recibió ninguna imagen."
+ *  · "La imagen excede el tamaño máximo de 4 MB."
+ *  · "El archivo no es una imagen válida."
+ */
+export async function uploadAdminProductImage(
+  productId: number,
+  file: File,
+): Promise<ApiResult<UploadedProductImageResponse>> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const { status, data } = await apiUpload<Envelope<UploadedProductImageResponse>>(
+    `/api/rest/catalog/admin/products/${encodeURIComponent(productId)}/image`,
+    formData,
+  )
+  return { status, data: data.data }
+}
+
+/** DELETE …/admin/products/{id}/image → 200 (envelope desenrollado). */
+export async function deleteAdminProductImage(
+  productId: number,
+): Promise<ApiResult<Record<string, never>>> {
+  const { status, data } = await apiDelete<Envelope<Record<string, never>>>(
+    `/api/rest/catalog/admin/products/${encodeURIComponent(productId)}/image`,
+  )
+  return { status, data: data.data }
+}
+
+/** Ruta RELATIVA del endpoint binario de la imagen de un producto. */
+export function productImagePath(productId: number): string {
+  return `/api/rest/catalog/templates/${encodeURIComponent(productId)}/image`
 }
 
 // ---------------------------------------------------------------------------

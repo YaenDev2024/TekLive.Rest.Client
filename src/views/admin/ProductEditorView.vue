@@ -46,9 +46,10 @@
  *   — distinto del radius 10 del panel de la LISTA), ScopeSelector, Nombre
  *   (hint 'Ej: Charola Chica'), Descripción 3 líneas, Precio base '$ ',
  *   Categoría dropdown, imagen: preview 200px + botón deepOrange 'Seleccionar
- *   imagen'/'Cambiar imagen' (SOLO preview local — el backend REST no tiene
- *   upload de imagen en el contrato; el payload NO la envía, decisión
- *   documentada; en el original va multipart).
+ *   imagen'/'Cambiar imagen' (preview local inmediato + subida multipart real
+ *   al guardar: POST /api/rest/catalog/admin/products/{id}/image con el campo
+ *   `file`; la lectura de la imagen guardada se hace por descarga autenticada
+ *   y object URL — ver src/api/productImages.ts).
  * - Paso 2 L941-1134: 'Grupos de opciones' 16 bold; grupos VACÍOS por
  *   defecto (L43: optionGroups = [] — el editor previo creaba uno); card por
  *   grupo grey[850] #303030: nombre hint 'Nombre del grupo (ej: Tipo de
@@ -107,7 +108,7 @@
  * después de escribirlo en el mismo tick; los drafts son objetos reactivos
  * explícitos mutados por handlers.
  */
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Archive,
@@ -133,6 +134,8 @@ import { useAdminCategoriesStore } from '../../stores/adminCategories'
 import { useAdminCatalogStore } from '../../stores/adminCatalog'
 import { useToastStore } from '../../stores/toast'
 import { ApiError } from '../../api/client'
+import { deleteAdminProductImage, uploadAdminProductImage } from '../../api/rest'
+import { invalidateProductImage, loadProductImage } from '../../api/productImages'
 import { POS_SUCURSAL_ID } from '../../stores/catalog'
 import type {
   CatalogScopeType,
@@ -296,6 +299,77 @@ function onCardImageError(productId: number): void {
   }
 }
 
+/**
+ * Miniaturas del listado. `product.imageUrl` es una ruta RELATIVA de API
+ * (`/api/rest/catalog/templates/{id}/image`) protegida por X-Api-Key + Bearer:
+ * un `<img :src="product.imageUrl">` apuntaría al origen del cliente y sin
+ * headers → 401. Aquí se descarga autenticada (caché compartida de
+ * src/api/productImages.ts) y se pinta el object URL.
+ */
+const cardImageUrls = ref<Map<number, string>>(new Map())
+
+/** Object URL de la miniatura (null = aún sin descargar o sin imagen). */
+function cardImageSrc(productId: number): string | null {
+  return cardImageUrls.value.get(productId) ?? null
+}
+
+function setCardImage(productId: number, url: string): void {
+  if (cardImageUrls.value.get(productId) === url) return
+  const next = new Map(cardImageUrls.value)
+  next.set(productId, url)
+  cardImageUrls.value = next
+}
+
+/** Quita la miniatura del DOM ANTES de revocar su object URL. */
+function dropCardImage(productId: number): void {
+  if (!cardImageUrls.value.has(productId)) return
+  const next = new Map(cardImageUrls.value)
+  next.delete(productId)
+  cardImageUrls.value = next
+}
+
+/** Descarga (una sola vez por producto) las miniaturas visibles del listado. */
+async function hydrateCardImages(): Promise<void> {
+  const targets = filteredProducts.value.filter(
+    (product) =>
+      (product.imageUrl ?? '') !== '' &&
+      cardImageSrc(product.id) == null &&
+      !brokenImageIds.value.has(product.id),
+  )
+  await Promise.all(
+    targets.map(async (product) => {
+      // loadProductImage deduplica: si ya hay una descarga en vuelo o el
+      // resultado está cacheado, no se hace otra petición.
+      const url = await loadProductImage(product.id)
+      if (url != null) setCardImage(product.id, url)
+    }),
+  )
+}
+
+/**
+ * Re-sincroniza la miniatura tras subir/reemplazar la imagen.
+ *
+ * Orden importante: primero se suelta el object URL del estado (el DOM deja de
+ * referenciarlo en el siguiente patch), DESPUÉS se revoca (revocarlo mientras
+ * el `<img>` sigue vivo dispararía @error y ocultaría la imagen nueva), y por
+ * último se vuelve a descargar UNA vez.
+ */
+async function refreshCardImage(productId: number): Promise<void> {
+  dropCardImage(productId)
+  await nextTick()
+  invalidateProductImage(productId)
+  const url = await loadProductImage(productId)
+  if (url != null) setCardImage(productId, url)
+}
+
+watch(
+  () => filteredProducts.value.map((product) => `${product.id}:${product.imageUrl ?? ''}`).join('|'),
+  () => {
+    void hydrateCardImages()
+  },
+  { immediate: true },
+)
+
 // --- Editor: drafts (réplica OptionGroupData L1225-1238) -----------------------------
 
 /**
@@ -391,42 +465,243 @@ function onStepCancel(): void {
   }
 }
 
-// --- Imagen (L880-935): SOLO preview local — el contrato REST no tiene
-// upload de imagen (el original la manda multipart); el payload NO la envía.
+// --- Imagen (L880-935): preview local inmediato + subida multipart real ------
+//
+// Flujo (BE-1):
+//  1. Elegir archivo → preview INMEDIATO con objectURL local (el usuario ve su
+//     foto al instante, antes de guardar).
+//  2. Guardar producto (POST/PUT) → si hay archivo pendiente, subirlo a
+//     POST /api/rest/catalog/admin/products/{id}/image (campo `file`).
+//  3. Invalidar la caché de object URLs de ese id para que las tarjetas
+//     (lista admin y POS) muestren la imagen nueva.
+//
+// La imagen NUNCA se lee con `<img :src="/api/rest/...">`: ese endpoint exige
+// X-Api-Key + Bearer, headers que un <img> no envía. Toda lectura pasa por
+// src/api/productImages.ts (descarga autenticada → object URL).
+
+/**
+ * Tamaño MÁXIMO aceptado para una imagen de producto: 4 MB.
+ *
+ * Se valida en el CLIENTE antes de aceptar el archivo (ver onPickImage) porque
+ * el body multipart completo debe caber en el límite del servidor: las fotos
+ * de celular son rutinariamente 4-8 MB y sin esta pre-validación el usuario
+ * recibía un 400 opaco ("No se pudo subir la imagen") sin saber que el
+ * problema era el peso.
+ *
+ * Declarada UNA sola vez: el texto del toast y la comparación la reutilizan.
+ */
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024
+
+/** Peso en MB con 1 decimal, redondeo normal: 4.7 MB / 0.3 MB / 4 MB. */
+function formatMegabytes(bytes: number): string {
+  return `${Math.round((bytes / (1024 * 1024)) * 10) / 10} MB`
+}
+
+/**
+ * Texto del rechazo por peso.
+ *
+ * El peso del archivo se redondea normal, pero si el redondeo lo iguala al
+ * máximo el mensaje se leería contradictorio ("pesa 4 MB y el máximo es 4 MB"
+ * para un archivo de 4 194 305 bytes, 1 byte arriba del límite). En ese único
+ * caso se sube un decimal, que es lo mínimo para que ambos números no se
+ * confundan.
+ */
+function tooLargeImageMessage(fileSize: number): string {
+  const maxLabel = formatMegabytes(MAX_IMAGE_BYTES)
+  const rounded = formatMegabytes(fileSize)
+  const maxMegabytes = MAX_IMAGE_BYTES / (1024 * 1024)
+  const sizeLabel =
+    rounded === maxLabel ? `${Math.round((maxMegabytes + 0.1) * 10) / 10} MB` : rounded
+  return `La imagen pesa ${sizeLabel} y el máximo es ${maxLabel}. Elige una más pequeña.`
+}
 
 const selectedImageName = ref<string | null>(null)
 const selectedImageUrl = ref<string | null>(null)
+/** Archivo elegido pendiente de subir (null = no hay cambio de imagen). */
+const selectedImageFile = ref<File | null>(null)
 const brokenEditImage = ref(false)
+/** Object URL de la imagen YA guardada del producto en edición (blob cache). */
+const editingImageBlobUrl = ref<string | null>(null)
+/** Descarga de la imagen guardada en curso (placeholder con spinner). */
+const editingImageLoading = ref(false)
+/** La imagen guardada no se pudo descargar (fallback ImageOff). */
+const editingImageFailed = ref(false)
+/** DELETE …/products/{id}/image en curso (deshabilita la acción). */
+const removingImage = ref(false)
+/** Confirmación abierta de 'Quitar imagen' (patrón AppModal del proyecto). */
+const confirmRemoveImageOpen = ref(false)
 
+function revokeSelectedImageUrl(): void {
+  if (selectedImageUrl.value != null && selectedImageUrl.value.startsWith('blob:')) {
+    URL.revokeObjectURL(selectedImageUrl.value)
+  }
+}
+
+/** Limpia el estado de imagen del editor (File + objectURL local, sin fugas). */
+function resetImageState(): void {
+  // Solo se revoca el objectURL LOCAL (creado aquí a partir del File). El de
+  // la imagen guardada lo posee la caché compartida: revocarlo aquí rompería
+  // las miniaturas del listado y del POS, así que solo se suelta la referencia.
+  revokeSelectedImageUrl()
+  selectedImageName.value = null
+  selectedImageUrl.value = null
+  selectedImageFile.value = null
+  brokenEditImage.value = false
+  editingImageBlobUrl.value = null
+  editingImageLoading.value = false
+  editingImageFailed.value = false
+  removingImage.value = false
+  confirmRemoveImageOpen.value = false
+}
+
+/**
+ * Elige una imagen: pre-valida el PESO antes de aceptarla.
+ *
+ * Por qué en el cliente: el backend responde 400 al exceder 4 MB, pero ese
+ * error genérico no le dice al usuario qué hacer. Aquí el archivo simplemente
+ * NO se acepta (no se selecciona nada, no se marca nada como guardado) y se
+ * explica el peso real contra el máximo.
+ */
 function onPickImage(event: Event): void {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (file == null) return
-  // Liberar el objectURL anterior antes de crear el nuevo.
-  if (selectedImageUrl.value != null && selectedImageUrl.value.startsWith('blob:')) {
-    URL.revokeObjectURL(selectedImageUrl.value)
+  if (file.size > MAX_IMAGE_BYTES) {
+    // Limpia el input para poder re-elegir el MISMO archivo (o corregirlo).
+    input.value = ''
+    toast.warning(tooLargeImageMessage(file.size))
+    return
   }
+  // Liberar el objectURL local anterior antes de crear el nuevo.
+  revokeSelectedImageUrl()
   selectedImageName.value = file.name
+  selectedImageFile.value = file
   selectedImageUrl.value = URL.createObjectURL(file)
   brokenEditImage.value = false
   // Permitir re-seleccionar el mismo archivo.
   input.value = ''
 }
 
-/** ¿Hay imagen que mostrar en el preview? (nueva o del producto en edición). */
+/** ¿Hay imagen que mostrar en el preview? (nueva o la guardada del producto). */
 const hasEditorImage = computed(
-  () => selectedImageUrl.value != null || (editingProduct.value?.imageUrl ?? '') !== '',
+  () =>
+    selectedImageUrl.value != null ||
+    (editingProduct.value?.imageUrl ?? '') !== '',
 )
 
+/**
+ * Fuente del preview: primero el objectURL local (inmediato); si no, la imagen
+ * guardada descargada como blob (el endpoint necesita auth).
+ */
 const editorImageSrc = computed(() => {
   if (selectedImageUrl.value != null) return selectedImageUrl.value
-  const url = editingProduct.value?.imageUrl
-  return url != null && url !== '' ? url : null
+  return editingImageBlobUrl.value
 })
 
 const editorImageLabel = computed(() =>
   hasEditorImage.value ? 'Cambiar imagen' : 'Seleccionar imagen',
 )
+
+/**
+ * ¿Se puede "quitar" la imagen? SOLO en edición y SOLO si el producto YA tiene
+ * una imagen guardada (`imageUrl` no vacío): el backend interpreta
+ * `imageUrl == null` como "no cambiar", así que sin esta acción el usuario
+ * únicamente podía REEMPLAZAR la foto, nunca dejarla sin imagen.
+ */
+const canRemoveImage = computed(
+  () =>
+    editingProduct.value != null && (editingProduct.value.imageUrl ?? '') !== '',
+)
+
+function openRemoveImageConfirm(): void {
+  if (!canRemoveImage.value || removingImage.value) return
+  confirmRemoveImageOpen.value = true
+}
+
+function closeRemoveImageConfirm(): void {
+  if (removingImage.value) return
+  confirmRemoveImageOpen.value = false
+}
+
+/**
+ * DELETE …/admin/products/{id}/image (borra la imagen guardada).
+ *
+ * Orden del éxito (el mismo cuidado que en refreshCardImage, para no revocar un
+ * blob todavía pintado por un `<img>` → dispararía @error y mostraría el
+ * fallback en un producto que ya no tiene imagen):
+ *   1. Soltar las referencias del DOM (miniatura del listado + preview del
+ *      editor) y limpiar el estado local.
+ *   2. `await nextTick()`: Vue ya parcheó el DOM, ningún `<img>` apunta al blob.
+ *   3. `invalidateProductImage` → revoca el object URL borrado y olvida la
+ *      entrada de caché.
+ *   4. Recargar el listado con los datos reales del servidor.
+ *
+ * En error NO se toca el estado local: la imagen sigue existiendo.
+ */
+async function confirmRemoveImage(): Promise<void> {
+  const product = editingProduct.value
+  if (product == null || removingImage.value) return
+  const productId = product.id
+  removingImage.value = true
+  try {
+    await deleteAdminProductImage(productId)
+    confirmRemoveImageOpen.value = false
+    // La miniatura del listado sale del DOM siempre (la imagen ya no existe en
+    // el servidor), aunque el editor se haya cerrado/cambiado mientras tanto.
+    dropCardImage(productId)
+    // Estado del editor: SOLO si sigue siendo el mismo producto. Si el usuario
+    // cerró el editor o abrió otro durante el DELETE, tocarlo borraría el
+    // preview de un producto distinto.
+    if (editingProduct.value?.id === productId) {
+      // Si además había una imagen nueva pendiente (elegida pero sin guardar),
+      // se descarta: el usuario acaba de pedir "sin imagen", y al guardar no
+      // debe re-subirse la que iba a reemplazarla.
+      revokeSelectedImageUrl()
+      selectedImageName.value = null
+      selectedImageUrl.value = null
+      selectedImageFile.value = null
+      // El editor deja de mostrar la imagen (preview + fallback + spinner).
+      product.imageUrl = null
+      editingImageBlobUrl.value = null
+      editingImageFailed.value = false
+      editingImageLoading.value = false
+      brokenEditImage.value = false
+    }
+    // Esperar el patch antes de revocar: ningún `<img>` debe seguir apuntando
+    // al blob borrado (revocarlo antes dispararía @error).
+    await nextTick()
+    // La caché olvida el blob borrado (revoca el object URL).
+    invalidateProductImage(productId)
+    // El listado vuelve a pintar el dato del servidor (sin bloque de imagen).
+    await productsStore.loadProducts(true)
+    toast.success('✅ Imagen eliminada')
+  } catch (err) {
+    toast.error(
+      err instanceof ApiError && err.status !== 0
+        ? `❌ Error: ${err.message}`
+        : '❌ Error: No se pudo conectar con el servidor. Verifica tu conexión.',
+    )
+  } finally {
+    removingImage.value = false
+  }
+}
+
+/** Descarga (vía caché) la imagen guardada del producto en edición. */
+function loadEditingImage(product: RestAdminProduct | null): void {
+  editingImageBlobUrl.value = null
+  editingImageFailed.value = false
+  editingImageLoading.value = false
+  if (product == null || (product.imageUrl ?? '') === '') return
+  const productId = product.id
+  editingImageLoading.value = true
+  void loadProductImage(productId).then((url) => {
+    // Ignora respuestas viejas si el editor ya cambió de producto.
+    if (editingProduct.value?.id !== productId) return
+    editingImageBlobUrl.value = url
+    editingImageFailed.value = url == null
+    editingImageLoading.value = false
+  })
+}
 
 const editorTitle = computed(() =>
   // UI-parity create_product_template.dart L665 (textos EXACTOS).
@@ -438,9 +713,7 @@ function openCreate(): void {
   formScope.value = { scopeType: 'GLOBAL', plantId: null }
   // Réplica L43: optionGroups EMPIEZA VACÍO (el editor previo creaba uno).
   groups.value = []
-  selectedImageName.value = null
-  selectedImageUrl.value = null
-  brokenEditImage.value = false
+  resetImageState()
   currentStep.value = 0
   editingProduct.value = null
   editorOpen.value = true
@@ -481,18 +754,19 @@ function openEdit(product: RestAdminProduct): void {
       selectedItems,
     }
   })
-  selectedImageName.value = null
-  selectedImageUrl.value = null
-  brokenEditImage.value = false
+  selectedImageFile.value = null
+  // Sin restos del producto anterior (File + objectURL local) antes de cargar.
+  resetImageState()
+  // Imagen guardada del producto (descarga autenticada → object URL).
+  loadEditingImage(product)
   currentStep.value = 0
   editorOpen.value = true
 }
 
 function closeEditor(): void {
   if (submitting.value) return
-  if (selectedImageUrl.value != null && selectedImageUrl.value.startsWith('blob:')) {
-    URL.revokeObjectURL(selectedImageUrl.value)
-  }
+  // Sin fugas: revoca el objectURL local y descarta el File pendiente.
+  resetImageState()
   editorOpen.value = false
   editingProduct.value = null
   groups.value = []
@@ -778,8 +1052,8 @@ function buildPayload(): {
     description: form.description.trim().length === 0 ? null : form.description.trim(),
     categoryId: form.categoryId != null && form.categoryId > 0 ? form.categoryId : null,
     basePrice: Number.parseFloat(form.basePrice) || 0,
-    // La imagen es SOLO preview local (el contrato REST no tiene upload):
-    // se conserva la imageUrl ya guardada del producto en edición.
+    // Eco de la imageUrl VIGENTE: el backend trata `null` como "no cambiar",
+    // pero se mantiene el valor real para no depender de esa tolerancia.
     imageUrl: editingProduct.value?.imageUrl ?? null,
     scopeType: formScope.value.scopeType,
     sucursalId: POS_SUCURSAL_ID,
@@ -809,25 +1083,99 @@ function buildPayload(): {
   }
 }
 
+/**
+ * Texto genérico que apiUpload usa cuando el cuerpo del error no trae mensaje
+ * (p.ej. un ProblemDetails de ASP.NET, que responde `title`/`detail`/`errors[]`
+ * en vez de `message`). Se reconoce para NO mostrarlo como si fuera del
+ * servidor y responder con algo accionable.
+ */
+const UPLOAD_GENERIC_FALLBACK = 'No se pudo subir la imagen. Intenta de nuevo.'
+
+/**
+ * Mensaje del error de subida.
+ *
+ * El caso frecuente es el PESO (fotos de celular 4-8 MB): si el backend o un
+ * proxy rechazan el archivo por tamaño, el usuario debe leerlo así y no
+ * "No se pudo subir la imagen".
+ *  · 413 → payload too large (Kestrel/nginx): mensaje de tamaño.
+ *  · 400 → el mensaje del servidor tal cual (los 400 de este endpoint son
+ *    descriptivos); si viene vacío/genérico (ProblemDetails) se responde con
+ *    formato + tamaño, que son los únicos 400 posibles del endpoint.
+ * El resto de estados conserva el comportamiento anterior.
+ */
+function uploadErrorMessage(err: unknown): string {
+  if (!(err instanceof ApiError) || err.status === 0) {
+    return 'No se pudo conectar con el servidor. Verifica tu conexión.'
+  }
+  const maxLabel = formatMegabytes(MAX_IMAGE_BYTES)
+  if (err.status === 413) {
+    return `La imagen excede el tamaño máximo de ${maxLabel}. Elige una más pequeña.`
+  }
+  const serverMessage = err.message.trim()
+  const hasServerMessage =
+    serverMessage !== '' && serverMessage !== UPLOAD_GENERIC_FALLBACK
+  if (err.status === 400) {
+    return hasServerMessage
+      ? serverMessage
+      : `La imagen no se pudo procesar: debe ser una imagen válida de máximo ${maxLabel}.`
+  }
+  return hasServerMessage ? serverMessage : UPLOAD_GENERIC_FALLBACK
+}
+
 async function submitEditor(): Promise<void> {
   if (submitting.value || !validateForm()) return
   submitting.value = true
   try {
     const payload = buildPayload()
+    // Archivo pendiente de subir (null = no se cambió la imagen).
+    const pendingFile = selectedImageFile.value
+    let productId: number
+
     if (editingProduct.value == null) {
-      await productsStore.createProduct(payload)
-      // Texto EXACTO L629-631 (sin el ID, que el store no devuelve expuesto).
+      // El id es necesario para el POST de la imagen (…/products/{id}/image).
+      productId = await productsStore.createProduct(payload)
+      // Texto EXACTO L629-631.
       toast.success('✅ Producto creado exitosamente')
     } else {
-      await productsStore.updateProduct(editingProduct.value.id, {
+      productId = editingProduct.value.id
+      await productsStore.updateProduct(productId, {
         ...payload,
         isActive: form.isActive,
       })
       // Texto EXACTO L608-610.
       toast.success('✅ Producto actualizado exitosamente')
     }
+
+    if (pendingFile != null && productId > 0) {
+      try {
+        await uploadAdminProductImage(productId, pendingFile)
+        await productsStore.loadProducts(true)
+        // Suelta el blob local ANTES de que la caché revoque los object URLs
+        // (un <img> que referencia un blob revocado dispara @error).
+        resetImageState()
+        // Re-sincroniza la miniatura: suelta el object URL del DOM, espera el
+        // patch, invalida la caché y re-descarga una sola vez.
+        await refreshCardImage(productId)
+      } catch (err) {
+        // El producto YA se guardó: la subida es un paso posterior. Se avisa
+        // con claridad y NO se marca el guardado como fallido (ni se pierde el
+        // producto). El editor se cierra: el catálogo ya quedó guardado.
+        toast.error(
+          `Producto guardado, pero la imagen no se pudo subir: ${uploadErrorMessage(err)}`,
+        )
+      }
+    } else if (pendingFile != null) {
+      // Sin id del backend no hay endpoint de imagen al que apuntar: el
+      // producto SÍ se guardó, así que se avisa sin marcar el guardado como
+      // fallido.
+      toast.error(
+        'Producto guardado, pero la imagen no se pudo subir: el servidor no devolvió el identificador del producto.',
+      )
+    }
+
     // El original espera 1.5s antes de pop (L642) — NO replicado: cierre
     // normal, el store ya recargó la lista.
+    resetImageState()
     editorOpen.value = false
     editingProduct.value = null
     groups.value = []
@@ -1019,14 +1367,16 @@ async function confirmDelete(): Promise<void> {
             :data-testid="`pe-item-${product.id}`"
           >
             <!-- Imagen 150px cover con fallback image_not_supported (L289-304);
-                 imageUrl vacía/null → SIN bloque de imagen -->
+                 imageUrl vacía/null → SIN bloque de imagen. El src es un object
+                 URL de la descarga autenticada (un <img> no puede mandar
+                 X-Api-Key/Bearer). -->
             <span
               v-if="product.imageUrl != null && product.imageUrl !== ''"
               class="pe-card-media"
             >
               <img
-                v-if="!brokenImageIds.has(product.id)"
-                :src="product.imageUrl"
+                v-if="cardImageSrc(product.id) != null && !brokenImageIds.has(product.id)"
+                :src="cardImageSrc(product.id) ?? undefined"
                 alt=""
                 loading="lazy"
                 @error="onCardImageError(product.id)"
@@ -1212,26 +1562,36 @@ async function confirmDelete(): Promise<void> {
 
                   <!-- Imagen (L880-935): container border deepOrange radius 12,
                        preview 200px cover radius 10 (fallback grey800+ImageOff),
-                       botón deepOrange. SOLO preview local (input file +
-                       objectURL): el contrato REST no tiene upload, el payload
-                       NO envía la imagen (decisión documentada). -->
+                       botón deepOrange. El archivo elegido se ve al instante
+                       (objectURL local) y se sube multipart al guardar el
+                       producto; la imagen guardada se lee por descarga
+                       autenticada → object URL (productImages.ts). -->
                   <div class="pe-field">
                     <span class="pe-label" id="pe-image-label">Imagen</span>
                     <div class="pe-image-box">
                       <img
                         v-if="hasEditorImage && !brokenEditImage && editorImageSrc != null"
                         :src="editorImageSrc"
-                        alt="Vista previa de la imagen del producto"
+                        :alt="selectedImageName != null ? `Vista previa de ${selectedImageName}` : 'Vista previa de la imagen del producto'"
                         class="pe-image-preview"
                         data-testid="pe-image-preview"
                         @error="brokenEditImage = true"
                       />
                       <div
-                        v-else-if="hasEditorImage && brokenEditImage"
+                        v-else-if="hasEditorImage && (brokenEditImage || editingImageFailed)"
                         class="pe-image-fallback"
                         data-testid="pe-image-fallback"
                       >
                         <ImageOff :size="40" aria-hidden="true" />
+                      </div>
+                      <!-- Descargando la imagen guardada (el endpoint exige auth):
+                           placeholder con spinner, sin bloquear el resto del form -->
+                      <div
+                        v-else-if="editingImageLoading && selectedImageUrl == null"
+                        class="pe-image-fallback"
+                        data-testid="pe-image-loading"
+                      >
+                        <AppSpinner :size="28" tone="primary" />
                       </div>
                       <input
                         id="pe-image-input"
@@ -1243,15 +1603,31 @@ async function confirmDelete(): Promise<void> {
                         aria-hidden="true"
                         @change="onPickImage"
                       />
-                      <label
-                        for="pe-image-input"
-                        class="pe-btn pe-btn--accent pe-image-btn"
-                        data-testid="pe-image"
-                        tabindex="0"
-                      >
-                        <ImageIcon :size="18" aria-hidden="true" />
-                        {{ editorImageLabel }}
-                      </label>
+                      <div class="pe-image-actions">
+                        <label
+                          for="pe-image-input"
+                          class="pe-btn pe-btn--accent pe-image-btn"
+                          data-testid="pe-image"
+                          tabindex="0"
+                        >
+                          <ImageIcon :size="18" aria-hidden="true" />
+                          {{ editorImageLabel }}
+                        </label>
+                        <!-- Quitar imagen: SOLO en edición con imagen guardada.
+                             Ghost (secundario + token de peligro al hover): el
+                             CTA de la pantalla es Guardar, no esta acción. -->
+                        <button
+                          v-if="canRemoveImage"
+                          type="button"
+                          class="pe-btn pe-btn--ghost pe-btn--small pe-image-remove"
+                          data-testid="pe-image-remove"
+                          :disabled="removingImage"
+                          @click="openRemoveImageConfirm"
+                        >
+                          <Trash2 :size="16" aria-hidden="true" />
+                          Quitar imagen
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -1501,6 +1877,39 @@ async function confirmDelete(): Promise<void> {
           @click="confirmDelete"
         >
           Eliminar
+        </button>
+      </template>
+    </AppModal>
+
+    <!-- ===== Confirm de 'Quitar imagen' (mismo patrón que el confirm de
+         eliminación de template) ===== -->
+    <AppModal
+      v-if="confirmRemoveImageOpen"
+      title="Quitar imagen"
+      :width="400"
+      @close="closeRemoveImageConfirm"
+    >
+      <p class="pe-confirm-text" data-testid="pe-image-remove-confirm-text">
+        ¿Quitar la imagen de este producto? El producto se guardará sin foto.
+      </p>
+      <template #footer>
+        <button
+          type="button"
+          class="pe-btn pe-btn--ghost"
+          data-testid="pe-image-remove-cancel"
+          :disabled="removingImage"
+          @click="closeRemoveImageConfirm"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          class="pe-btn pe-btn--danger"
+          data-testid="pe-image-remove-confirm"
+          :disabled="removingImage"
+          @click="confirmRemoveImage"
+        >
+          Quitar imagen
         </button>
       </template>
     </AppModal>
@@ -2558,6 +2967,26 @@ async function confirmDelete(): Promise<void> {
 
 .pe-image-btn {
   align-self: flex-start;
+}
+
+/* Fila de acciones de imagen: 'Cambiar imagen' (CTA del bloque) + 'Quitar
+   imagen' (secundaria). Wrap para que en móvil caiga debajo sin desbordar. */
+.pe-image-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 'Quitar imagen': acción destructiva SECUNDARIA. Ghost + texto en el token de
+   error al hover: nada de un segundo naranja que compita con Guardar. */
+.pe-image-remove {
+  align-self: flex-start;
+}
+
+.pe-image-remove:hover:not(:disabled) {
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 45%, transparent);
 }
 
 /* ===== Panel alcance del paso 1: radius 12 (L720-756) — distinto del
