@@ -151,10 +151,47 @@ contenedor.
 Sin esto, el deploy puede "verse bien" (la app carga, el login funciona) y
 aun así **toda subida de imagen falla con 413**.
 
+> **CASO REAL (2026-11-20, VPS de producción).** El deploy se hizo y todo
+> parecía correcto: contenedores arriba, login funcionando, `image_url`
+> guardado en BD, `/app/rest-images` con el volumen montado y una foto ya
+> procesada a WebP de 64 KB (399x501). Aun así **la subida estaba rota**.
+>
+> La prueba de 6 MB devolvió **413** con cuerpo **HTML**. Causa: el bloque
+> `server` de `rest` vive en **su propio archivo**
+> `/etc/nginx/sites-available/rest.tekliveplus.com` (no en el
+> `tekliveplus` compartido) y **le faltaba `client_max_body_size`**. Regía el
+> default de 1 MB.
+>
+> Lo que hace este fallo traicionero: **el contenedor sí tenía el `8m`**
+> (`/etc/nginx/conf.d/default.conf:58`), así que un `docker exec ... grep`
+> daba por bueno el límite. El que cortaba era el nginx del **host**, que es
+> otra capa.
+>
+> Comando que lo detecta sin ambigüedad (el único que mira la config
+> **efectiva**, con includes y symlinks resueltos):
+>
+> ```bash
+> sudo nginx -T 2>/dev/null | grep -c client_max_body_size    # 0 = ROTO
+> sudo nginx -T 2>/dev/null | grep -A8 'server_name rest.tekliveplus.com'
+> ```
+>
+> El fix fue **una línea** en el archivo propio de `rest` (con backup y
+> `nginx -t` antes del reload); los otros 5 dominios no se tocaron:
+>
+> ```bash
+> F=/etc/nginx/sites-available/rest.tekliveplus.com
+> sudo cp $F $F.bak-$(date +%Y%m%d-%H%M%S)
+> sudo sed -i 's|^    location / {|    client_max_body_size 8m;\n\n    location / {|' $F
+> sudo nginx -t && sudo systemctl reload nginx
+> ```
+>
+> Verificación posterior (obligatoria, ambas):
+> `6 MB → 400/401` (llega al backend) y `9 MB → 413` (corta el límite).
+
 - [ ] Confirmar que la directiva está **realmente en la config activa**. Ojo:
       `grep` sobre una ruta adivinada puede mirar el archivo equivocado (o uno
       que no está `include`ado). `nginx -T` imprime la configuración efectiva
-      **ya con los `include` resueltos**, así que es la prueba buena:
+      **ya con los `include` resueltos**, así que es la prueba buena.
 
       ```bash
       nginx -T 2>/dev/null | grep -n -B2 -A2 client_max_body_size
@@ -163,6 +200,16 @@ aun así **toda subida de imagen falla con 413**.
       Debe aparecer `8m` junto al `server_name rest.tekliveplus.com` (idealmente
       en los bloques :80 y :443). Si el `grep` sale vacío, el default de **1 MB**
       sigue activo y la subida de imágenes fallará aunque todo lo demás funcione.
+
+      **Cuidado con el archivo de `rest`:** en el VPS de producción el bloque
+      `rest` NO vive en `/etc/nginx/sites-available/tekliveplus` sino en
+      `/etc/nginx/sites-available/rest.tekliveplus.com` (symlink en
+      `sites-enabled/`). Editar el archivo compartido no sirve de nada y
+      copiarlo entero sí puede romper los otros dominios. Localízalo primero:
+
+      ```bash
+      grep -rln 'server_name rest.tekliveplus.com' /etc/nginx/
+      ```
 
       El mismo `nginx -T` sirve para localizar el archivo real del vhost:
 
