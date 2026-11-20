@@ -2188,6 +2188,14 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
     min-height: 0;
   }
 
+  /* Sin min-height:0 el menú (flex item de una COLUMNA) no encoge bajo su
+     contenido: el grid crece, overflow-y:auto del wrapper nunca activa el
+     scroll y el shell recorta con overflow:hidden -> sin scroll en phone.
+     Misma corrección que el breakpoint tablet 700-880px de abajo. */
+  .menu {
+    min-height: 0;
+  }
+
   .phone-tabs {
     display: flex;
     flex: none;
