@@ -54,14 +54,13 @@ function openPrinters(): void {
   background: var(--bg); /* var(--bg) */
 }
 
-/* AppBar con bg del scaffold (Theme.of(context).scaffoldBackgroundColor) */
+/* AppBar con bg del scaffold (Theme.of(context).scaffoldBackgroundColor).
+   Ancho completo como las vistas hermanas del POS (Vender/Ordenes): centrar
+   una columna de 800px deja el titulo flotando con vacios enormes a los
+   lados en desktop. El padding controla el ancho real del contenido. */
 .set-appbar {
   padding: 22px 24px 12px;
   background: var(--bg);
-
-  width: 100%;
-  max-width: 800px;
-  margin: 0 auto;
 }
 
 .set-appbar-title {
@@ -72,12 +71,10 @@ function openPrinters(): void {
   color: var(--text-1);
 }
 
-/* Lista alineada al mismo eje del appbar (evita el título centrado con
-   tiles pegados al rail) */
+/* Lista a ancho completo (mismo eje que el appbar; el tile interno limita
+   su propio ancho de lectura con max-width, patron .cash-state p) */
 .set-list {
   width: 100%;
-  max-width: 800px;
-  margin: 0 auto;
   padding: 0 24px 32px;
   list-style: none;
   display: flex;
@@ -85,12 +82,15 @@ function openPrinters(): void {
   gap: 10px;
 }
 
-/* Fila-card: superficie propia, icono-tile neutro, chevron de affordance */
+/* Fila-card: superficie propia, icono-tile neutro, chevron de affordance.
+   max-width de lectura: a ancho completo un tile de una linea se estira
+   demasiado en desktop; 720px mantiene la proporcion del diseno. */
 .set-tile {
   display: flex;
   align-items: center;
   gap: 14px;
   width: 100%;
+  max-width: 720px;
   min-height: 64px;
   padding: 14px 16px;
   background: var(--card);
