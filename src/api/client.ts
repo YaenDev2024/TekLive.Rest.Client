@@ -52,13 +52,13 @@ interface ErrorShape {
   Reason?: string
 }
 
-function extractMessage(payload: unknown): string {
+function extractMessage(payload: unknown, fallback = 'Error inesperado. Intenta de nuevo.'): string {
   if (payload && typeof payload === 'object') {
     const shape = payload as ErrorShape
     const msg = shape.message ?? shape.Message
     if (typeof msg === 'string' && msg.length > 0) return msg
   }
-  return 'Error inesperado. Intenta de nuevo.'
+  return fallback
 }
 
 function extractReason(payload: unknown): string | undefined {
@@ -68,6 +68,24 @@ function extractReason(payload: unknown): string | undefined {
     if (typeof reason === 'string' && reason.length > 0) return reason
   }
   return undefined
+}
+
+/**
+ * Headers de autenticación compartidos por TODAS las llamadas al módulo Rest
+ * (JSON, multipart y binario):
+ *  · X-Api-Key — lo exige AppApiKeyMiddleware (sin él: 401 "Aplicación no
+ *    autorizada").
+ *  · Authorization: Bearer — el JWT vive SOLO en memoria.
+ *
+ * Importante para imágenes: ni `<img src>` ni `<a href>` pueden enviar estos
+ * headers, así que los binarios se bajan con apiDownload() y se pintan como
+ * object URL (ver src/api/productImages.ts).
+ */
+function applyAuthHeaders(headers: Headers): void {
+  headers.set('X-Api-Key', APP_API_KEY)
+  if (accessToken != null) {
+    headers.set('Authorization', `Bearer ${accessToken}`)
+  }
 }
 
 export interface ApiResult<T> {
@@ -159,13 +177,12 @@ export function rotatePersistedRefresh(_refreshToken: string): Promise<boolean> 
 async function request<T>(path: string, init: RequestInit, allowRetry = true): Promise<ApiResult<T>> {
   const headers = new Headers(init.headers)
   headers.set('Accept', 'application/json')
-  if (init.body != null && !headers.has('Content-Type')) {
+  if (init.body != null && !headers.has('Content-Type') && !(init.body instanceof FormData)) {
+    // FormData NUNCA debe recibir un Content-Type manual: el navegador lo
+    // genera con el boundary correcto (ver apiUpload).
     headers.set('Content-Type', 'application/json')
   }
-  headers.set('X-Api-Key', APP_API_KEY)
-  if (accessToken != null) {
-    headers.set('Authorization', `Bearer ${accessToken}`)
-  }
+  applyAuthHeaders(headers)
 
   let response: Response
   try {
@@ -229,4 +246,138 @@ export function apiPut<T>(path: string, body?: unknown): Promise<ApiResult<T>> {
 /** DELETE — mismo patrón que apiGet/apiPut (Fase 6.1 admin catálogo: soft delete). */
 export function apiDelete<T>(path: string): Promise<ApiResult<T>> {
   return request<T>(path, { method: 'DELETE' })
+}
+
+// ---------------------------------------------------------------------------
+// Upload / descarga binaria (imágenes de producto del catálogo Rest).
+//
+// Por qué existen: el endpoint de imágenes exige X-Api-Key + Bearer, y un
+// `<img src="…">` no puede enviar headers. Todo binario pasa por aquí y se
+// pinta como object URL (ver src/api/productImages.ts).
+// ---------------------------------------------------------------------------
+
+/** Respuesta de error de una llamada binaria → ApiError (mismo formato que request). */
+async function toBinaryError(response: Response, fallback: string): Promise<ApiError> {
+  let payload: unknown = null
+  try {
+    const text = await response.text()
+    if (text.length > 0) {
+      try {
+        payload = JSON.parse(text) as unknown
+      } catch {
+        payload = text
+      }
+    }
+  } catch {
+    // Cuerpo ilegible (p.ej. binario en un error): se usa el fallback.
+  }
+  return new ApiError(response.status, extractMessage(payload, fallback), extractReason(payload))
+}
+
+/**
+ * POST multipart/form-data con la misma auth que request() y el mismo
+ * reintento único en 401.
+ *
+ * ⚠️ NO se fija `Content-Type`: el navegador debe generarlo para incluir el
+ * boundary del multipart. Fijarlo a mano rompe la subida en el servidor.
+ */
+export async function apiUpload<T>(path: string, formData: FormData): Promise<ApiResult<T>> {
+  const url = `${BASE_URL}${path}`
+
+  const send = async (): Promise<Response> => {
+    const headers = new Headers()
+    headers.set('Accept', 'application/json')
+    applyAuthHeaders(headers) // sin Content-Type a propósito (boundary del browser)
+    try {
+      return await fetch(url, { method: 'POST', headers, body: formData })
+    } catch {
+      throw new ApiError(0, 'No se pudo conectar con el servidor. Verifica tu conexión.')
+    }
+  }
+
+  let response = await send()
+
+  if (response.status === 401 && !path.startsWith('/api/rest/auth/')) {
+    // Rotación + reintento ÚNICO (duplicado acotado de la lógica de request(),
+    // que parsea el cuerpo como JSON y aquí necesitamos un FormData intacto).
+    const refreshed = await refreshAccessToken()
+    if (refreshed === false) {
+      onSessionExpired?.()
+      throw new SessionExpiredError()
+    }
+    response = await send()
+  }
+
+  if (response.status === 204) {
+    return { status: response.status, data: undefined as T }
+  }
+
+  let payload: unknown = null
+  const text = await response.text()
+  if (text.length > 0) {
+    try {
+      payload = JSON.parse(text) as unknown
+    } catch {
+      payload = text
+    }
+  }
+
+  if (!response.ok) {
+    throw new ApiError(
+      response.status,
+      extractMessage(payload, 'No se pudo subir la imagen. Intenta de nuevo.'),
+      extractReason(payload),
+    )
+  }
+
+  return { status: response.status, data: payload as T }
+}
+
+/**
+ * GET binario con la misma auth que request() y reintento único en 401.
+ *
+ * Devuelve el Blob tal cual. Un 404 se propaga como ApiError(404) para que el
+ * llamador decida (productImages lo traduce a "sin imagen"), nunca como algo
+ * que rompa el render.
+ *
+ * CACHÉ: `cache: 'no-cache'` (revalidar, NO ignorar la caché).
+ * Las imágenes se sirven con `Cache-Control: private, max-age=300` + ETag y su
+ * URL es fija (`/catalog/templates/{id}/image`). Con el modo `default` del
+ * navegador, durante 5 minutos la respuesta sale de la caché HTTP SIN
+ * revalidar: al reemplazar una foto, la app re-descargaba el blob VIEJO y el
+ * admin seguía viendo la anterior aunque la subida hubiera funcionado.
+ * Con `no-cache` el navegador manda `If-None-Match`: si el ETag no cambió el
+ * server responde 304 (sin re-descargar bytes) y si cambió, 200 con la imagen
+ * nueva. `no-store` NO se usa a propósito: tiraría la caché entera y volvería
+ * a bajar los bytes de cada imagen en cada carga del menú.
+ */
+export async function apiDownload(path: string, allowRetry = true): Promise<Blob> {
+  const headers = new Headers()
+  applyAuthHeaders(headers)
+
+  let response: Response
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      method: 'GET',
+      headers,
+      cache: 'no-cache',
+    })
+  } catch {
+    throw new ApiError(0, 'No se pudo conectar con el servidor. Verifica tu conexión.')
+  }
+
+  if (response.ok) {
+    return await response.blob()
+  }
+
+  if (response.status === 401 && !path.startsWith('/api/rest/auth/') && allowRetry) {
+    const refreshed = await refreshAccessToken()
+    if (refreshed === false) {
+      onSessionExpired?.()
+      throw new SessionExpiredError()
+    }
+    return apiDownload(path, false)
+  }
+
+  throw await toBinaryError(response, 'No se pudo descargar la imagen.')
 }

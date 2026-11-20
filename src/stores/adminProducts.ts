@@ -64,10 +64,18 @@ export const useAdminProductsStore = defineStore('adminProducts', {
       }
     },
 
-    /** POST + recarga al éxito (patrón adminCatalog.createItem). */
-    async createProduct(body: CreateAdminProductPayload): Promise<void> {
-      await createAdminProduct(body)
+    /**
+     * POST + recarga al éxito (patrón adminCatalog.createItem).
+     *
+     * Devuelve el `id` del producto creado: la vista lo necesita para subir la
+     * imagen justo después (POST …/products/{id}/image depende del id). El
+     * valor de retorno es compatible con las llamadas existentes que lo
+     * ignoraban.
+     */
+    async createProduct(body: CreateAdminProductPayload): Promise<number> {
+      const { data } = await createAdminProduct(body)
       await this.loadProducts(true)
+      return data?.id ?? 0
     },
 
     /** PUT + recarga al éxito (patrón adminCatalog.updateItem). */

@@ -36,7 +36,7 @@
  *
  * Lógica de carrito/checkout intacta (stores + modales Fase 3).
  */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import {
   Soup, Info, Search, Trash2, Utensils, CircleMinus, CirclePlus,
@@ -52,6 +52,7 @@ import { useOrdersStore } from '../../stores/orders'
 import { useToastStore } from '../../stores/toast'
 import { session } from '../../services/auth'
 import { printPendingKitchenTicket } from '../../services/ticket'
+import { loadProductImage } from '../../api/productImages'
 import { AppBanner, AppButton, AppSpinner } from '../../components/ui'
 import DynamicOptionsModal from '../../components/pos/DynamicOptionsModal.vue'
 import ExtrasNoteModal from '../../components/pos/ExtrasNoteModal.vue'
@@ -238,21 +239,52 @@ function onEditItem(item: CartItem): void {
 
 /**
  * Fallback de imagen (réplica errorBuilder de Image.network L350-354): si la
- * imagen falla, muestra el icono fastfood 46px grey[700]. Se marca hasImage
- * localmente en false para que el icono tome el lugar del <img> roto.
+ * imagen falla, muestra el icono fastfood 46px grey[700]. Se marca
+ * brokenImageIds localmente para que el icono tome el lugar del <img> roto.
+ *
+ * ⚠️ El `src` NO apunta al endpoint: `/api/rest/catalog/templates/{id}/image`
+ * exige X-Api-Key + Bearer, headers que un `<img>` no puede enviar (401). La
+ * foto se descarga autenticada y se pinta como object URL (productImages.ts).
  */
 const brokenImageIds = ref<Set<number>>(new Set())
-function onImageError(event: Event): void {
-  const img = event.target as HTMLImageElement
-  const match = img.src.match(/templates\/(\d+)\/image/)
-  if (match != null) {
-    const id = Number(match[1])
-    if (!brokenImageIds.value.has(id)) {
-      const next = new Set(brokenImageIds.value)
-      next.add(id)
-      brokenImageIds.value = next
-    }
+function onImageError(productId: number): void {
+  if (!brokenImageIds.value.has(productId)) {
+    const next = new Set(brokenImageIds.value)
+    next.add(productId)
+    brokenImageIds.value = next
   }
+}
+
+/** Object URLs de las tarjetas del grid (productId → blob URL). */
+const cardImageUrls = ref<Map<number, string>>(new Map())
+
+/** Object URL de la tarjeta; null = sin foto o aún descargando (fallback). */
+function cardImageSrc(productId: number): string | null {
+  return cardImageUrls.value.get(productId) ?? null
+}
+
+function setCardImage(productId: number, url: string): void {
+  if (cardImageUrls.value.get(productId) === url) return
+  const next = new Map(cardImageUrls.value)
+  next.set(productId, url)
+  cardImageUrls.value = next
+}
+
+/**
+ * Descarga (una sola vez por producto, deduplicado en la caché) las fotos de
+ * los templates que el backend marca con `hasImage`. Se dispara cuando cambia
+ * el CONJUNTO de productos filtrados, nunca en cada render.
+ */
+async function hydrateCardImages(): Promise<void> {
+  const targets = filteredTemplates.value.filter(
+    (t) => t.hasImage && cardImageSrc(t.id) == null && !brokenImageIds.value.has(t.id),
+  )
+  await Promise.all(
+    targets.map(async (template) => {
+      const url = await loadProductImage(template.id)
+      if (url != null) setCardImage(template.id, url)
+    }),
+  )
 }
 
 /**
@@ -372,10 +404,47 @@ const isExterno = computed(() => cart.orderType === 'EXTERNO')
 
 /** Imagen 50x50 por productId; null = icono fastfood (fallback). */
 const brokenLineImageIds = ref<Set<number>>(new Set())
-function onLineImageError(event: Event): void {
-  const img = event.target as HTMLImageElement
-  const match = img.src.match(/templates\/(\d+)\/image/)
-  if (match != null) brokenLineImageIds.value = new Set(brokenLineImageIds.value).add(Number(match[1]))
+function onLineImageError(productId: number): void {
+  if (!brokenLineImageIds.value.has(productId)) {
+    brokenLineImageIds.value = new Set(brokenLineImageIds.value).add(productId)
+  }
+}
+
+/** Object URLs de las líneas del carrito (productId → blob URL). */
+const lineImageUrls = ref<Map<number, string>>(new Map())
+
+function lineImageSrc(productId: number): string | null {
+  return lineImageUrls.value.get(productId) ?? null
+}
+
+function setLineImage(productId: number, url: string): void {
+  if (lineImageUrls.value.get(productId) === url) return
+  const next = new Map(lineImageUrls.value)
+  next.set(productId, url)
+  lineImageUrls.value = next
+}
+
+/**
+ * Fotos de las líneas del carrito. El DTO del carrito no tiene `hasImage`, así
+ * que la señal es el propio template del catálogo (`hasImage`); los ítems sin
+ * template (solo extras) quedan con el icono. Deduplicado por productImages.
+ */
+async function hydrateLineImages(): Promise<void> {
+  const ids = new Set<number>()
+  for (const item of cart.lines) {
+    if (item.productId == null) continue
+    const template = catalog.catalog?.templates.find((t) => t.id === item.productId)
+    if (template == null || !template.hasImage) continue
+    if (lineImageSrc(item.productId) != null) continue
+    if (brokenLineImageIds.value.has(item.productId)) continue
+    ids.add(item.productId)
+  }
+  await Promise.all(
+    [...ids].map(async (productId) => {
+      const url = await loadProductImage(productId)
+      if (url != null) setLineImage(productId, url)
+    }),
+  )
 }
 
 /** Extras itálica: '+ A, + B' (réplica extrasText L1013). */
@@ -441,15 +510,13 @@ function formatMoney(amount: number): string {
 // contratos: son funciones puras de lectura sobre datos que ya existen.
 
 /**
- * Arte de respaldo por categoría. El contrato del catálogo HOY no expone la URL
- * de la imagen (solo `hasImage: boolean`) y el endpoint
- * `/api/rest/catalog/templates/{id}/image` todavía no existe, así que todas las
- * tarjetas caerían al mismo icono genérico. Mientras el backend de imágenes no
- * esté listo, cada categoría se pinta con su propio icono + tinte para que el
- * grid sea legible y reconocible de un vistazo, sin fotos ni datos inventados.
- *
- * Cuando el backend exponga las imágenes, el <img> toma el control y este arte
- * solo aparece en los productos sin foto. No hay que tocar el diseño otra vez.
+ * Arte de respaldo por categoría. El contrato del catálogo expone solo
+ * `hasImage: boolean` (la foto es binaria, servida por un endpoint que exige
+ * X-Api-Key + Bearer y por tanto no puede ir en un `<img src>` directo). La
+ * foto real se descarga autenticada y se pinta como object URL; este arte es
+ * SOLO el respaldo de los productos sin foto o cuya descarga falló: cada
+ * categoría se pinta con su propio icono + tinte para que el grid sea legible
+ * y reconocible de un vistazo, sin datos inventados.
  */
 const CATEGORY_ART: Array<{ match: RegExp; icon: unknown; pill: string; hue: string }> = [
   { match: /taco|burrito|antojito|mexican/i, icon: Flame, pill: 'rgba(255, 100, 45, 0.14)', hue: '#ff8a5c' },
@@ -507,6 +574,34 @@ function cartItemsUnitCount(): number {
 const canSell = computed(() => cart.canSell)
 /** Banner discreto: sin caja + carrito con items. */
 const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
+
+/**
+ * Carga de imágenes: SOLO cuando cambia el conjunto relevante de ids (grid
+ * filtrado / líneas del carrito), nunca en cada render ni por tick del
+ * polling. `loadProductImage` deduplica y cachea, así que una repetición de
+ * este watch no genera peticiones nuevas.
+ */
+const cardImageKey = computed(() =>
+  filteredTemplates.value
+    .filter((t) => t.hasImage)
+    .map((t) => t.id)
+    .join(','),
+)
+
+watch(cardImageKey, () => void hydrateCardImages(), { immediate: true })
+
+const lineImageKey = computed(() =>
+  // El token del catálogo forma parte de la llave: `hasImage` solo se conoce
+  // cuando el catálogo cargó, y un carrito ya existente debe re-evaluarse.
+  [
+    catalog.catalog == null ? 'noload' : 'ready',
+    ...cart.lines
+      .map((item) => item.productId)
+      .filter((id): id is number => id != null),
+  ].join(','),
+)
+
+watch(lineImageKey, () => void hydrateLineImages(), { immediate: true })
 </script>
 
 <template>
@@ -691,14 +786,15 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
               @keydown.enter="onProductClick(template)"
               @keydown.space.prevent="onProductClick(template)"
             >
-              <!-- Media: foto si el backend la sirve; si no, arte por categoría -->
+              <!-- Media: foto si el backend la sirve (object URL de la descarga
+                   autenticada); si no, arte por categoría -->
               <span class="product-media">
                 <img
-                  v-if="template.hasImage && !brokenImageIds.has(template.id)"
-                  :src="`/api/rest/catalog/templates/${template.id}/image`"
+                  v-if="template.hasImage && cardImageSrc(template.id) != null && !brokenImageIds.has(template.id)"
+                  :src="cardImageSrc(template.id) ?? undefined"
                   alt=""
                   loading="lazy"
-                  @error="onImageError"
+                  @error="onImageError(template.id)"
                 />
                 <!-- Sin foto: superficie neutra + icono de la categoría en su tono -->
                 <span v-else class="product-media-fallback">
@@ -819,11 +915,11 @@ const showCashGateBanner = computed(() => !canSell.value && !cart.isEmpty)
             <div class="op-item-top">
               <span class="op-item-media">
                 <img
-                  v-if="item.productId != null && !brokenLineImageIds.has(item.productId)"
-                  :src="`/api/rest/catalog/templates/${item.productId}/image`"
+                  v-if="item.productId != null && lineImageSrc(item.productId) != null && !brokenLineImageIds.has(item.productId)"
+                  :src="lineImageSrc(item.productId) ?? undefined"
                   alt=""
                   loading="lazy"
-                  @error="onLineImageError"
+                  @error="onLineImageError(item.productId)"
                 />
                 <Soup v-else :size="34" class="op-item-media-icon" aria-hidden="true" />
               </span>
