@@ -1102,11 +1102,10 @@ function floorSubtitle(floor: RestFloorResponse): string {
     display: inline;
   }
 
-  /* Tile de módulo más presente en desktop (jerarquía de "panel de comando"). */
+  /* Tile compacto en desktop: contenido centrado, sin espacio muerto. */
   .ms-card {
-    min-height: 96px;
-    padding: 14px 16px;
-    align-items: flex-start;
+    min-height: 68px;
+    padding: 12px 16px;
   }
 
   .ms-card .ms-icon-tile {
