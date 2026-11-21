@@ -41,7 +41,9 @@ import {
 } from 'lucide-vue-next'
 import { session, clearSession } from '../../services/auth'
 import { roleLabel } from '../../utils/role-labels'
+import { getCashSummary, getOrders } from '../../api/rest'
 import { useFloorsStore } from '../../stores/floors'
+import { POS_PLANT_ID } from '../../stores/catalog'
 import { useCashStore } from '../../stores/cash'
 import { useToastStore } from '../../stores/toast'
 import StartCashSessionModal from '../../components/pos/StartCashSessionModal.vue'
@@ -108,8 +110,105 @@ const canAccessAdmin = computed(() =>
 
 // --- Carga inicial (réplica: FloorProvider.loadFloors al entrar) ----------------
 
+/** Fecha de negocio local YYYY-MM-DD (mismo criterio que PendingOrdersView). */
+function todayIso(): string {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+// --- Hero por rol (solo lectura; NO interfiere con ningún flujo) ---------------
+// Admin/Manager → financiero (GET /cash/summary — 403 para cajero, verificado
+// en RestCashController). Cajero → operativo (GET /orders?status=pendiente +
+// sessions/current). Mesero/Cocina → sin hero (sin números que no le incumben).
+
+interface HeroKpi {
+  value: string
+  label: string
+}
+
+const heroVisible = computed(() => canAccessPOS.value)
+const heroVariant = computed<'financiero' | 'operativo'>(() =>
+  canAccessAdmin.value ? 'financiero' : 'operativo',
+)
+
+const heroLoading = ref(true)
+const heroMain = ref<string | null>(null)
+const heroMainLabel = ref('')
+const heroKpis = ref<HeroKpi[]>([])
+
+/** '—' cuando no hay dato: nunca inventar un 0 que parezca venta real. */
+function heroMoney(amount: number | null): string {
+  if (amount == null) return '—'
+  return new Intl.NumberFormat('es-MX', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount)
+}
+
+/**
+ * Carga tolerante del hero (mismo patrón allSettled que AdminDashboardView):
+ * cualquier fallo deja el valor en null ('—') sin afectar módulos ni navegación.
+ */
+async function loadHero(): Promise<void> {
+  if (!heroVisible.value) {
+    heroLoading.value = false
+    return
+  }
+  heroLoading.value = true
+  if (heroVariant.value === 'financiero') {
+    // Admin/Manager: venta del día + métodos de pago + cajas abiertas.
+    const summary = await Promise.allSettled([
+      getCashSummary({ date: todayIso(), scopeType: 'GLOBAL' }),
+    ])
+    if (summary[0].status === 'fulfilled') {
+      const data = summary[0].value.data
+      const totals = data?.totals
+      heroMain.value = totals?.granTotal != null ? heroMoney(totals.granTotal) : null
+      heroMainLabel.value = 'Venta del día'
+      heroKpis.value = [
+        { value: heroMoney(totals?.efectivo ?? null), label: 'Efectivo' },
+        { value: heroMoney(totals?.tarjeta ?? null), label: 'Tarjeta' },
+        {
+          value: data?.sessions?.length != null ? String(data.sessions.length) : '—',
+          label: 'Cajas del día',
+        },
+      ]
+    }
+  } else {
+    // Cajero: pendientes de cobro (la MISMA lista que verá en Cuentas por
+    // Cobrar al entrar) + su sesión de caja. Un fallo de red NO es "0":
+    // se pinta '—' (mismo criterio que el hub admin).
+    const [pend, current] = await Promise.allSettled([
+      getOrders({ plantId: POS_PLANT_ID, date: todayIso(), status: 'pendiente' }),
+      cashStore.fetchCurrent(POS_PLANT_ID),
+    ])
+    if (pend.status === 'fulfilled') {
+      const list = pend.value.data ?? []
+      const pendingTotal = list.reduce((acc, o) => acc + (o.total ?? 0), 0)
+      heroMain.value = String(list.length)
+      heroKpis.value = [{ value: heroMoney(pendingTotal), label: 'Por cobrar' }]
+    } else {
+      heroMain.value = null
+      heroKpis.value = [{ value: '—', label: 'Por cobrar' }]
+    }
+    heroKpis.value.push({
+      value:
+        current.status === 'fulfilled'
+          ? (current.value != null ? 'Abierta' : 'Cerrada')
+          : '—',
+      label: 'Tu caja (P1)',
+    })
+    heroMainLabel.value = 'Pendientes de cobro'
+  }
+  heroLoading.value = false
+}
+
 onMounted(() => {
   void floorsStore.fetchFloors()
+  void loadHero()
 })
 
 const floors = computed(() => floorsStore.floors)
@@ -248,6 +347,28 @@ function floorSubtitle(floor: RestFloorResponse): string {
             <p class="ms-role">{{ headerRoleLabel }}</p>
           </div>
         </header>
+
+        <!-- ===== Hero por rol (solo presentación; carga tolerante) ========= -->
+        <section
+          v-if="heroVisible && !heroLoading"
+          class="ms-hero"
+          :class="`ms-hero--${heroVariant}`"
+          data-testid="ms-hero"
+        >
+          <p class="ms-hero-label">
+            <span class="ms-hero-dot" aria-hidden="true"></span>
+            {{ heroMainLabel }}
+          </p>
+          <p class="ms-hero-main">
+            {{ heroMain ?? '—' }}<span v-if="heroVariant === 'financiero'" class="ms-hero-unit"> MXN</span>
+          </p>
+          <div class="ms-hero-kpis">
+            <div v-for="kpi in heroKpis" :key="kpi.label" class="ms-hero-kpi">
+              <b>{{ kpi.value }}</b>
+              <span>{{ kpi.label }}</span>
+            </div>
+          </div>
+        </section>
 
         <div class="ms-section-head">
           <h2 class="ms-section-title">Módulos</h2>
@@ -427,8 +548,6 @@ function floorSubtitle(floor: RestFloorResponse): string {
   justify-content: space-between;
   gap: 12px;
   width: 100%;
-  max-width: 900px;
-  margin: 0 auto;
   padding: 10px 24px;
 }
 
@@ -518,17 +637,18 @@ function floorSubtitle(floor: RestFloorResponse): string {
   display: none;
 }
 
-/* ===== Contenedor ======================================================== */
+/* ===== Contenedor ========================================================
+   Full-width (patrón aprobado Ajustes/Caja/Vender): en desktop nada flota
+   en una columna 900px con vacíos enormes. El contenido se alinea al borde
+   izquierdo y los tiles crecen en columnas según el ancho disponible. */
 .ms-main {
   flex: 1;
   display: flex;
-  justify-content: center;
   padding: 0 24px max(32px, env(safe-area-inset-bottom));
 }
 
 .ms-container {
   width: 100%;
-  max-width: 900px;
   padding-top: 18px;
 }
 
@@ -631,12 +751,100 @@ function floorSubtitle(floor: RestFloorResponse): string {
   text-overflow: ellipsis;
 }
 
-/* ===== Grid de módulos =================================================== */
+/* ===== Grid de módulos ===================================================
+   Móvil: 1 columna (tiles fila sólidos). Desktop: auto-fill — el grid crece
+   a 2/3/4 columnas según el ancho real, con mínimo de 260px por tile. */
 .ms-grid {
   display: grid;
   grid-template-columns: 1fr;
   gap: 10px;
   align-items: start;
+}
+
+/* ===== Hero por rol ====================================================== */
+.ms-hero {
+  border-radius: 18px;
+  padding: 16px;
+  margin-bottom: 18px;
+  background:
+    radial-gradient(120% 160% at 85% -20%, rgba(255, 100, 45, 0.2), transparent 55%),
+    linear-gradient(180deg, var(--bg-surface-2), #1c1c1c);
+  border: 1px solid var(--border);
+}
+
+.ms-hero--operativo {
+  background:
+    radial-gradient(120% 160% at 85% -20%, rgba(63, 185, 80, 0.14), transparent 55%),
+    linear-gradient(180deg, var(--bg-surface-2), #1c1c1c);
+}
+
+.ms-hero-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.ms-hero-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--primary);
+  box-shadow: 0 0 8px rgba(255, 100, 45, 0.8);
+}
+
+.ms-hero--operativo .ms-hero-dot {
+  background: var(--success);
+  box-shadow: 0 0 8px rgba(63, 185, 80, 0.7);
+}
+
+.ms-hero-main {
+  margin: 0;
+  font-size: 27px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.ms-hero-unit {
+  margin-left: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--text-2);
+}
+
+.ms-hero-kpis {
+  display: flex;
+  gap: 22px;
+  margin-top: 11px;
+  flex-wrap: wrap;
+}
+
+.ms-hero-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ms-hero-kpi b {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.ms-hero-kpi span {
+  font-size: 11px;
+  color: var(--text-3);
 }
 
 /* ===== Card de módulo ===================================================== */
@@ -878,10 +1086,11 @@ function floorSubtitle(floor: RestFloorResponse): string {
    Tablet / desktop
    ========================================================================== */
 
-/* Dos columnas cuando hay ancho real; las filas no se estiran de más. */
+/* Dos+ columnas cuando hay ancho real; auto-fit estira los tiles existentes
+   a ocupar todo el ancho (sin tracks vacíos a la derecha en ultra-wide). */
 @media (min-width: 700px) {
   .ms-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
     gap: 12px;
   }
 
@@ -892,6 +1101,36 @@ function floorSubtitle(floor: RestFloorResponse): string {
   .ms-logout-label {
     display: inline;
   }
+
+  /* Tile de módulo más presente en desktop (jerarquía de "panel de comando"). */
+  .ms-card {
+    min-height: 96px;
+    padding: 14px 16px;
+    align-items: flex-start;
+  }
+
+  .ms-card .ms-icon-tile {
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+  }
+
+  .ms-card .ms-icon-tile svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .ms-card-title {
+    font-size: 15px;
+  }
+
+  .ms-hero {
+    padding: 18px;
+  }
+
+  .ms-hero-main {
+    font-size: 30px;
+  }
 }
 
 /* Pantallas altas de escritorio: el contenido se queda anclado arriba (como
@@ -899,12 +1138,6 @@ function floorSubtitle(floor: RestFloorResponse): string {
 @media (min-width: 700px) {
   .ms-container {
     padding-top: 26px;
-  }
-}
-
-@media (min-width: 700px) and (hover: hover) {
-  .ms-card {
-    min-height: 68px;
   }
 }
 
@@ -937,10 +1170,31 @@ function floorSubtitle(floor: RestFloorResponse): string {
     display: none;
   }
 
+  /* Tile fila sólido en móvil: altura generosa, táctil, "premium". */
   .ms-card {
-    min-height: 62px;
-    padding: 10px 12px;
-    gap: 11px;
+    min-height: 68px;
+    padding: 12px 14px;
+    gap: 12px;
+    border-radius: 18px;
+  }
+
+  .ms-icon-tile {
+    width: 44px;
+    height: 44px;
+    border-radius: 13px;
+  }
+
+  .ms-hero {
+    padding: 15px;
+    margin-bottom: 16px;
+  }
+
+  .ms-hero-main {
+    font-size: 25px;
+  }
+
+  .ms-hero-kpis {
+    gap: 18px;
   }
 }
 
@@ -987,7 +1241,8 @@ function floorSubtitle(floor: RestFloorResponse): string {
   .ms-icon-tile,
   .ms-card-arrow,
   .ms-logout,
-  .ms-empty-btn {
+  .ms-empty-btn,
+  .ms-hero {
     transition: none;
   }
 
