@@ -212,6 +212,8 @@ export function payOrder(
   body: {
     method: PaymentMethod
     amountReceived: number
+    /** Ronda dolares: USD capturado — el MXN lo calcula el backend server-side. */
+    amountReceivedUsd?: number
     expectedStatus: string
     cashSessionId?: number
   },

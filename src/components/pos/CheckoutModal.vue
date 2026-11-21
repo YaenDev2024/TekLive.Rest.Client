@@ -41,14 +41,15 @@ const cashStore = useCashStore()
 const ordersStore = useOrdersStore()
 const toast = useToastStore()
 
-/** Botones del modal (labels réplica del diálogo Flutter L115-137). */
-type CheckoutMethod = 'efectivo' | 'tarjeta' | 'transferencia' | 'dolares'
+/** Botones del modal (labels réplica del diálogo Flutter L115-137 + mixto legacy). */
+type CheckoutMethod = 'efectivo' | 'tarjeta' | 'transferencia' | 'dolares' | 'ambos'
 
 const METHOD_LABELS: Record<CheckoutMethod, string> = {
   efectivo: 'Efectivo',
   tarjeta: 'Tarjeta',
   transferencia: 'QR/Transferencia',
   dolares: 'Dólares',
+  ambos: 'Mixto',
 }
 
 type Step = 'form' | 'success'
@@ -72,7 +73,7 @@ interface SaleSnapshot {
   orderId: number | null
   folio: string | null
   /** Estado PAGADO del ticket (la venta ya se cobró). */
-  paymentMethod: 'efectivo' | 'tarjeta' | 'transferencia' | 'dolares'
+  paymentMethod: 'efectivo' | 'tarjeta' | 'transferencia' | 'dolares' | 'ambos'
   amountReceived: number
   changeAmount: number
   /** Tasa USD usada (solo dolares). */
@@ -118,10 +119,38 @@ const amountReceived = computed<number | null>(() => {
   return Number.isFinite(parsed) ? parsed : null
 })
 
+/** Mixto (method=ambos): capturas de la parte efectivo y la parte tarjeta. */
+const mixCashText = ref('')
+const mixCardText = ref('')
+const mixCash = computed(() => parseAmount(mixCashText.value))
+const mixCard = computed(() => parseAmount(mixCardText.value))
+const mixSum = computed(() => mixCash.value + mixCard.value)
+
+function parseAmount(text: string): number {
+  const trimmed = text.trim()
+  if (trimmed === '') return 0
+  const parsed = Number.parseFloat(trimmed)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+}
+
+const mixProblem = computed<string | null>(() => {
+  if (method.value !== 'ambos') return null
+  if (mixCash.value <= 0 || mixCard.value <= 0) {
+    return 'Captura el monto de EFECTIVO y de TARJETA.'
+  }
+  if (Math.abs(mixSum.value - total.value) > 0.001) {
+    return `La suma $${mixSum.value.toFixed(2)} debe ser igual al total $${total.value.toFixed(2)}.`
+  }
+  return null
+})
+
 const rate = computed(() => cashStore.rate)
 
 /** ¿Método con numpad de captura? (tarjeta y transferencia van sin captura). */
 const needsCapture = computed(() => method.value === 'efectivo' || method.value === 'dolares')
+
+/** Mixto: captura en 2 inputs (sin numpad compartido). */
+const needsMix = computed(() => method.value === 'ambos')
 
 /** Dólares sin tasa configurada → bloqueado (réplica L601-613). */
 const dollarRateProblem = computed<boolean>(() => method.value === 'dolares' && rate.value <= 0)
@@ -135,12 +164,19 @@ const totalUsdNeeded = computed<number>(() =>
 )
 
 const change = computed<number>(() => {
+  if (method.value === 'ambos') {
+    // El backend calcula changeAmount = amountReceived - total; aquí la vista
+    // previa: efectivo aplica lo que falta menos la parte tarjeta.
+    const cashApplied = Math.max(0, total.value - mixCard.value)
+    return Math.max(0, mixCash.value - cashApplied)
+  }
   if (method.value === 'tarjeta' || method.value === 'transferencia') return 0
   return Math.max(0, (amountReceived.value ?? 0) - (method.value === 'dolares' ? totalUsdNeeded.value : total.value))
 })
 
-/** Falta monto o es menor al exigido (solo efectivo/dólares). */
+/** Falta monto o es menor al exigido (solo efectivo/dólares/mixto). */
 const amountProblem = computed<string | null>(() => {
+  if (mixProblem.value != null) return mixProblem.value
   if (method.value === 'tarjeta' || method.value === 'transferencia') return null
   if (dollarRateProblem.value) return null // el banner de tasa ya lo cubre
   if (amountReceived.value == null) return 'Captura el monto con el que paga el cliente.'
@@ -164,7 +200,7 @@ const amountProblem = computed<string | null>(() => {
  * (texto EXACTO de pending_payments_screen.dart L616-617 con Piso 1).
  */
 const cashSessionWarning = computed<boolean>(() =>
-  (method.value === 'efectivo' || method.value === 'dolares') && !cashStore.hasOpenSession,
+  (method.value === 'efectivo' || method.value === 'dolares' || method.value === 'ambos') && !cashStore.hasOpenSession,
 )
 
 const canConfirm = computed<boolean>(() =>
@@ -181,9 +217,12 @@ async function confirm(): Promise<void> {
 
   // Dólares: el MXN lo calcula el backend con la tasa server-side — el
   // cliente envía SOLO el USD capturado (ronda cash). amountReceived viaja
-  // con el equivalente para el flujo de cambio del POS.
+  // con el equivalente para el flujo de cambio del POS. Mixto (ambos):
+  // amountReceived = cash + card; el backend deriva changeAmount.
   const payment =
-    method.value === 'tarjeta' || method.value === 'transferencia'
+    method.value === 'ambos'
+      ? { method: 'ambos' as const, amountReceived: mixSum.value }
+      : method.value === 'tarjeta' || method.value === 'transferencia'
       ? { method: method.value as 'tarjeta' | 'transferencia', amountReceived: total.value }
       : method.value === 'dolares'
         ? {
@@ -226,7 +265,9 @@ async function confirm(): Promise<void> {
       amountReceived:
         payment.method === 'dolares'
           ? (amountReceived.value ?? 0)
-          : (payment.amountReceived ?? total.value),
+          : payment.method === 'ambos'
+            ? mixSum.value
+            : (payment.amountReceived ?? total.value),
       changeAmount: created.changeAmount ?? 0,
       dollarRate: payment.method === 'dolares' ? rate.value : undefined,
     }
@@ -338,7 +379,8 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
           :class="{ 'chk__method--selected': method === m }"
           role="radio"
           :aria-checked="method === m"
-          @click="method = m as CheckoutMethod; amountText = ''"
+          :disabled="m === 'dolares' && rate <= 0"
+          @click="method = m as CheckoutMethod; amountText = ''; mixCashText = ''; mixCardText = ''"
         >
           {{ label }}
         </button>
@@ -348,6 +390,38 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
       <AppBanner v-if="dollarRateProblem" type="warning" data-testid="dollar-rate-warning">
         ⚠️ Precio del dólar no configurado
       </AppBanner>
+
+      <!-- Mixto: captura de las 2 partes (réplica MultiplePaymentDialog
+           simplificada a la pareja efectivo+tarjeta del catálogo 'ambos'). -->
+      <div v-if="needsMix" class="chk-mix" data-testid="mix-capture">
+        <div class="chk-mix__row">
+          <span class="chk-mix__label">💵 Efectivo</span>
+          <input
+            v-model="mixCashText"
+            class="chk-mix__input"
+            type="text"
+            inputmode="decimal"
+            data-testid="mix-cash"
+            aria-label="Monto en efectivo"
+            placeholder="$0.00"
+          />
+        </div>
+        <div class="chk-mix__row">
+          <span class="chk-mix__label">💳 Tarjeta</span>
+          <input
+            v-model="mixCardText"
+            class="chk-mix__input"
+            type="text"
+            inputmode="decimal"
+            data-testid="mix-card"
+            aria-label="Monto con tarjeta"
+            placeholder="$0.00"
+          />
+        </div>
+        <div class="chk-mix__hint" aria-live="polite">
+          {{ mixSum > total ? 'Sobra' : 'Falta' }}: {{ formatMoney(Math.abs(mixSum - total)) }}
+        </div>
+      </div>
 
       <!-- Sin caja en efectivo/dólares: warning NO bloqueante (L616-617). -->
       <AppBanner v-else-if="cashSessionWarning" type="warning" data-testid="cash-session-warning">
@@ -408,6 +482,9 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
       <p v-else-if="method === 'transferencia'" class="chk__card-note">
         Pago con QR o transferencia: se registra el total.
       </p>
+      <p v-else-if="method === 'ambos'" class="chk__card-note">
+        Mixto: parte en efectivo y parte con tarjeta — la suma debe ser el total.
+      </p>
       <p v-else class="chk__card-note">
         Pago con tarjeta: no se captura monto recibido (se registra el total).
       </p>
@@ -429,6 +506,10 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
         <div class="chk__result-row" v-if="method !== 'tarjeta' && method !== 'transferencia'">
           <dt>Cambio</dt>
           <dd data-testid="sale-change">{{ formatMoney(saleResult?.changeAmount ?? change) }}</dd>
+        </div>
+        <div class="chk__result-row" v-if="method === 'ambos'">
+          <dt>Mixto</dt>
+          <dd>Efectivo ${{ mixCash.toFixed(2) }} + Tarjeta ${{ mixCard.toFixed(2) }}</dd>
         </div>
         <div class="chk__result-row">
           <dt>Folio (sistema)</dt>
@@ -515,11 +596,59 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   padding-top: 8px;
 }
 
-/* 4 métodos en grid 2x2 (réplica de las 4 opciones del diálogo Flutter). */
+/* 5 métodos en grid 2 col (réplica diálogo Flutter + Mixto legacy). */
 .chk__methods {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 8px;
+}
+
+/* ===== Mixto: captura de las 2 partes ===== */
+.chk-mix {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chk-mix__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.chk-mix__label {
+  flex: 0 0 110px;
+  color: var(--text-1);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.chk-mix__input {
+  flex: 1;
+  min-width: 0;
+  min-height: 46px;
+  padding: 10px 14px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.chk-mix__input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.chk-mix__hint {
+  color: var(--text-muted);
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .chk__method {

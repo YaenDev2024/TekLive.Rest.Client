@@ -186,6 +186,9 @@ onMounted(() => {
   void refresh()
   // Gate de caja (ronda cash): asegura current para el cobro de pendientes.
   if (cashStore.current == null) void cashStore.fetchCurrent()
+  // Dólares en el cobro: la tasa alimenta la conversión USD→MXN (fallback 0
+  // = método bloqueado con banner, réplica legacy).
+  if (cashStore.dollarRate == null) void cashStore.fetchDollarRate()
   // El lápiz de "Editar opciones" resuelve el template del item contra el
   // catálogo (mismo criterio que OrderProductPicker). Si el usuario entró
   // directo a Órdenes sin montar el POS, el catálogo está vacío y el botón no
@@ -761,19 +764,51 @@ async function printOrderTickets(
 // --- Cancelar (funcional: rol cajero/admin + nota) ------------------------------
 // ModalState vive arriba (sección de edición: cancel/pay/remove-item).
 
-// --- Cobro (réplica _showAmountReceivedDialog de order_panel.dart L167-320) ----
+// --- Cobro (réplica _showAmountReceivedDialog de order_panel.dart L167-320 +
+//     flujo 2 pasos de pending_order_card.dart: Pago Simple / Pago Múltiple) ----
 
 const payMethod = ref<PaymentMethod>('efectivo')
 const payAmountText = ref('')
 const paySubmitting = ref(false)
 const payError = ref<string | null>(null)
 
+/**
+ * Mixto (method=ambos, réplica MultiplePaymentDialog): parte efectivo +
+ * parte tarjeta. payMixCash/payMixCard son MXN capturados en el numpad.
+ * amountReceived enviado = efectivo recibido; el backend calcula
+ * changeAmount = amountReceived - total (mixCash >= total - mixCard).
+ */
+const payMixCashText = ref('')
+const payMixCardText = ref('')
+
+/**
+ * Paso 1 del flujo legacy (pending_order_card.dart L1388-1421): elegir
+ * 'Pago Simple' (un método) o 'Mixto' (efectivo+tarjeta, method=ambos).
+ */
+const payStep = ref<'method' | 'capture'>('method')
+
+function chooseKind(kind: 'simple' | 'mixto'): void {
+  payMethod.value = kind === 'mixto' ? 'ambos' : 'efectivo'
+  payAmountText.value = ''
+  payError.value = null
+  payStep.value = 'capture'
+}
+
 function openPay(order: PendingOrderListItem): void {
   modal.value = { kind: 'pay', order }
   payMethod.value = 'efectivo'
   payAmountText.value = ''
+  payMixCashText.value = ''
+  payMixCardText.value = ''
   payError.value = null
+  payStep.value = 'method'
 }
+
+/** Tasa dólar activa (0 = no configurada → método bloqueado). */
+const rate = computed(() => cashStore.rate)
+
+/** Suma capturada en el mixto (efectivo + tarjeta). */
+const mixSum = computed(() => parseAmount(payMixCashText.value) + parseAmount(payMixCardText.value))
 
 function pressPayKey(key: string): void {
   if (key === 'C') {
@@ -798,13 +833,56 @@ const payAmount = computed<number | null>(() => {
 })
 
 const payChange = computed<number>(() => {
-  if (payMethod.value === 'tarjeta' || modal.value.kind !== 'pay') return 0
+  if (modal.value.kind !== 'pay') return 0
+  if (payMethod.value === 'tarjeta' || payMethod.value === 'transferencia') return 0
+  if (payMethod.value === 'ambos') {
+    const cash = parseAmount(payMixCashText.value)
+    const card = parseAmount(payMixCardText.value)
+    return Math.max(0, cash + card - modal.value.order.total)
+  }
   return Math.max(0, (payAmount.value ?? 0) - modal.value.order.total)
+})
+
+function parseAmount(text: string): number {
+  const trimmed = text.trim()
+  if (trimmed === '') return 0
+  const parsed = Number.parseFloat(trimmed)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+}
+
+const payMixParts = computed<{ cash: number; card: number } | null>(() => {
+  if (modal.value.kind !== 'pay') return null
+  const cash = parseAmount(payMixCashText.value)
+  const card = parseAmount(payMixCardText.value)
+  if (cash <= 0 || card <= 0) return null
+  return { cash, card }
+})
+
+const payMixProblem = computed<string | null>(() => {
+  if (modal.value.kind !== 'pay' || payMethod.value !== 'ambos') return null
+  const parts = payMixParts.value
+  if (parts == null) return 'Captura el monto de EFECTIVO y de TARJETA.'
+  const sum = parts.cash + parts.card
+  if (Math.abs(sum - modal.value.order.total) > 0.001) {
+    return `La suma $${sum.toFixed(2)} debe ser igual al total $${modal.value.order.total.toFixed(2)}.`
+  }
+  return null
 })
 
 const payProblem = computed<string | null>(() => {
   if (modal.value.kind !== 'pay') return null
-  if (payMethod.value === 'tarjeta') return null
+  if (payMethod.value === 'ambos') return payMixProblem.value
+  if (payMethod.value === 'tarjeta' || payMethod.value === 'transferencia') return null
+  if (payMethod.value === 'dolares') {
+    if (payAmount.value == null) return 'Captura el monto en dólares recibido.'
+    if (payAmount.value <= 0) return 'El monto debe ser mayor a 0.'
+    if (rate.value <= 0) return null // banner de tasa lo cubre
+    const mxn = payAmount.value * rate.value
+    if (mxn < modal.value.order.total) {
+      return `Con tasa $${rate.value.toFixed(2)}: $${payAmount.value.toFixed(2)} USD = $${mxn.toFixed(2)} MXN, menor al total.`
+    }
+    return null
+  }
   if (payAmount.value == null) return 'Captura el monto con el que paga el cliente.'
   if (payAmount.value <= 0) return 'El monto debe ser mayor a 0.'
   if (payAmount.value < modal.value.order.total) {
@@ -829,18 +907,41 @@ async function confirmPay(): Promise<void> {
   paySubmitting.value = true
   payError.value = null
   try {
-    const amount =
-      payMethod.value === 'tarjeta' ? order.total : (payAmount.value ?? order.total)
+    let method: PaymentMethod = payMethod.value
+    let amount: number
+    let amountReceivedUsd: number | undefined
+    if (payMethod.value === 'ambos') {
+      const parts = payMixParts.value
+      if (parts == null) {
+        payError.value = payMixProblem.value
+        return
+      }
+      // method=ambos: amountReceived = EFECTIVO recibido; el backend calcula
+      // changeAmount = amountReceived - total (la tarjeta cubre el resto).
+      amount = parts.cash + parts.card
+    } else if (payMethod.value === 'tarjeta' || payMethod.value === 'transferencia') {
+      amount = order.total
+    } else if (payMethod.value === 'dolares') {
+      amount = (payAmount.value ?? 0) * rate.value
+      amountReceivedUsd = payAmount.value ?? 0
+    } else {
+      amount = payAmount.value ?? order.total
+    }
     const result = await ordersStore.payExistingOrder(order.id, {
-      method: payMethod.value,
+      method,
       amountReceived: amount,
+      ...(amountReceivedUsd != null ? { amountReceivedUsd } : {}),
       expectedStatus: order.orderStatus as OrderStatus,
       // Atribuye el cobro a la sesión de caja abierta (ronda cash).
       ...(cashStore.hasOpenSession ? { cashSessionId: cashStore.sessionId } : {}),
     })
     if (result != null) {
+      const methodLabel =
+        method === 'ambos'
+          ? `Mixto (efectivo $${(payMixParts.value?.cash ?? 0).toFixed(2)} + tarjeta $${(payMixParts.value?.card ?? 0).toFixed(2)})`
+          : method
       toast.success(
-        `Orden #${order.dailyOrderNumber} cobrada — cambio: $${result.changeAmount.toFixed(2)}`,
+        `Orden #${order.dailyOrderNumber} cobrada (${methodLabel}) — cambio: $${result.changeAmount.toFixed(2)}`,
       )
       modal.value = { kind: 'none' }
       await refresh()
@@ -1254,92 +1355,182 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
       @close="onEditOptionsClose"
     />
 
-    <!-- Modal de pago (réplica _showAmountReceivedDialog) -->
+    <!-- Modal de pago (flujo legacy 2 pasos: Pago Simple / Mixto, luego método
+         + monto — réplica pending_order_card.dart L1388-1523) -->
     <div
       v-if="modal.kind === 'pay'"
       class="pay-overlay"
       role="dialog"
       aria-modal="true"
-      aria-label="Monto Recibido"
+      :aria-label="payStep === 'method' ? 'Tipo de pago' : 'Monto Recibido'"
     >
       <div class="pay-card" data-testid="pay-modal">
-        <h2 class="pay-title">Monto Recibido</h2>
-        <div class="pay-body">
-          <p class="pay-total-line">
-            Total a pagar: <strong>{{ formatMoney(modal.order.total) }}</strong>
-          </p>
+        <!-- PASO 1 (legacy): tipo de pago -->
+        <template v-if="payStep === 'method'">
+          <h2 class="pay-title">Tipo de Pago</h2>
+          <div class="pay-body">
+            <p class="pay-total-line">
+              Total a pagar: <strong>{{ formatMoney(modal.order.total) }}</strong>
+            </p>
+            <div class="pay-kind">
+              <button
+                type="button"
+                class="pay-kind-btn"
+                data-testid="pay-kind-simple"
+                @click="chooseKind('simple')"
+              >
+                <span class="pay-kind-icon" aria-hidden="true">💵</span>
+                <span class="pay-kind-title">Pago Simple</span>
+                <span class="pay-kind-sub">Un solo método de pago</span>
+              </button>
+              <button
+                type="button"
+                class="pay-kind-btn"
+                data-testid="pay-kind-mixto"
+                @click="chooseKind('mixto')"
+              >
+                <span class="pay-kind-icon" aria-hidden="true">💳</span>
+                <span class="pay-kind-title">Mixto</span>
+                <span class="pay-kind-sub">Combinar efectivo y tarjeta</span>
+              </button>
+            </div>
+          </div>
+        </template>
 
-          <div class="pay__methods" role="radiogroup" aria-label="Método de pago">
+        <!-- PASO 2 (legacy): método + monto -->
+        <template v-else>
+          <h2 class="pay-title">
+            <button type="button" class="pay-back" aria-label="Volver" @click="payStep = 'method'">←</button>
+            {{ payMethod === 'ambos' ? 'Mixto: Efectivo + Tarjeta' : 'Monto Recibido' }}
+          </h2>
+          <div class="pay-body">
+            <p class="pay-total-line">
+              Total a pagar: <strong>{{ formatMoney(modal.order.total) }}</strong>
+            </p>
+
+            <div v-if="payMethod !== 'ambos'" class="pay__methods" role="radiogroup" aria-label="Método de pago">
+              <button
+                v-for="m in (['efectivo', 'tarjeta', 'transferencia', 'dolares'] as const)"
+                :key="m"
+                type="button"
+                class="pay__method"
+                :class="{ 'pay__method--selected': payMethod === m }"
+                role="radio"
+                :aria-checked="payMethod === m"
+                :disabled="m === 'dolares' && rate <= 0"
+                @click="payMethod = m"
+              >
+                {{
+                  m === 'dolares' && rate > 0
+                    ? `Dólares ($${rate.toFixed(2)} MXN)`
+                    : m === 'transferencia'
+                      ? 'Transferencia'
+                      : m.charAt(0).toUpperCase() + m.slice(1)
+                }}
+              </button>
+            </div>
+            <AppBanner v-if="payMethod === 'dolares' && rate <= 0" type="warning">
+              ⚠️ Precio del dólar no configurado
+            </AppBanner>
+
+            <template v-if="payMethod === 'ambos'">
+              <!-- Mixto: 2 capturas (réplica MultiplePaymentDialog simplificada
+                   a la pareja efectivo+tarjeta que manda el catálogo 'ambos') -->
+              <div class="pay-mix">
+                <div class="pay-mix-row">
+                  <span class="pay-mix-label">💵 Efectivo</span>
+                  <input
+                    v-model="payMixCashText"
+                    class="pay-mix-input"
+                    type="text"
+                    inputmode="decimal"
+                    data-testid="pay-mix-cash"
+                    aria-label="Monto en efectivo"
+                    placeholder="$0.00"
+                  />
+                </div>
+                <div class="pay-mix-row">
+                  <span class="pay-mix-label">💳 Tarjeta</span>
+                  <input
+                    v-model="payMixCardText"
+                    class="pay-mix-input"
+                    type="text"
+                    inputmode="decimal"
+                    data-testid="pay-mix-card"
+                    aria-label="Monto con tarjeta"
+                    placeholder="$0.00"
+                  />
+                </div>
+                <div class="pay-change pay-change--mix" aria-live="polite">
+                  <span>{{ mixSum > modal.order.total ? 'Sobra:' : 'Falta:' }}</span>
+                  <span>{{ formatMoney(Math.abs(mixSum - modal.order.total)) }}</span>
+                </div>
+              </div>
+            </template>
+
+            <template v-else-if="payMethod !== 'tarjeta' && payMethod !== 'transferencia'">
+              <div class="pay-amount" data-testid="pay-amount-display">
+                {{ payAmountText === '' ? '$0.00' : `$${payAmountText}` }}{{ payMethod === 'dolares' ? ' USD' : '' }}
+              </div>
+              <div v-if="payMethod === 'dolares'" class="pay-usd-note">
+                Total: ${{ modal.order.total.toFixed(2) }} MXN ≈ ${{ rate > 0 ? (modal.order.total / rate).toFixed(2) : '—' }} USD
+              </div>
+              <div class="pay-numpad">
+                <button
+                  v-for="key in numpadKeys"
+                  :key="key"
+                  type="button"
+                  class="pay-key"
+                  @click="pressPayKey(key)"
+                >
+                  {{ key }}
+                </button>
+                <button type="button" class="pay-key pay-key--clear" @click="pressPayKey('C')">C</button>
+                <button
+                  type="button"
+                  class="pay-key pay-key--exact"
+                  @click="payAmountText = modal.kind === 'pay' ? (payMethod === 'dolares' && rate > 0 ? (modal.order.total / rate).toFixed(2) : modal.order.total.toFixed(2)) : ''"
+                >
+                  Exacto
+                </button>
+              </div>
+              <div
+                v-if="modal.kind === 'pay'"
+                class="pay-change"
+                :class="{ 'pay-change--missing': (payAmount ?? 0) < modal.order.total && payMethod === 'efectivo' }"
+                data-testid="pay-change"
+                aria-live="polite"
+              >
+                <span>{{ (payAmount ?? 0) < modal.order.total ? 'Falta:' : 'Cambio:' }}</span>
+                <span>{{ formatMoney(Math.abs(payChange)) }}{{ payMethod === 'dolares' ? ' MXN' : '' }}</span>
+              </div>
+            </template>
+
+            <p v-else-if="payMethod === 'transferencia'" class="pay-note">\              Pago con QR o transferencia: se registra el total.</p>
+            <p v-else class="pay-note">Pago con tarjeta: se registra el total.</p>
+
+            <AppBanner v-if="payError" type="error">{{ payError }}</AppBanner>
+          </div>
+          <div class="pay-footer">
             <button
-              v-for="m in (['efectivo', 'tarjeta'] as const)"
-              :key="m"
               type="button"
-              class="pay__method"
-              :class="{ 'pay__method--selected': payMethod === m }"
-              role="radio"
-              :aria-checked="payMethod === m"
-              @click="payMethod = m"
+              class="pay-btn pay-btn--ghost"
+              :disabled="paySubmitting"
+              @click="modal = { kind: 'none' }"
             >
-              {{ m.charAt(0).toUpperCase() + m.slice(1) }}
+              Cancelar
+            </button>
+            <button
+              type="button"
+              class="pay-btn pay-btn--confirm"
+              :disabled="paySubmitting || payProblem != null"
+              data-testid="confirm-pay"
+              @click="confirmPay"
+            >
+              {{ paySubmitting ? 'Procesando…' : 'Confirmar Pago' }}
             </button>
           </div>
-
-          <template v-if="payMethod !== 'tarjeta'">
-            <div class="pay-amount" data-testid="pay-amount-display">
-              {{ payAmountText === '' ? '$0.00' : `$${payAmountText}` }}
-            </div>
-            <div class="pay-numpad">
-              <button
-                v-for="key in numpadKeys"
-                :key="key"
-                type="button"
-                class="pay-key"
-                @click="pressPayKey(key)"
-              >
-                {{ key }}
-              </button>
-              <button type="button" class="pay-key pay-key--clear" @click="pressPayKey('C')">C</button>
-              <button
-                type="button"
-                class="pay-key pay-key--exact"
-                @click="payAmountText = modal.kind === 'pay' ? modal.order.total.toFixed(2) : ''"
-              >
-                Exacto
-              </button>
-            </div>
-            <div
-              v-if="modal.kind === 'pay'"
-              class="pay-change"
-              :class="{ 'pay-change--missing': (payAmount ?? 0) < modal.order.total }"
-              data-testid="pay-change"
-              aria-live="polite"
-            >
-              <span>{{ (payAmount ?? 0) < modal.order.total ? 'Falta:' : 'Cambio:' }}</span>
-              <span>{{ formatMoney(Math.abs(payChange)) }}</span>
-            </div>
-          </template>
-
-          <AppBanner v-if="payError" type="error">{{ payError }}</AppBanner>
-        </div>
-        <div class="pay-footer">
-          <button
-            type="button"
-            class="pay-btn pay-btn--ghost"
-            :disabled="paySubmitting"
-            @click="modal = { kind: 'none' }"
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            class="pay-btn pay-btn--confirm"
-            :disabled="paySubmitting || payProblem != null"
-            data-testid="confirm-pay"
-            @click="confirmPay"
-          >
-            {{ paySubmitting ? 'Procesando…' : 'Confirmar Pago' }}
-          </button>
-        </div>
+        </template>
       </div>
     </div>
   </div>
@@ -2090,6 +2281,137 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   font-weight: 600;
   letter-spacing: -0.01em;
   border-bottom: 1px solid var(--border-soft);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Botón volver del paso 2 (flecha) — réplica back del AppBar legacy. */
+.pay-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-left: -8px;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: 18px;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease);
+}
+
+.pay-back:hover {
+  background: var(--card-overlay);
+  color: var(--text-1);
+}
+
+/* ===== PASO 1: tarjetas Pago Simple / Mixto (réplica L1403-1421) ===== */
+.pay-kind {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pay-kind-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 68px;
+  padding: 12px 16px;
+  background: var(--elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+
+.pay-kind-btn:hover {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.pay-kind-icon {
+  font-size: 18px;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.pay-kind-title {
+  color: var(--text-1);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.pay-kind-sub {
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+
+/* ===== Mixto: filas efectivo/tarjeta ===== */
+.pay-mix {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pay-mix-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pay-mix-label {
+  flex: 0 0 110px;
+  color: var(--text-1);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.pay-mix-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 46px;
+  padding: 10px 14px;
+  background: var(--elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  color: var(--text-1);
+  font-family: var(--font);
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.pay-mix-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.pay-change--mix {
+  border-top: 1px solid var(--border-soft);
+  padding-top: 10px;
+}
+
+/* Nota para tarjeta/transferencia (sin captura) */
+.pay-note {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+
+/* Nota de conversión USD (réplica 'Total: $X MXN ≈ $Y USD') */
+.pay-usd-note {
+  color: var(--text-2);
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .pay-body {
