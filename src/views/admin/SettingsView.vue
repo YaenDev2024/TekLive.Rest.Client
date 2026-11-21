@@ -50,7 +50,10 @@ function openPrinters(): void {
 .set {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  /* 100% (NO 100vh): vista hija del shell del POS; en movil el shell ya
+     reserva padding-bottom del bottom-nav. Con 100vh los ultimos 64px
+     (final del scroll) quedaban detras del nav fijo. */
+  min-height: 100%;
   background: var(--bg); /* var(--bg) */
 }
 

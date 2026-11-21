@@ -808,7 +808,10 @@ const differenceColor = computed<string>(() =>
 .cash {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  /* 100% (NO 100vh): vista hija del shell del POS; en movil el shell ya
+     reserva padding-bottom del bottom-nav (y la barra propia del arqueo
+     sube encima del nav). Con 100vh los ultimos 64px quedaban detras. */
+  min-height: 100%;
   background: var(--bg); /* grey[900] scaffold */
 }
 
