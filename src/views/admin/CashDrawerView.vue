@@ -815,10 +815,6 @@ const differenceColor = computed<string>(() =>
 .cash-appbar {
   padding: 22px 24px 12px;
   background: var(--bg);
-
-  width: 100%;
-  max-width: 800px;
-  margin: 0 auto;
 }
 
 .cash-appbar-title {
@@ -872,15 +868,15 @@ const differenceColor = computed<string>(() =>
   background: var(--primary-hover);
 }
 
-/* ===== CUERPO ===== */
+/* ===== CUERPO =====
+   Ancho completo como las vistas hermanas del POS (patron Ajustes/Vender):
+   la columna 800px centrada flotaba con vacios enormes en desktop. */
 .cash-body {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 20px;
   width: 100%;
-  max-width: 800px;
-  margin: 0 auto;
   padding: 12px 24px;
   padding-bottom: 102px; /* espacio para la barra fija (18+84 del Flutter L528) */
   overflow-y: auto;
@@ -1442,6 +1438,26 @@ const differenceColor = computed<string>(() =>
 
   .cash-bottom-bar {
     left: 0; /* móvil: el rail está oculto/colapsado */
+  }
+}
+
+/* ==========================================================================
+   PHONE SHELL (<700px): el bottom-nav del shell (64px + safe-area, z-50)
+   convive con la barra fija del arqueo. Sin esto quedan DOS barras apiladas
+   (la del arqueo tapada por el nav) y el boton naranja "Cerrar Caja y
+   Sesion" queda debajo del nav al final del scroll.
+   - .cash-bottom-bar sube a bottom:64px: visible encima del nav, no tapada.
+   - .cash-body reserva nav + barra en el padding-bottom: el CTA naranja
+     termina alcanzable al final del scroll.
+   ========================================================================== */
+@media (max-width: 699px) {
+  .cash-bottom-bar {
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .cash-body {
+    /* 64 nav + ~76 barra + safe-area + aire */
+    padding-bottom: calc(160px + env(safe-area-inset-bottom, 0px));
   }
 }
 </style>
