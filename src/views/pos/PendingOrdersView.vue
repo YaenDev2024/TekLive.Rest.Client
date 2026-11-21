@@ -31,6 +31,8 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
+  ArrowLeft,
+  Banknote,
   Calendar,
   ChevronDown,
   ChevronUp,
@@ -38,6 +40,8 @@ import {
   CircleMinus,
   CirclePlus,
   CircleX,
+  CreditCard,
+  Delete as DeleteIcon,
   DollarSign,
   Pencil,
   Plus,
@@ -754,7 +758,7 @@ async function printOrderTickets(
                 ? { paymentMethod: 'efectivo', amountReceived: detail.total, changeAmount: 0 }
                 : null,
           })
-    if (ok) toast.success(kind === 'kitchen' ? '🖨️ Ticket de cocina enviado' : '🖨️ Tickets enviados')
+    if (ok) toast.success(kind === 'kitchen' ? 'Ticket de cocina enviado' : 'Tickets enviados')
     else toast.error('No se pudo abrir el diálogo de impresión.')
   } finally {
     printingOrderId.value = null
@@ -1379,7 +1383,7 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
                 data-testid="pay-kind-simple"
                 @click="chooseKind('simple')"
               >
-                <span class="pay-kind-icon" aria-hidden="true">💵</span>
+                <span class="pay-kind-icon" aria-hidden="true"><Banknote :size="22" :stroke-width="1.75" /></span>
                 <span class="pay-kind-title">Pago Simple</span>
                 <span class="pay-kind-sub">Un solo método de pago</span>
               </button>
@@ -1389,7 +1393,7 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
                 data-testid="pay-kind-mixto"
                 @click="chooseKind('mixto')"
               >
-                <span class="pay-kind-icon" aria-hidden="true">💳</span>
+                <span class="pay-kind-icon" aria-hidden="true"><CreditCard :size="22" :stroke-width="1.75" /></span>
                 <span class="pay-kind-title">Mixto</span>
                 <span class="pay-kind-sub">Combinar efectivo y tarjeta</span>
               </button>
@@ -1400,7 +1404,9 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
         <!-- PASO 2 (legacy): método + monto -->
         <template v-else>
           <h2 class="pay-title">
-            <button type="button" class="pay-back" aria-label="Volver" @click="payStep = 'method'">←</button>
+            <button type="button" class="pay-back" aria-label="Volver" @click="payStep = 'method'">
+              <ArrowLeft :size="18" :stroke-width="1.75" aria-hidden="true" />
+            </button>
             {{ payMethod === 'ambos' ? 'Mixto: Efectivo + Tarjeta' : 'Monto Recibido' }}
           </h2>
           <div class="pay-body">
@@ -1430,7 +1436,8 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
               </button>
             </div>
             <AppBanner v-if="payMethod === 'dolares' && rate <= 0" type="warning">
-              ⚠️ Precio del dólar no configurado
+              <template #icon><CircleAlert :size="16" :stroke-width="1.75" /></template>
+              Precio del dólar no configurado
             </AppBanner>
 
             <template v-if="payMethod === 'ambos'">
@@ -1438,7 +1445,10 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
                    a la pareja efectivo+tarjeta que manda el catálogo 'ambos') -->
               <div class="pay-mix">
                 <div class="pay-mix-row">
-                  <span class="pay-mix-label">💵 Efectivo</span>
+                  <span class="pay-mix-label">
+                    <Banknote :size="16" :stroke-width="1.75" aria-hidden="true" />
+                    Efectivo
+                  </span>
                   <input
                     v-model="payMixCashText"
                     class="pay-mix-input"
@@ -1450,7 +1460,10 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
                   />
                 </div>
                 <div class="pay-mix-row">
-                  <span class="pay-mix-label">💳 Tarjeta</span>
+                  <span class="pay-mix-label">
+                    <CreditCard :size="16" :stroke-width="1.75" aria-hidden="true" />
+                    Tarjeta
+                  </span>
                   <input
                     v-model="payMixCardText"
                     class="pay-mix-input"
@@ -1483,7 +1496,11 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
                   class="pay-key"
                   @click="pressPayKey(key)"
                 >
-                  {{ key }}
+                  <template v-if="key === '←'">
+                    <DeleteIcon :size="18" :stroke-width="1.75" aria-hidden="true" />
+                    <span class="sr-only">Borrar</span>
+                  </template>
+                  <template v-else>{{ key }}</template>
                 </button>
                 <button type="button" class="pay-key pay-key--clear" @click="pressPayKey('C')">C</button>
                 <button
@@ -2301,7 +2318,6 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   border: none;
   border-radius: 999px;
   color: var(--text-2);
-  font-size: 18px;
   cursor: pointer;
   transition: background var(--dur) var(--ease);
 }
@@ -2341,8 +2357,9 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 }
 
 .pay-kind-icon {
-  font-size: 18px;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  color: var(--primary);
   margin-bottom: 4px;
 }
 
@@ -2372,9 +2389,25 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 
 .pay-mix-label {
   flex: 0 0 110px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--text-1);
   font-size: 14px;
   font-weight: 600;
+}
+
+/* Accesibilidad del numpad: texto del backspace oculto (el icono Delete lo representa) */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .pay-mix-input {

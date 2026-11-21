@@ -33,6 +33,7 @@ import { session } from '../../services/auth'
 import { printSaleTickets } from '../../services/ticket'
 import { AppBanner } from '../ui'
 import AppModal from './AppModal.vue'
+import { Banknote, CircleAlert, CreditCard, Delete as DeleteIcon } from 'lucide-vue-next'
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -316,10 +317,10 @@ async function confirm(): Promise<void> {
 
 function finish(): void {
   // Ronda 3: toast EXACTO del Flutter (order_panel.dart L661-687): '✓ Orden
-  // procesada' + segunda línea '💵 Cambio: $X' solo si cambio > 0.01.
+  // procesada' + segunda línea ' Cambio: $X' solo si cambio > 0.01.
   const change = saleResult.value?.changeAmount ?? 0
-  const changeText = change > 0.01 ? `\n💵 Cambio: $${change.toFixed(2)}` : ''
-  toast.success('✓ Orden procesada' + changeText)
+  const changeText = change > 0.01 ? `\nCambio: $${change.toFixed(2)}` : ''
+  toast.success('Orden procesada' + changeText)
   emit('close')
 }
 
@@ -388,14 +389,18 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 
       <!-- Dólares sin tasa: banner bloqueante (réplica L601-613). -->
       <AppBanner v-if="dollarRateProblem" type="warning" data-testid="dollar-rate-warning">
-        ⚠️ Precio del dólar no configurado
+        <template #icon><CircleAlert :size="16" :stroke-width="1.75" /></template>
+        Precio del dólar no configurado
       </AppBanner>
 
       <!-- Mixto: captura de las 2 partes (réplica MultiplePaymentDialog
            simplificada a la pareja efectivo+tarjeta del catálogo 'ambos'). -->
       <div v-if="needsMix" class="chk-mix" data-testid="mix-capture">
         <div class="chk-mix__row">
-          <span class="chk-mix__label">💵 Efectivo</span>
+          <span class="chk-mix__label">
+            <Banknote :size="16" :stroke-width="1.75" aria-hidden="true" />
+            Efectivo
+          </span>
           <input
             v-model="mixCashText"
             class="chk-mix__input"
@@ -407,7 +412,10 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
           />
         </div>
         <div class="chk-mix__row">
-          <span class="chk-mix__label">💳 Tarjeta</span>
+          <span class="chk-mix__label">
+            <CreditCard :size="16" :stroke-width="1.75" aria-hidden="true" />
+            Tarjeta
+          </span>
           <input
             v-model="mixCardText"
             class="chk-mix__input"
@@ -453,7 +461,11 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
               class="chk__key"
               @click="pressKey(key)"
             >
-              {{ key }}
+              <template v-if="key === '←'">
+                <DeleteIcon :size="18" :stroke-width="1.75" aria-hidden="true" />
+                <span class="chk-sr-only">Borrar</span>
+              </template>
+              <template v-else>{{ key }}</template>
             </button>
             <button type="button" class="chk__key chk__key--clear" @click="pressKey('C')">
               C
@@ -618,9 +630,25 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 
 .chk-mix__label {
   flex: 0 0 110px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--text-1);
   font-size: 14px;
   font-weight: 600;
+}
+
+/* Accesibilidad del numpad: texto del backspace oculto (el icono Delete lo representa) */
+.chk-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .chk-mix__input {
