@@ -1544,7 +1544,10 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
   display: flex;
   flex-direction: column;
   height: 100%;
-  min-height: 100vh;
+  /* 100% (NO 100vh): el shell ya reserva padding-bottom del bottom-nav en
+     movil; con 100vh la vista media el viewport completo y sus ultimos 64px
+     (final del scroll: boton Cobrar) quedaban DETRAS del nav fijo. */
+  min-height: 100%;
   background: var(--bg); /* grey[900] var(--bg) */
 }
 
