@@ -229,10 +229,16 @@ function close(): void {
   background: rgba(255, 255, 255, 0.08);
 }
 
-/* --- Numérico: grid 3 col, width 280, aspect 1.4 (réplica L510-520) --------- */
+/* --- Numérico: grid 3 col, width 280, aspect 1.4 (réplica L510-520) ---------
+   align-items:center es el que centra HORIZONTAL: el padre .vk__body es
+   flex-direction:column (de ahi el max-width 720 + margin auto), asi que
+   justify-content:center solo centra vertical y el grid quedaba pegado a
+   la izquierda de la caja de 720px. */
 .vk__body--numeric {
   display: flex;
+  flex-direction: column;
   justify-content: center;
+  align-items: center;
 }
 
 .vk__grid {
