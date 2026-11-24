@@ -145,7 +145,10 @@ export function buildClientTicket(input: ClientTicketInput): TicketDoc {
   const footerMessage = input.footer ?? '¡GRACIAS POR SU COMPRA! Vuelva pronto'
 
   // ===== FISCALES (L961-985) =====
-  lines.push({ kind: 'feed', n: 1 })
+  // Logo del negocio como el original (generator.image L944): primera línea
+  // del ticket cliente; en web se pinta el PNG real y en térmica va vía
+  // GS v 0 (escpos.ts). El kitchen ticket NO lleva logo (como el original).
+  lines.push({ kind: 'logo' })
   lines.push({ kind: 'hr' })
   lines.push({ kind: 'text', text: 'RFC. GARA8210125T5', align: 'center' })
   lines.push({ kind: 'text', text: 'Praderas del Encino #8631-38,32695,Juarez,Chih.', align: 'center' })

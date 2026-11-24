@@ -33,6 +33,7 @@ import {
 import { logTicketPrint, type TicketConfig } from '../../api/rest'
 import { useAdminTicketConfigStore } from '../../stores/adminTicketConfig'
 import { useToastStore } from '../../stores/toast'
+import { cashierDisplayName } from '../../services/auth'
 import { isTauri } from '../printing/tauri-bridge'
 import {
   buildClientDocTauri,
@@ -170,7 +171,7 @@ export function buildPendingKitchenDoc(input: {
   const base: TicketDoc = buildKitchenTicket({
     folio: input.folio,
     orderType: input.orderType,
-    cashierName: 'CAJERO',
+    cashierName: cashierDisplayName(),
     customerName: customerNameFor(input.orderType, input.platformDeliveryInfo),
     platformDeliveryInfo: input.platformDeliveryInfo,
     items: kitchenItems(input.items),
@@ -195,7 +196,7 @@ export function buildSaleDoc(input: SaleTicketInput): TicketDoc {
     folio: input.folio,
     orderType: input.orderType,
     customerName: customerNameFor(input.orderType, input.platformDeliveryInfo),
-    cashierName: 'CAJERO',
+    cashierName: cashierDisplayName(),
     items: clientItems(input.items),
     total: input.total,
     footer: cfg.footer,

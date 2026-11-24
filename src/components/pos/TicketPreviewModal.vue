@@ -32,6 +32,7 @@ import {
 } from '../../services/ticket'
 import { logTicketPrint } from '../../api/rest'
 import { useAdminTicketConfigStore } from '../../stores/adminTicketConfig'
+import { cashierDisplayName } from '../../services/auth'
 import AppModal from './AppModal.vue'
 
 const props = defineProps<{
@@ -105,7 +106,7 @@ const docCurrent = computed<TicketDoc>(() => {
     return buildKitchenTicket({
       folio: props.folio ?? 'PENDIENTE',
       orderType: props.orderType,
-      cashierName: 'CAJERO',
+      cashierName: cashierDisplayName(),
       customerName: customerName.value,
       platformDeliveryInfo: props.platformDeliveryInfo,
       items: props.items.map((item) => ({
@@ -125,7 +126,7 @@ const docCurrent = computed<TicketDoc>(() => {
     folio: props.folio ?? 'PENDIENTE',
     orderType: props.orderType,
     customerName: customerName.value,
-    cashierName: 'CAJERO',
+    cashierName: cashierDisplayName(),
     items: props.items.map((item) => ({
       quantity: item.quantity,
       productName: item.productName,
@@ -162,7 +163,7 @@ const docKitchen = computed<TicketDoc>(() =>
   buildKitchenTicket({
     folio: props.folio ?? 'PENDIENTE',
     orderType: props.orderType,
-    cashierName: 'CAJERO',
+    cashierName: cashierDisplayName(),
     customerName: customerName.value,
     platformDeliveryInfo: props.platformDeliveryInfo,
     items: props.items.map((item) => ({

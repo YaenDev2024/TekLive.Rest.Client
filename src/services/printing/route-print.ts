@@ -27,6 +27,7 @@ import {
   type TicketDoc,
 } from '../ticket'
 import { isTauri, listPrinters, printRawEscPos, printTcpEscPos, probePrinter } from './tauri-bridge'
+import { cashierDisplayName } from '../../services/auth'
 import {
   getAreaPrinter,
   getKitchenSlot,
@@ -142,7 +143,7 @@ export function buildPendingKitchenDocTauri(input: {
   const base: TicketDoc = buildKitchenTicket({
     folio: input.folio,
     orderType: input.orderType,
-    cashierName: 'CAJERO',
+    cashierName: cashierDisplayName(),
     customerName: input.customerName,
     customerPhone: input.customerPhone,
     platformDeliveryInfo: input.platformDeliveryInfo,
@@ -178,7 +179,7 @@ export function buildClientDocTauri(input: {
     orderType: input.orderType,
     customerName: input.customerName,
     customerPhone: input.customerPhone,
-    cashierName: 'CAJERO',
+    cashierName: cashierDisplayName(),
     items: clientItems(input.items),
     total: input.total,
     footer: cfg?.footer ?? null,

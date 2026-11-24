@@ -219,3 +219,13 @@ export function clearSession(): void {
   // NOTE: deviceId survives logout intentionally: it identifies the
   // device/installation, not the employee.
 }
+
+/**
+ * Nombre a mostrar en tickets ("CAJERO: X" del ticket cliente, "Atendio:" en
+ * cocina): el nombre REAL del empleado logueado; 'CAJERO' solo si la sesión
+ * no lo trae (fail-safe igual al valor histórico hardcodeado).
+ */
+export function cashierDisplayName(): string {
+  const name = session.displayName?.trim()
+  return name !== '' && name != null ? name : 'CAJERO'
+}

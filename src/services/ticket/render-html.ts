@@ -155,6 +155,22 @@ export function printTicket(doc: TicketDoc): boolean {
     win.document.open()
     win.document.write(html)
     win.document.close()
+    // El evento load del iframe puede dispararse ANTES de que el <img> del
+    // logo termine de decodificar (el ticket saldría sin él). Se espera
+    // explícitamente a cada imagen; si alguna se cuelga, timeout de 1.5s
+    // imprime igual (fail-safe del flujo de venta: nunca bloquear al cajero).
+    const waitImages = (): Promise<void> =>
+      Promise.all(
+        Array.from(win.document.images).map((img) =>
+          img.complete
+            ? Promise.resolve()
+            : new Promise<void>((resolve) => {
+                img.addEventListener('load', () => resolve(), { once: true })
+                img.addEventListener('error', () => resolve(), { once: true })
+                setTimeout(resolve, 1500)
+              }),
+        ),
+      ).then(() => undefined)
     // Espera al layout del iframe antes de invocar el diálogo.
     const print = (): void => {
       try {
@@ -172,9 +188,9 @@ export function printTicket(doc: TicketDoc): boolean {
       }
     }
     if (win.document.readyState === 'complete') {
-      print()
+      void waitImages().then(print)
     } else {
-      win.addEventListener('load', print, { once: true })
+      win.addEventListener('load', () => void waitImages().then(print), { once: true })
     }
     return true
   } catch {
