@@ -35,17 +35,22 @@ import { useAdminTicketConfigStore } from '../../stores/adminTicketConfig'
 import { useToastStore } from '../../stores/toast'
 import { cashierDisplayName } from '../../services/auth'
 import { isTauri } from '../printing/tauri-bridge'
+import { loadKeywords } from '../printing/printer-config'
 import {
   buildClientDocTauri,
   buildPendingKitchenDocTauri,
+  detectPrinterAreasForItem,
   printClientTicketTauri,
   printKitchenOrderByArea,
 } from '../printing/route-print'
 
-/** Keywords réplica _orderNeedsDuplicateKitchenTicket (L662-669) — SOLO canal
- *  web (el histórico; en Tauri el x2 lo decide route-print por keywords
- *  guardadas). */
-const DUPLICATE_KEYWORDS = [
+/**
+ * Keywords legacy del original (_orderNeedsDuplicateKitchenTicket L662-669):
+ * FALLBACK cuando el admin aún no configura keywords en Ajustes → Impresoras
+ * (migración suave: el x2 de cocina sigue funcionando igual que siempre hasta
+ * que el admin cargue las suyas; entonces mandan las guardadas).
+ */
+const LEGACY_DUPLICATE_KEYWORDS = [
   'TENDERS', // TENDERS, TENDER
   'HAMBURGUESA', // HAMBURGUESA(S)
   'ELOTE', // ELOTE(S), ELOTERO
@@ -54,27 +59,38 @@ const DUPLICATE_KEYWORDS = [
   'PECHUGA',
 ] as const
 
-/** true si la orden contiene productos clave → cocina se imprime x2 (web). */
+/**
+ * ¿La orden necesita cocina duplicada (x2)? (réplica
+ * _orderNeedsDuplicateKitchenTicket L660-716).
+ *
+ * Unificada con el canal Tauri: las keywords guardadas en Ajustes →
+ * Impresoras contra el área COCINA mandan (route-print ya lo hacía así;
+ * aquí estaba la lista hardcodeada). Matching idéntico: nombre de producto +
+ * extras + complementos + nota (búsqueda parcial, upper-case). Si el admin
+ * no configuró ninguna keyword de cocina, se usa la lista legacy del
+ * original para no perder el x2 histórico.
+ */
 export function orderNeedsDuplicateKitchen(items: CartItem[]): boolean {
-  for (const item of items) {
-    const names = [
-      item.productName,
-      ...item.extras.map((e) => e.name),
-      ...(item.complement != null ? [item.complement.name] : []),
-      item.note ?? '',
-    ]
-    for (const name of names) {
-      const upper = name.toUpperCase()
-      if (DUPLICATE_KEYWORDS.some((k) => upper.includes(k))) return true
-    }
-    // Notas combinadas (OPT::/NOTE::) también cuentan (réplica L694-696).
-    const notes = buildItemNotes(item)
-    if (notes !== '') {
-      const upper = notes.toUpperCase()
-      if (DUPLICATE_KEYWORDS.some((k) => upper.includes(k))) return true
-    }
+  const kitchenKeywords = loadKeywords().filter((k) => k.printerArea === 'COCINA')
+  if (kitchenKeywords.length === 0) {
+    // Sin config del admin: fallback legacy (comportamiento histórico web).
+    return items.some((item) => itemMatchesAnyKeyword(item, LEGACY_DUPLICATE_KEYWORDS))
   }
-  return false
+  return items.some((item) => detectPrinterAreasForItem(item, kitchenKeywords).size > 0)
+}
+
+/** Matching legacy: texto del item contra la lista fija (upper, parcial). */
+function itemMatchesAnyKeyword(item: CartItem, keywords: readonly string[]): boolean {
+  const texts = [
+    item.productName,
+    ...item.extras.map((e) => e.name),
+    ...(item.complement != null ? [item.complement.name] : []),
+    buildItemNotes(item),
+  ]
+  return texts.some((text) => {
+    const upper = text.toUpperCase()
+    return upper !== '' && keywords.some((k) => upper.includes(k))
+  })
 }
 
 /** Estado PAGADO del ticket cliente (venta ya cobrada). */

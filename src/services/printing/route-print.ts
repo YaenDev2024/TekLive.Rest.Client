@@ -70,8 +70,10 @@ export interface AreaPrintResult {
  * Áreas detectadas para un item: nombre de producto + extras + complementos +
  * nota (upper-case, búsqueda parcial). Las keywords de área CLIENTE NO
  * enrutan a cocina (L843-845: solo se agregan áreas != 'CLIENTE').
+ * Exportada también la usa sale-print.ts (canal web) para el x2 de cocina
+ * por keywords guardadas — una sola fuente de verdad del matching.
  */
-function detectPrinterAreasForItem(item: CartItem, keywords: ProductKeyword[]): Set<string> {
+export function detectPrinterAreasForItem(item: CartItem, keywords: ProductKeyword[]): Set<string> {
   const areas = new Set<string>()
   const texts = [
     item.productName.toUpperCase(),
