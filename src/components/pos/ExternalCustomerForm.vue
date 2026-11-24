@@ -157,7 +157,7 @@ async function onCreateNew(): Promise<void> {
       deliveryTimePreference: deliveryTime.value.trim() === '' ? null : deliveryTime.value.trim(),
       comments: comments.value.trim() === '' ? null : comments.value.trim(),
     })
-    toast.success('✅ Cliente creado exitosamente')
+    toast.success('Cliente creado exitosamente')
     clearForm()
     // Auto-selección del cliente creado (réplica L140-141).
     selected.value = data
@@ -233,7 +233,7 @@ async function onSaveEdit(): Promise<void> {
     const { data } = await updateCustomer(selected.value.customerId, {
       phone: phone.value.trim() === '' ? null : phone.value.trim(),
     })
-    toast.success('✅ Cliente actualizado exitosamente')
+    toast.success('Cliente actualizado exitosamente')
     selected.value = data
     emit('change', data)
     clearForm()

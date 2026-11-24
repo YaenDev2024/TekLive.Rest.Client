@@ -755,7 +755,7 @@ const differenceColor = computed<string>(() =>
     <!-- Sesión de larga duración (réplica L303-324) -->
     <AppModal
       v-if="dialog.kind === 'long-session'"
-      title="⚠️ Sesión de Larga Duración"
+      title="Sesión de Larga Duración"
       :width="420"
       @close="dialog = { kind: 'none' }"
     >

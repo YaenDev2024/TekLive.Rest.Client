@@ -126,9 +126,9 @@ async function testAndSaveMain(): Promise<void> {
     }
     setMainPrinter(ip, `Impresora Red - ${ip}`, false)
     mainSaved.value = ip
-    toast.success(`✅ Conexión exitosa a ${ip}:${port}`)
+    toast.success(`Conexión exitosa a ${ip}:${port}`)
   } catch (e) {
-    toast.error(`❌ Error de conexión: ${e instanceof Error ? e.message : String(e)}`)
+    toast.error(`Error de conexión: ${e instanceof Error ? e.message : String(e)}`)
   } finally {
     mainTesting.value = false
   }
@@ -205,9 +205,9 @@ async function testKitchen(slot: 1 | 2): Promise<void> {
     setKitchenSlot(slot, ip, `Cocina ${slot} - ${ip}`, false)
     if (slot === 1) k1Saved.value = ip
     else k2Saved.value = ip
-    toast.success(`✅ Cocina ${slot} responde en ${ip}:9100`)
+    toast.success(`Cocina ${slot} responde en ${ip}:9100`)
   } catch (e) {
-    toast.error(`❌ Cocina ${slot} sin respuesta: ${e instanceof Error ? e.message : String(e)}`)
+    toast.error(`Cocina ${slot} sin respuesta: ${e instanceof Error ? e.message : String(e)}`)
   } finally {
     testing.value = false
   }

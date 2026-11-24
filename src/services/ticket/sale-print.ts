@@ -292,7 +292,7 @@ async function printSaleTicketsTauri(input: SaleTicketInput): Promise<void> {
     messages: [e instanceof Error ? e.message : String(e)],
     failures: [e instanceof Error ? e.message : String(e)],
   }))
-  toastPrintFailures('🖨️ Cocina:', kitchen)
+  toastPrintFailures('Cocina:', kitchen)
   const client = await printClientTicketTauri(
     buildClientDocTauri({
       folio: input.folio,
@@ -310,7 +310,7 @@ async function printSaleTicketsTauri(input: SaleTicketInput): Promise<void> {
     messages: [e instanceof Error ? e.message : String(e)],
     failures: [e instanceof Error ? e.message : String(e)],
   }))
-  toastPrintFailures('🖨️ Ticket cliente:', client)
+  toastPrintFailures('Ticket cliente:', client)
   void logBoth(input.orderId, 'tauri')
 }
 
@@ -341,7 +341,7 @@ export function printPendingKitchenTicket(input: {
         messages: [e instanceof Error ? e.message : String(e)],
         failures: [e instanceof Error ? e.message : String(e)],
       }))
-      toastPrintFailures('🖨️ Cocina:', result)
+      toastPrintFailures('Cocina:', result)
       if (input.orderId != null) {
         try {
           await logTicketPrint(input.orderId, { printType: 'kitchen', printerName: 'tauri', success: true, errorMessage: null })

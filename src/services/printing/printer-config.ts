@@ -282,7 +282,7 @@ export function validatePrinterConfigured(): PrinterReadinessResult {
   if (main == null || main.ip.trim() === '') {
     return {
       isReady: false,
-      message: '⚠️ Impresora no configurada. Configúrala en Ajustes > Impresoras.',
+      message: 'Impresora no configurada. Configúrala en Ajustes > Impresoras.',
     }
   }
   return { isReady: true, message: main.isUsb ? 'Impresora USB lista' : 'Impresora de red lista' }

@@ -1209,7 +1209,7 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
         <h3 class="sub-dialog__title">Mitades de Proteína (Mixto)</h3>
         <p class="sub-dialog__q">¿Cuál es la composición?</p>
         <div v-if="mixtoSelections.size > 0" class="sub-mixto__current">
-          <p class="sub-mixto__current-title">✓ Seleccionado:</p>
+          <p class="sub-mixto__current-title">Seleccionado:</p>
           <p v-for="[mitad, salsa] in mixtoSelections" :key="mitad" class="sub-mixto__current-line">
             • Mitad {{ mitad }}: {{ salsa }}
           </p>
@@ -1243,7 +1243,7 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
         <h3 class="sub-dialog__title">Salsa para {{ activeMitad }}</h3>
         <p class="sub-dialog__q">¿Qué salsa para la mitad de {{ activeMitad }}?</p>
         <div class="sub-dialog__scroll">
-          <p v-if="allSalsaValues.length === 0" class="sub-dialog__warn">⚠️ No se encontraron salsas disponibles</p>
+          <p v-if="allSalsaValues.length === 0" class="sub-dialog__warn">No se encontraron salsas disponibles</p>
           <button
             v-for="salsa in allSalsaValues"
             :key="salsa.id"
@@ -1363,7 +1363,7 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
         <p class="sub-dialog__q">Elige la salsa extra que deseas</p>
         <div class="sub-dialog__scroll">
           <p v-if="allSalsaValues.length === 0" class="sub-dialog__warn">
-            ⚠️ No hay grupo de salsas — El producto necesita un grupo de SALSAS o SABOR en la BD
+            No hay grupo de salsas — El producto necesita un grupo de SALSAS o SABOR en la BD
           </p>
           <button
             v-for="salsa in allSalsaValues"

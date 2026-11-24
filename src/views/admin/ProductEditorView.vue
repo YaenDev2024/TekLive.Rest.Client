@@ -674,12 +674,12 @@ async function confirmRemoveImage(): Promise<void> {
     invalidateProductImage(productId)
     // El listado vuelve a pintar el dato del servidor (sin bloque de imagen).
     await productsStore.loadProducts(true)
-    toast.success('✅ Imagen eliminada')
+    toast.success('Imagen eliminada')
   } catch (err) {
     toast.error(
       err instanceof ApiError && err.status !== 0
-        ? `❌ Error: ${err.message}`
-        : '❌ Error: No se pudo conectar con el servidor. Verifica tu conexión.',
+        ? `Error: ${err.message}`
+        : 'Error: No se pudo conectar con el servidor. Verifica tu conexión.',
     )
   } finally {
     removingImage.value = false
@@ -1135,7 +1135,7 @@ async function submitEditor(): Promise<void> {
       // El id es necesario para el POST de la imagen (…/products/{id}/image).
       productId = await productsStore.createProduct(payload)
       // Texto EXACTO L629-631.
-      toast.success('✅ Producto creado exitosamente')
+      toast.success('Producto creado exitosamente')
     } else {
       productId = editingProduct.value.id
       await productsStore.updateProduct(productId, {
@@ -1143,7 +1143,7 @@ async function submitEditor(): Promise<void> {
         isActive: form.isActive,
       })
       // Texto EXACTO L608-610.
-      toast.success('✅ Producto actualizado exitosamente')
+      toast.success('Producto actualizado exitosamente')
     }
 
     if (pendingFile != null && productId > 0) {
@@ -1183,8 +1183,8 @@ async function submitEditor(): Promise<void> {
   } catch (err) {
     toast.error(
       err instanceof ApiError && err.status !== 0
-        ? `❌ Error: ${err.message}`
-        : '❌ Error: No se pudo conectar con el servidor. Verifica tu conexión.',
+        ? `Error: ${err.message}`
+        : 'Error: No se pudo conectar con el servidor. Verifica tu conexión.',
     )
   } finally {
     submitting.value = false
@@ -1208,14 +1208,14 @@ async function confirmDelete(): Promise<void> {
   try {
     await productsStore.deleteProduct(confirmTarget.value.id)
     // UI-parity manage_product_templates_screen.dart L90 (SnackBar EXACTO).
-    toast.success('✅ Template eliminado')
+    toast.success('Template eliminado')
     confirmTarget.value = null
   } catch (err) {
     // Réplica L97: '❌ Error: …'.
     toast.error(
       err instanceof ApiError && err.status !== 0
-        ? `❌ Error: ${err.message}`
-        : '❌ Error: No se pudo conectar con el servidor. Verifica tu conexión.',
+        ? `Error: ${err.message}`
+        : 'Error: No se pudo conectar con el servidor. Verifica tu conexión.',
     )
   } finally {
     deleting.value = false

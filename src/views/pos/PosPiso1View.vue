@@ -325,12 +325,12 @@ async function submitAsPending(): Promise<void> {
   // Validaciones réplica Flutter L722-751.
   const type = cart.orderType.toUpperCase()
   if (type === 'EXTERNO' && cart.customerId == null) {
-    toast.warning('⚠️ Debes seleccionar un cliente para órdenes EXTERNO')
+    toast.warning('Debes seleccionar un cliente para órdenes EXTERNO')
     return
   }
   if (type.includes('UBER') || type.includes('DIDI')) {
     if (cart.platformDeliveryInfo.trim() === '') {
-      toast.warning('⚠️ Debes agregar el nombre del repartidor o ID de pedido')
+      toast.warning('Debes agregar el nombre del repartidor o ID de pedido')
       return
     }
   }
@@ -365,7 +365,7 @@ async function submitAsPending(): Promise<void> {
       total: created.total,
       orderId: created.id,
     })
-    toast.success('✓ Orden guardada como pendiente')
+    toast.success('Orden guardada como pendiente')
     cart.clear()
   } catch {
     toast.error('No se pudo crear la orden pendiente. Intenta de nuevo.')

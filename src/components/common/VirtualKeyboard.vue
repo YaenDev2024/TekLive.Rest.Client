@@ -159,7 +159,6 @@ function close(): void {
               @click="pressBackspace"
             >
               <Delete :size="18" aria-hidden="true" />
-              ←
             </button>
           </div>
         </div>

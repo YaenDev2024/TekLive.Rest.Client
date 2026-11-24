@@ -425,7 +425,7 @@ export async function printClientTicketTauri(doc: TicketDoc): Promise<AreaPrintR
   const main = getMainPrinter()
   const target = client ?? main
   if (target == null || target.ip.trim() === '') {
-    const msg = '⚠️ Impresora no configurada. Configúrala en Ajustes > Impresoras.'
+    const msg = 'Impresora no configurada. Configúrala en Ajustes > Impresoras.'
     messages.push(msg)
     failures.push(msg)
     return { ok: false, messages, failures }
