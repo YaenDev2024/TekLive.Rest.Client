@@ -21,6 +21,29 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{ close: [] }>()
 
+/**
+ * Cerrar con click fuera SOLO si el gesto empezó en el overlay.
+ *
+ * Al enfocar un input se abre el teclado virtual y `html.vk-open` sube el
+ * modal (align-items: flex-start). Si eso ocurre entre mousedown y mouseup,
+ * el click se despacha contra el overlay y @click.self cerraba el modal justo
+ * cuando el usuario tocaba un campo. Guardando el target del pointerdown se
+ * distingue "click fuera de verdad" de "el layout se movió bajo el cursor".
+ */
+let pressStartedOnOverlay = false
+
+function onOverlayPointerDown(event: PointerEvent): void {
+  pressStartedOnOverlay = event.target === event.currentTarget
+}
+
+function onOverlayClick(event: MouseEvent): void {
+  const startedHere = pressStartedOnOverlay
+  pressStartedOnOverlay = false
+  if (!props.dismissible || !startedHere) return
+  if (event.target !== event.currentTarget) return
+  emit('close')
+}
+
 function onKeydown(event: KeyboardEvent): void {
   if (props.dismissible && event.key === 'Escape') emit('close')
 }
@@ -35,7 +58,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     role="dialog"
     aria-modal="true"
     :aria-label="title"
-    @click.self="dismissible && emit('close')"
+    @pointerdown="onOverlayPointerDown"
+    @click="onOverlayClick"
   >
     <div class="app-modal__card" :style="{ maxWidth: `${width}px` }">
       <header class="app-modal__header">
