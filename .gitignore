@@ -26,8 +26,18 @@ dist-ssr
 src-tauri/target/
 src-tauri/Cargo.lock
 
-# Capacitor (Fase 5+: android/ and ios/ shells are generated, not committed yet)
-android/
+# Capacitor: el shell android/ SÍ se commitea (el workflow de release lo
+# necesita en el runner; `npx cap add android` no se puede correr en CI
+# porque regenera el proyecto entero). Solo se ignoran los artefactos de
+# build y las copias que `cap sync` deposita del bundle web.
+android/app/build/
+android/.gradle/
+android/local.properties
+android/*.iml
+android/.idea/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
 ios/
 
 # Environment: .env.example is committed, local overrides are not

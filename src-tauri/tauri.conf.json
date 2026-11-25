@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1423",
-    "beforeBuildCommand": "",
+    "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -28,6 +28,29 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "icon": ["icons/icon.ico"]
+    "createUpdaterArtifacts": true,
+    "publisher": "TekLive",
+    "copyright": "Copyright 2026 TekLive. Todos los derechos reservados.",
+    "shortDescription": "Punto de venta y gestion de restaurante",
+    "longDescription": "TekLive Rest es el sistema del restaurante: punto de venta, catalogo y plantillas, cuentas por cobrar, caja y arqueo, nomina, y administracion de mesas del piso 2.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://tekliveplus.com/api/rest/desktop/updates/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgyM0RDNkZDQTg3N0FFOTIKUldTU3JuZW8vTVk5Z3RIVXFma2s3djVwaVFGUjlJWmEwRm0zcjhaaFFhMDJNNXR3WCs2aEFmOHkK",
+      "dialog": false,
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }
