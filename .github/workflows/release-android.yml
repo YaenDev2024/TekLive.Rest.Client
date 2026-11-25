@@ -1,0 +1,386 @@
+# Release Android TekLive Rest (APK fuera de Play Store).
+#
+# Uso:
+#   git tag v0.2.0 -m "Notas visibles para el cliente"
+#   git push origin v0.2.0
+#
+# versionCode = MAJOR*10000 + MINOR*100 + PATCH. Android rechaza versiones
+# menores o iguales, y una keystore distinta impide actualizar sin desinstalar.
+#
+# Réplica del workflow de TekLive.Abogados.Client (release-android.yml); solo
+# cambian el bloque env y los secrets VITE_* (que son los de Rest).
+
+name: release-android
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version existente a publicar, por ejemplo 0.2.0'
+        required: true
+        type: string
+
+concurrency:
+  group: release-android-rest
+  cancel-in-progress: false
+
+env:
+  RELEASE_SUBDIR: Rest/android
+  APK_PREFIX: TekLive-Rest
+  UPDATES_URL_BASE: https://tekliveplus.com/api/rest/android/updates
+
+jobs:
+  build-sign-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derivar version y versionCode
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            tag="v${{ inputs.version }}"
+          else
+            tag='${{ github.ref_name }}'
+          fi
+          if [[ ! "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::Tag invalido '$tag'. Usa formato vMAJOR.MINOR.PATCH."
+            exit 1
+          fi
+          MAJOR="${BASH_REMATCH[1]}"
+          MINOR="${BASH_REMATCH[2]}"
+          PATCH="${BASH_REMATCH[3]}"
+          VERSION="$MAJOR.$MINOR.$PATCH"
+          VERSION_CODE=$((10#$MAJOR * 10000 + 10#$MINOR * 100 + 10#$PATCH))
+          git rev-parse --verify "refs/tags/$tag" > /dev/null
+          {
+            echo "version=$VERSION"
+            echo "version_code=$VERSION_CODE"
+            echo "release_tag=$tag"
+            echo "notes<<EOF"
+            git tag -l --format='%(contents)' "$tag" | sed -e '/./,$!d'
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Asegurar backend con updater Android
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+          APP_API_KEY: ${{ secrets.VITE_APP_API_KEY }}
+        run: |
+          set -euo pipefail
+          code_no_key=$(curl -s -o /dev/null -w '%{http_code}' "$UPDATES_URL_BASE/latest.json" || true)
+          code_with_key=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "X-Api-Key: $APP_API_KEY" \
+            "$UPDATES_URL_BASE/latest.json" || true)
+          echo "Android endpoint: sin key=$code_no_key, con key=$code_with_key"
+          if [[ "$code_no_key" == "200" ]]; then
+            echo "Backend Android ya publicado (HTTP 200 sin key)."
+            exit 0
+          fi
+          if [[ "$code_no_key" != "401" && "$code_no_key" != "404" ]]; then
+            echo "::error::Estado inesperado del endpoint Android (HTTP $code_no_key)."
+            exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          umask 077
+          printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          key="$RUNNER_TEMP/deploy_key"
+          printf '%s' "$VPS_SSH_KEY" | base64 -d > "$key"
+          ssh-keygen -y -f "$key" > /dev/null
+          dest="$VPS_USER@$VPS_HOST"
+
+          ssh -i "$key" -o StrictHostKeyChecking=yes "$dest" '
+            set -euo pipefail
+            cd /opt/TekLive
+            branch=$(git symbolic-ref --short HEAD)
+            if [[ "$branch" != "main" ]]; then
+              echo "::error::VPS checkout no esta en main: $branch"
+              exit 1
+            fi
+            git fetch origin main
+            tmp=/tmp/teklive-bs-api-ci
+            git worktree remove --force "$tmp" >/dev/null 2>&1 || true
+            rm -rf "$tmp"
+            git worktree prune
+            git worktree add --detach "$tmp" origin/main
+            docker build -f "$tmp/Dockerfile.api" -t teklive-bs-api "$tmp"
+            docker compose up -d --no-build bs-api
+            for attempt in 1 2 3 4 5 6 7 8 9 10; do
+              if docker compose ps --status running --services | grep -qx bs-api; then
+                break
+              fi
+              sleep 3
+            done
+            if ! docker compose ps --status running --services | grep -qx bs-api; then
+              docker compose logs --tail=100 bs-api
+              exit 1
+            fi
+            git worktree remove --force "$tmp" >/dev/null 2>&1 || true
+            rm -rf "$tmp"
+            git worktree prune
+          '
+
+          # Si el contenedor aun no esta estable, el proxy puede devolver
+          # 502/503/504. No confundir eso con el middleware viejo: aqui el
+          # objetivo es confirmar que /latest.json ya no responde 401.
+          # 404 es VALIDO: es el estado normal cuando nunca se ha publicado
+          # un APK (primer release); el backend vive y el controller responde.
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            code_no_key=$(curl -s -o /dev/null -w '%{http_code}' "$UPDATES_URL_BASE/latest.json" || true)
+            code_with_key=$(curl -s -o /dev/null -w '%{http_code}' \
+              -H "X-Api-Key: $APP_API_KEY" \
+              "$UPDATES_URL_BASE/latest.json" || true)
+            if [[ "$code_no_key" == "401" ]]; then
+              echo "::error::El backend sigue exigiendo API key para el updater Android."
+              exit 1
+            fi
+            if [[ "$code_no_key" == "502" || "$code_no_key" == "503" || "$code_no_key" == "504" ]]; then
+              sleep 3
+              continue
+            fi
+            if [[ "$code_no_key" != "200" && "$code_no_key" != "404" ]]; then
+              echo "::error::El backend respondio HTTP $code_no_key tras el deploy."
+              exit 1
+            fi
+            break
+          done
+          if [[ "$code_no_key" != "200" && "$code_no_key" != "404" ]]; then
+            echo "::error::El endpoint Android no quedo disponible (ultimo HTTP $code_no_key)."
+            exit 1
+          fi
+          echo "Endpoint Android operativo (HTTP $code_no_key: 404=primer release, 200=ya publicado)."
+
+      - name: Rechazar downgrade o keystore incompatible
+        shell: bash
+        env:
+          ANDROID_CERT_SHA256: ${{ secrets.ANDROID_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          url="$UPDATES_URL_BASE/latest.json"
+          code=$(curl -s -o /tmp/latest.json -w '%{http_code}' -H 'Cache-Control: no-cache' "$url" || true)
+          # 404 = primer release (nada publicado aun): se salta la validacion
+          # de downgrade/keystore porque no hay manifiesto previo contra el
+          # que comparar. La keystore y el versionCode se validan al publicar.
+          if [[ "$code" == "200" ]]; then
+            python3 - <<'PY' "${{ steps.meta.outputs.version_code }}" "$ANDROID_CERT_SHA256"
+          import json, sys
+          manifest = json.load(open('/tmp/latest.json'))
+          if int(sys.argv[1]) <= int(manifest.get('versionCode', 0)):
+              raise SystemExit(f"versionCode {sys.argv[1]} no supera al publicado {manifest.get('versionCode')}")
+          expected = sys.argv[2].replace(':', '').lower()
+          published = str(manifest.get('signingCertSha256', '')).replace(':', '').lower()
+          if published and published != expected:
+              raise SystemExit(f"Keystore distinta: publicado {published}, nueva {expected}")
+          PY
+          elif [[ "$code" != "404" && "$code" != "401" ]]; then
+            echo "::error::No se pudo leer $url (HTTP $code)."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # v4: la v3 intenta instalar el paquete legacy "tools" que Google ya
+      # elimino de sus repositorios y el step muere en sdkmanager exit 1.
+      - uses: android-actions/setup-android@v4
+
+      - name: Preparar SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" > /dev/null
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Build web y sincronizar Android
+        shell: bash
+        env:
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+          VITE_APP_API_KEY: ${{ secrets.VITE_APP_API_KEY }}
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          npx cap sync android
+
+      - name: Restaurar y validar keystore
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_CERT_SHA256: ${{ secrets.ANDROID_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD ANDROID_CERT_SHA256; do
+            [[ -n "${!name:-}" ]] || { echo "::error::Falta el secret $name."; exit 1; }
+          done
+          ks="$RUNNER_TEMP/release.keystore"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$ks"
+          chmod 600 "$ks"
+          keytool -list -keystore "$ks" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" > /dev/null
+          echo "ANDROID_KEYSTORE_PATH=$ks" >> "$GITHUB_ENV"
+
+      - name: assembleRelease
+        working-directory: android
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_VERSION_CODE: ${{ steps.meta.outputs.version_code }}
+          ANDROID_VERSION_NAME: ${{ steps.meta.outputs.version }}
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Verificar firma, certificado y zipalign
+        id: gates
+        shell: bash
+        env:
+          ANDROID_CERT_SHA256: ${{ secrets.ANDROID_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          apk=$(find android/app/build/outputs/apk/release -name '*-release*.apk' | head -n1)
+          [[ -n "$apk" ]] || { echo "::error::No se genero APK release."; exit 1; }
+          buildtools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n1)
+          "$buildtools/apksigner" verify "$apk" > /dev/null
+          cert=$("$buildtools/apksigner" verify --print-certs "$apk" | grep -i 'certificate SHA-256 digest' | head -n1 | awk '{print $NF}' | tr -d ':' | tr 'A-Z' 'a-z')
+          expected=$(echo "$ANDROID_CERT_SHA256" | tr -d ':' | tr 'A-Z' 'a-z')
+          [[ "$cert" == "$expected" ]] || { echo "::error::Certificado $cert no coincide con $expected."; exit 1; }
+          "$buildtools/zipalign" -c -v 4 "$apk" > /dev/null
+          echo "apk=$apk" >> "$GITHUB_OUTPUT"
+          echo "cert=$cert" >> "$GITHUB_OUTPUT"
+
+      - name: Armar manifiesto
+        id: package
+        shell: bash
+        env:
+          RELEASE_NOTES: ${{ steps.meta.outputs.notes }}
+        run: |
+          set -euo pipefail
+          apk='${{ steps.gates.outputs.apk }}'
+          version='${{ steps.meta.outputs.version }}'
+          version_code='${{ steps.meta.outputs.version_code }}'
+          stage="$RUNNER_TEMP/release"
+          mkdir -p "$stage"
+          name="$APK_PREFIX-$version-universal.apk"
+          cp "$apk" "$stage/$name"
+          sha=$(sha256sum "$stage/$name" | awk '{print $1}')
+          size=$(stat -c%s "$stage/$name")
+          python3 - "$stage/latest.json" "$version_code" "$version" "$name" "$sha" "$size" "${{ steps.gates.outputs.cert }}" "$UPDATES_URL_BASE" <<'PY'
+          import datetime, json, os, sys
+          out, code, version, name, sha, size, cert, base = sys.argv[1:9]
+          manifest = {
+              "versionCode": int(code),
+              "versionName": version,
+              "minSdk": 22,
+              "mandatory": False,
+              "notes": os.environ.get("RELEASE_NOTES", "").strip(),
+              "publishedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "signingCertSha256": cert,
+              "apks": {"universal": {
+                  "url": f"{base}/{name}",
+                  "sha256": sha,
+                  "size": int(size),
+              }},
+          }
+          with open(out, "w", encoding="utf-8", newline="\n") as fh:
+              json.dump(manifest, fh, indent=2, ensure_ascii=False)
+              fh.write("\n")
+          PY
+          echo "dir=$stage" >> "$GITHUB_OUTPUT"
+          echo "apk=$name" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "size=$size" >> "$GITHUB_OUTPUT"
+
+      - name: Subir al VPS
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          key="$RUNNER_TEMP/deploy_key"
+          printf '%s' "$VPS_SSH_KEY" | base64 -d > "$key"
+          chmod 600 "$key"
+          ssh-keygen -y -f "$key" > /dev/null
+          dest="$VPS_USER@$VPS_HOST"
+          dir="/opt/TekLive/releases/$RELEASE_SUBDIR"
+          stage='${{ steps.package.outputs.dir }}'
+          name='${{ steps.package.outputs.apk }}'
+          ssh -i "$key" -o StrictHostKeyChecking=yes "$dest" "mkdir -p $dir"
+          scp -i "$key" -o StrictHostKeyChecking=yes "$stage/$name" "$stage/latest.json" "$dest:$dir/"
+          ssh -i "$key" -o StrictHostKeyChecking=yes "$dest" "chmod 755 $dir && chmod 644 $dir/*"
+
+      - name: Verificar endpoint y descarga
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Reintentos: el archivo se escribe por scp y el endpoint puede
+          # tardar unos segundos en verlo tras la subida.
+          for attempt in 1 2 3 4 5; do
+            code=$(curl -sS -o /tmp/latest.json -w '%{http_code}' "$UPDATES_URL_BASE/latest.json" || true)
+            [[ "$code" == "200" ]] && break
+            sleep 3
+          done
+          if [[ "${code:-}" != "200" ]]; then
+            echo "::error::El endpoint respondio HTTP ${code:-unknown}."
+            exit 1
+          fi
+          python3 - "${{ steps.meta.outputs.version_code }}" "${{ steps.package.outputs.sha }}" <<'PY'
+          import json, sys
+          m = json.load(open('/tmp/latest.json'))
+          assert m['versionCode'] == int(sys.argv[1]), m
+          assert m['apks']['universal']['sha256'] == sys.argv[2], m
+          PY
+          curl -sS -o /tmp/download.apk "$UPDATES_URL_BASE/${{ steps.package.outputs.apk }}"
+          test "$(stat -c%s /tmp/download.apk)" = "${{ steps.package.outputs.size }}"
+          test "$(sha256sum /tmp/download.apk | awk '{print $1}')" = "${{ steps.package.outputs.sha }}"
+
+      - name: Publicar GitHub Release con APK
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          stage='${{ steps.package.outputs.dir }}'
+          apk='${{ steps.package.outputs.apk }}'
+          # Las notas del tag pueden contener apostrofes/newlines que rompen la
+          # expansion inline de expresiones (inyeccion de shell, exit 127). Se
+          # pasan por archivo: se re-leen del tag directamente en el runner.
+          git tag -l --format='%(contents)' '${{ steps.meta.outputs.release_tag }}' | sed -e '/./,$!d' > "$RUNNER_TEMP/notes.md"
+          gh release create '${{ steps.meta.outputs.release_tag }}' "$stage/$apk" \
+            --title "TekLive Rest ${{ steps.meta.outputs.version }}" \
+            --notes-file "$RUNNER_TEMP/notes.md"

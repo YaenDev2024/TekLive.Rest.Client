@@ -1,0 +1,191 @@
+# Release desktop TekLive Rest: publica un update con solo pushear un tag.
+#
+# Uso:
+#   git tag v0.2.0 -m "Notas visibles para el cliente"
+#   git push origin v0.2.0
+#
+# El workflow hace todo:
+#   tag -> versión en tauri.conf.json -> build Vite+Tauri firmado (minisign)
+#   -> latest.json -> scp al VPS -> verificación del endpoint.
+#
+# Réplica del workflow de TekLive.Abogados.Client (release-desktop.yml); solo
+# cambian el bloque env y los secrets VITE_* (que son los de Rest).
+
+name: release-desktop
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+# Un deploy a la vez: evita carreras escribiendo latest.json en el VPS.
+concurrency:
+  group: release-desktop-rest
+  cancel-in-progress: false
+
+env:
+  RELEASE_SUBDIR: Rest
+  SETUP_PREFIX: TekLive-Rest
+  UPDATES_URL_BASE: https://tekliveplus.com/api/rest/desktop/updates
+
+jobs:
+  build-sign-deploy:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout (con tags para leer las notas)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derivar versión y notas del tag
+        id: meta
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          if ($tag -notmatch '^v(\d+\.\d+\.\d+)$') {
+            throw "Tag inválido '$tag'. Usa formato vMAJOR.MINOR.PATCH (ej. v0.2.0)."
+          }
+          $version = $Matches[1]
+          $notes = (git tag -l --format='%(contents)' $tag).Trim()
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "notes<<EOF" >> $env:GITHUB_OUTPUT
+          $notes >> $env:GITHUB_OUTPUT
+          "EOF" >> $env:GITHUB_OUTPUT
+          "VITE_APP_VERSION=$version" >> $env:GITHUB_ENV
+          Write-Host "Versión: $version"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust estable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust (compilados de Tauri entre corridas)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Sincronizar versión en tauri.conf.json (sin BOM)
+        shell: pwsh
+        run: |
+          $confPath = 'src-tauri/tauri.conf.json'
+          $conf = Get-Content $confPath -Raw | ConvertFrom-Json
+          $conf.version = '${{ steps.meta.outputs.version }}'
+          [System.IO.File]::WriteAllText(
+            (Join-Path $PWD $confPath),
+            ($conf | ConvertTo-Json -Depth 10),
+            (New-Object System.Text.UTF8Encoding($false))
+          )
+
+      - name: Build desktop firmado
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+          VITE_APP_API_KEY: ${{ secrets.VITE_APP_API_KEY }}
+        run: |
+          npm ci
+          npm run tauri:build
+
+      - name: Armar latest.json
+        id: package
+        shell: pwsh
+        run: |
+          $version = '${{ steps.meta.outputs.version }}'
+          $bundleDir = 'src-tauri/target/release/bundle'
+          $nsisSetup = Get-ChildItem "$bundleDir/nsis/*-setup.exe" |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $nsisSetup) { throw "No se encontró el setup.exe NSIS en $bundleDir/nsis" }
+          $nsisSig = "$($nsisSetup.FullName).sig"
+          if (-not (Test-Path $nsisSig)) { throw "No se encontró $($nsisSetup.Name).sig (¿createUpdaterArtifacts?)" }
+          $stage = Join-Path $env:RUNNER_TEMP 'release'
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          $exeName = "$env:SETUP_PREFIX-$version-x64-setup.exe"
+          Copy-Item $nsisSetup.FullName (Join-Path $stage $exeName) -Force
+          $signature = (Get-Content $nsisSig -Raw).Trim()
+          $pubDate = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+          $latest = [ordered]@{
+            version = $version
+            notes = @'
+          ${{ steps.meta.outputs.notes }}
+          '@.Trim()
+            pub_date = $pubDate
+            platforms = [ordered]@{
+              'windows-x86_64' = [ordered]@{
+                signature = $signature
+                url = "$env:UPDATES_URL_BASE/$exeName"
+              }
+            }
+          }
+          [System.IO.File]::WriteAllText(
+            (Join-Path $stage 'latest.json'),
+            ($latest | ConvertTo-Json -Depth 5),
+            (New-Object System.Text.UTF8Encoding($false))
+          )
+          "dir=$stage" >> $env:GITHUB_OUTPUT
+          "exe=$exeName" >> $env:GITHUB_OUTPUT
+          Get-ChildItem $stage | Format-Table Name, Length -AutoSize | Out-String | Write-Host
+
+      - name: Subir al VPS (exe + latest.json)
+        shell: pwsh
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+        run: |
+          if (-not $env:VPS_SSH_KNOWN_HOSTS) {
+            throw 'Falta el secret VPS_SSH_KNOWN_HOSTS (ver comentarios del workflow).'
+          }
+          $sshDir = Join-Path $HOME '.ssh'
+          New-Item -ItemType Directory -Force -Path $sshDir | Out-Null
+          # Host key pineado: sin ssh-keyscan (el OpenSSH nuevo del runner no
+          # negocia KEX con el servidor). Si el server rota su host key,
+          # actualizar el secret VPS_SSH_KNOWN_HOSTS.
+          [System.IO.File]::WriteAllText(
+            (Join-Path $sshDir 'known_hosts'), ($env:VPS_SSH_KNOWN_HOSTS.Trim() + "`n"),
+            (New-Object System.Text.UTF8Encoding($false))
+          )
+          $keyPath = Join-Path $env:RUNNER_TEMP 'deploy_key'
+          # Base64 -> bytes exactos (inmune a saltos de línea del pegado).
+          [System.IO.File]::WriteAllBytes(
+            $keyPath, [Convert]::FromBase64String($env:VPS_SSH_KEY.Trim())
+          )
+          icacls.exe $keyPath /reset | Out-Null
+          icacls.exe $keyPath /grant:r "$($env:USERNAME):(R)" | Out-Null
+          icacls.exe $keyPath /inheritance:r | Out-Null
+          # Falla rápido con mensaje claro si la llave sigue mal (en vez de
+          # colgarse 60 min pidiendo password).
+          ssh-keygen -y -f $keyPath | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'VPS_SSH_KEY inválida: regenera el secret en base64.' }
+          $dest = "$($env:VPS_USER)@$($env:VPS_HOST):/opt/TekLive/releases/$env:RELEASE_SUBDIR/"
+          ssh -i $keyPath -o StrictHostKeyChecking=yes "$($env:VPS_USER)@$($env:VPS_HOST)" "mkdir -p /opt/TekLive/releases/$env:RELEASE_SUBDIR"
+          if ($LASTEXITCODE -ne 0) { throw 'No se pudo crear el directorio de releases en el VPS' }
+          $stage = '${{ steps.package.outputs.dir }}'
+          $exe = '${{ steps.package.outputs.exe }}'
+          scp -i $keyPath -o StrictHostKeyChecking=yes "$stage/$exe" "$stage/latest.json" $dest
+          if ($LASTEXITCODE -ne 0) { throw 'scp al VPS falló' }
+          # Permisos: el contenedor bs-api corre como appuser (uid 1001) y el
+          # scp deja los archivos con permisos del usuario SSH (sin lectura
+          # para otros) -> el endpoint daba 404. Ajustar tras cada subida.
+          # chmod 644 sobre el glob $dir/* tambien tocaba el SUBDIRECTORIO
+          # android/ (misma raiz) y le quitaba el bit x: el dir quedaba
+          # inaccesible y el endpoint del updater Android daba 404/000 hasta
+          # fix manual. Solo archivos regulares del primer nivel:
+          ssh -i $keyPath -o StrictHostKeyChecking=yes "$($env:VPS_USER)@$($env:VPS_HOST)" "chmod 755 /opt/TekLive/releases/$env:RELEASE_SUBDIR && find /opt/TekLive/releases/$env:RELEASE_SUBDIR -maxdepth 1 -type f -exec chmod 644 {} +"
+          if ($LASTEXITCODE -ne 0) { throw 'chmod en el VPS falló' }
+
+      - name: Verificar endpoint del updater
+        shell: pwsh
+        run: |
+          $expected = '${{ steps.meta.outputs.version }}'
+          $latest = Invoke-RestMethod "$env:UPDATES_URL_BASE/latest.json"
+          if ($latest.version -ne $expected) {
+            throw "El endpoint sirve $($latest.version), se esperaba $expected"
+          }
+          Write-Host "Endpoint OK: sirve v$($latest.version)"
