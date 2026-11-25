@@ -127,6 +127,17 @@ const mixCash = computed(() => parseAmount(mixCashText.value))
 const mixCard = computed(() => parseAmount(mixCardText.value))
 const mixSum = computed(() => mixCash.value + mixCard.value)
 
+/** Comparación de dineros con tolerancia de centavo (0.1+0.2 !== 0.3 en float). */
+function moneyEquals(a: number, b: number): boolean {
+  return Math.abs(a - b) < 0.005
+}
+
+/** Estado del mixto para el hint: exacto/over/missing. */
+const mixState = computed<'exact' | 'over' | 'missing'>(() => {
+  if (moneyEquals(mixSum.value, total.value)) return 'exact'
+  return mixSum.value > total.value ? 'over' : 'missing'
+})
+
 function parseAmount(text: string): number {
   const trimmed = text.trim()
   if (trimmed === '') return 0
@@ -426,8 +437,17 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
             placeholder="$0.00"
           />
         </div>
-        <div class="chk-mix__hint" aria-live="polite">
-          {{ mixSum > total ? 'Sobra' : 'Falta' }}: {{ formatMoney(Math.abs(mixSum - total)) }}
+        <div
+          class="chk-mix__hint"
+          :class="{
+            'chk-mix__hint--missing': mixState === 'missing',
+            'chk-mix__hint--over': mixState === 'over',
+            'chk-mix__hint--exact': mixState === 'exact',
+          }"
+          aria-live="polite"
+        >
+          {{ mixState === 'exact' ? 'Exacto' : mixState === 'over' ? 'Sobra' : 'Falta' }}:
+          {{ formatMoney(Math.abs(mixSum - total)) }}
         </div>
       </div>
 
@@ -673,10 +693,29 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 }
 
 .chk-mix__hint {
-  color: var(--text-muted);
   font-size: 13.5px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   text-align: right;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+}
+
+/* Estado del mixto: Falta=rojo / Sobra=ambar / Exacto=verde (semantica
+   clara: verde SOLO cuando la suma cuadra y se puede confirmar). */
+.chk-mix__hint--missing {
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+.chk-mix__hint--over {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.chk-mix__hint--exact {
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .chk__method {

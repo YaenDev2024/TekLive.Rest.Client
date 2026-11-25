@@ -814,6 +814,11 @@ const rate = computed(() => cashStore.rate)
 /** Suma capturada en el mixto (efectivo + tarjeta). */
 const mixSum = computed(() => parseAmount(payMixCashText.value) + parseAmount(payMixCardText.value))
 
+/** Comparación de dineros con tolerancia de centavo (0.1+0.2 !== 0.3 en float). */
+function moneyEquals(a: number, b: number): boolean {
+  return Math.abs(a - b) < 0.005
+}
+
 function pressPayKey(key: string): void {
   if (key === 'C') {
     payAmountText.value = ''
@@ -1474,8 +1479,24 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
                     placeholder="$0.00"
                   />
                 </div>
-                <div class="pay-change pay-change--mix" aria-live="polite">
-                  <span>{{ mixSum > modal.order.total ? 'Sobra:' : 'Falta:' }}</span>
+                <div
+                  class="pay-change pay-change--mix"
+                  :class="
+                    moneyEquals(mixSum, modal.order.total)
+                      ? 'pay-change--exact'
+                      : mixSum > modal.order.total
+                        ? 'pay-change--over'
+                        : 'pay-change--missing'
+                  "
+                  aria-live="polite"
+                >
+                  <span>{{
+                    moneyEquals(mixSum, modal.order.total)
+                      ? 'Exacto:'
+                      : mixSum > modal.order.total
+                        ? 'Sobra:'
+                        : 'Falta:'
+                  }}</span>
                   <span>{{ formatMoney(Math.abs(mixSum - modal.order.total)) }}</span>
                 </div>
               </div>
@@ -2432,8 +2453,8 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 }
 
 .pay-change--mix {
-  border-top: 1px solid var(--border-soft);
-  padding-top: 10px;
+  border-top: none;
+  padding-top: 0;
 }
 
 /* Nota para tarjeta/transferencia (sin captura) */
@@ -2588,6 +2609,29 @@ const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '←'
 
 .pay-change--missing span:last-child {
   color: var(--error);
+}
+
+/* Estado del mixto: Falta=rojo / Sobra=ambar / Exacto=verde (semantica
+   clara: verde SOLO cuando la suma cuadra y se puede confirmar).
+   DESPUES de la base y de --missing para ganar la cascada. */
+.pay-change--over {
+  background: var(--warning-soft);
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+  color: var(--warning);
+}
+
+.pay-change--over span:last-child {
+  color: var(--warning);
+}
+
+.pay-change--exact {
+  background: var(--success-soft);
+  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+  color: var(--success);
+}
+
+.pay-change--exact span:last-child {
+  color: var(--success);
 }
 
 .pay-footer {
