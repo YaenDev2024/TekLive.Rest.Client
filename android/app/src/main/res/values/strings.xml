@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">TekLive Rest</string>
+    <string name="title_activity_main">TekLive Rest</string>
+    <string name="package_name">com.teklive.rest</string>
+    <string name="custom_url_scheme">com.teklive.rest</string>
+</resources>

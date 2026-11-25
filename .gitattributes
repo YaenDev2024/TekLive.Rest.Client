@@ -1,0 +1,9 @@
+# Scripts que corren en los runners Linux del CI (release-android.yml hace
+# `./gradlew assembleRelease`). Con core.autocrlf=true en Windows, un checkout
+# normal los convertiria a CRLF y bash fallaria con "bad interpreter".
+android/gradlew text eol=lf
+android/gradlew.bat text eol=crlf
+
+# YAML de workflows: el runner los parsea; CRLF no rompe pero mantiene el diff
+# limpio entre plataformas.
+.github/workflows/*.yml text eol=lf
