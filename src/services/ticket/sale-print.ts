@@ -375,3 +375,88 @@ export function printPendingKitchenTicket(input: {
   }
   return ok
 }
+
+/**
+ * Impresión SOLO ticket cliente (botón 'Ticket Cliente' de Órdenes) —
+ * simétrica a printPendingKitchenTicket: NADA de cocina en el documento.
+ *
+ * Antes reusaba printSaleTickets (venta completa), que en web concatena
+ * cocina+cliente en un solo print (salían 2 tickets por 1 clic) y en Tauri
+ * además reenviaba el ticket de cocina a las impresoras de área. Aquí el
+ * estado PAGADO lo decide el caller vía paidState (la orden ya puede estar
+ * pagada o pendiente: el layout pinta 'PENDIENTE DE PAGO' o el bloque
+ * PAGADO - METODO).
+ *
+ * - Tauri: área CLIENTE si configurada, sino impresora principal
+ *   (printClientTicketTauri — SIN tocar las impresoras de cocina).
+ * - Web: diálogo del navegador solo con el ticket cliente.
+ */
+export function printPendingClientTicket(input: {
+  folio: string
+  orderType: string
+  platformDeliveryInfo?: string | null
+  items: CartItem[]
+  total: number
+  paidState?: SalePaidState | null
+  orderId?: number | null
+  customerPhone?: string | null
+}): boolean {
+  if (isTauri()) {
+    void (async () => {
+      const cfg = effectiveTicketConfig()
+      const result = await printClientTicketTauri(
+        buildClientDocTauri({
+          folio: input.folio,
+          orderType: input.orderType,
+          platformDeliveryInfo: input.platformDeliveryInfo,
+          customerName: customerNameFor(input.orderType, input.platformDeliveryInfo),
+          customerPhone: input.customerPhone,
+          items: input.items,
+          total: input.total,
+          config: cfg,
+          paidState: input.paidState,
+        }),
+      ).catch((e: unknown) => ({
+        ok: false,
+        messages: [e instanceof Error ? e.message : String(e)],
+        failures: [e instanceof Error ? e.message : String(e)],
+      }))
+      toastPrintFailures('Ticket cliente:', result)
+      if (input.orderId != null) {
+        try {
+          await logTicketPrint(input.orderId, { printType: 'client', printerName: 'tauri', success: result.ok, errorMessage: result.ok ? null : result.failures[0] ?? 'print failed' })
+        } catch { /* best-effort */ }
+      }
+    })()
+    return true
+  }
+  const cfg = effectiveTicketConfig()
+  const doc = buildClientTicket({
+    folio: input.folio,
+    orderType: input.orderType,
+    customerName: customerNameFor(input.orderType, input.platformDeliveryInfo),
+    cashierName: cashierDisplayName(),
+    items: clientItems(input.items),
+    total: input.total,
+    footer: cfg.footer,
+    showNotes: cfg.showClientNotes,
+    showPaidModifiers: cfg.showClientPaidModifiers,
+    showFreeModifiers: cfg.showClientFreeModifiers,
+    state: input.paidState
+      ? {
+          kind: 'paid',
+          paymentMethod: input.paidState.paymentMethod,
+          amountReceived: input.paidState.amountReceived,
+          changeAmount: input.paidState.changeAmount,
+          dollarRate: input.paidState.dollarRate,
+        }
+      : { kind: 'pending' },
+  })
+  const ok = printTicket(doc)
+  if (input.orderId != null) {
+    try {
+      void logTicketPrint(input.orderId, { printType: 'client', printerName: 'browser', success: ok, errorMessage: ok ? null : 'print dialog failed' })
+    } catch { /* best-effort */ }
+  }
+  return ok
+}

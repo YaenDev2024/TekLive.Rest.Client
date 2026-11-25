@@ -73,7 +73,7 @@ import AppModal from '../../components/pos/AppModal.vue'
 import CancelOrderModal from '../../components/pos/CancelOrderModal.vue'
 import DynamicOptionsModal from '../../components/pos/DynamicOptionsModal.vue'
 import OrderProductPicker from '../../components/pos/OrderProductPicker.vue'
-import { printPendingKitchenTicket, printSaleTickets } from '../../services/ticket'
+import { printPendingClientTicket, printPendingKitchenTicket } from '../../services/ticket'
 
 const ordersStore = useOrdersStore()
 const cashStore = useCashStore()
@@ -751,14 +751,14 @@ async function printOrderTickets(
     const ok =
       kind === 'kitchen'
         ? printPendingKitchenTicket(shared)
-        : printSaleTickets({
+        : printPendingClientTicket({
             ...shared,
             paidState:
               detail.orderStatus === 'pagado'
                 ? { paymentMethod: 'efectivo', amountReceived: detail.total, changeAmount: 0 }
                 : null,
           })
-    if (ok) toast.success(kind === 'kitchen' ? 'Ticket de cocina enviado' : 'Tickets enviados')
+    if (ok) toast.success(kind === 'kitchen' ? 'Ticket de cocina enviado' : 'Ticket de cliente enviado')
     else toast.error('No se pudo abrir el diálogo de impresión.')
   } finally {
     printingOrderId.value = null
