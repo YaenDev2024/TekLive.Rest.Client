@@ -1438,6 +1438,10 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
   width: 100%;
   max-width: 1500px;
   height: 100%;
+  /* El overlay es fixed con altura definida, así que `height:100%` SÍ resuelve
+     aquí. El problema era que un flex-item no encoge por debajo de su
+     contenido (min-height:auto por defecto) y el card desbordaba el overlay. */
+  min-height: 0;
   background: #212121;
   border-radius: 28px;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
@@ -1585,6 +1589,12 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
   flex: 1;
   flex-direction: column;
   min-width: 0;
+  /* Sin esto el hijo no puede encogerse por debajo de su altura de contenido:
+     el `.wiz-main__scroll` crecía hasta el alto de la grilla, el footer caía
+     fuera del card y no quedaba nada que desplazar (el wizard no scrolleaba
+     en el APK). Solo se notaba en narrow, donde la columna hereda `height:100%`
+     de un ancestro con altura definida. */
+  min-height: 0;
 }
 
 .wiz-main__header {
@@ -1611,6 +1621,7 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
 
 .wiz-main__scroll {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 8px 36px 36px;
 }
