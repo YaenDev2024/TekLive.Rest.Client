@@ -16,8 +16,8 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tauri-plugin-updater = "2.11.0"
-tauri-plugin-process = "2.3.1"
+tauri-plugin-updater = "2.14.1"
+tauri-plugin-process = "2.4.0"
 
 # Ronda Piso 1: Winspool (EnumPrintersW/OpenPrinterW/WritePrinter...) para
 # impresión térmica RAW. v0.62 = misma versión que ya resuelve Tauri 2.12
