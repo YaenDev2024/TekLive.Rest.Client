@@ -38,4 +38,10 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!--
+        Requerido para lanzar el instalador del sistema con el APK descargado
+        (updater propio). No instala nada por sí solo: el usuario sigue
+        confirmando en la pantalla de Android.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>
