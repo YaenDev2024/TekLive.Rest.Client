@@ -29,8 +29,10 @@ export function getAccessToken(): string | null {
 const BASE_URL: string =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://127.0.0.1:5171'
 
-const APP_API_KEY: string =
-  (import.meta.env.VITE_APP_API_KEY as string | undefined) ?? 'dev-rest-api-key-local'
+// Sin default: una llave hardcodeada termina horneada en el web, el .exe y el
+// APK, asi que un build mal configurado publicaria el secreto de desarrollo en
+// produccion. Sin la variable no se envia el header y el API responde 401.
+const APP_API_KEY = import.meta.env.VITE_APP_API_KEY as string | undefined
 
 /** Standard error thrown by every failed API call. */
 export class ApiError extends Error {
@@ -82,7 +84,7 @@ function extractReason(payload: unknown): string | undefined {
  * object URL (ver src/api/productImages.ts).
  */
 function applyAuthHeaders(headers: Headers): void {
-  headers.set('X-Api-Key', APP_API_KEY)
+  if (APP_API_KEY) headers.set('X-Api-Key', APP_API_KEY)
   if (accessToken != null) {
     headers.set('Authorization', `Bearer ${accessToken}`)
   }
@@ -133,7 +135,7 @@ async function refreshAccessToken(): Promise<boolean> {
         headers: {
           Accept: 'application/json',
           'Content-Type': 'application/json',
-          'X-Api-Key': APP_API_KEY,
+          ...(APP_API_KEY ? { 'X-Api-Key': APP_API_KEY } : {}),
         },
         body: JSON.stringify({ refreshToken: current }),
       })
