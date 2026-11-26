@@ -171,6 +171,10 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 /** Carga la lista con el filtro de estatus activo (null = Todas). */
 async function refresh(): Promise<void> {
   await ordersStore.fetchOrdersByStatus(POS_PLANT_ID, selectedDate.value, FILTER_STATUS[activeFilter.value])
+  // Ancla del timer para las órdenes que llegan en esta carga y repintado
+  // inmediato: el primer render no puede depender del primer tick del reloj.
+  markFirstSeen()
+  bumpClock()
 }
 
 function switchFilter(filter: StatusFilter): void {
@@ -205,9 +209,12 @@ onMounted(() => {
   }, POLL_MS)
   // Reloj del timer (1 s): mantiene avanzando el MM:SS de las externas sin
   // depender del polling de datos.
-  clockTimer = setInterval(() => {
-    nowTick.value = Date.now()
-  }, 1000)
+  startClock()
+  // En APK el WebView congela los intervalos en segundo plano; al volver hay
+  // que repintar y re-armar el reloj (ver onLifecycleResume).
+  document.addEventListener('visibilitychange', onDocumentVisible)
+  window.addEventListener('focus', onLifecycleResume)
+  window.addEventListener('pageshow', onLifecycleResume)
 })
 
 onBeforeUnmount(() => {
@@ -215,10 +222,10 @@ onBeforeUnmount(() => {
     clearInterval(pollTimer)
     pollTimer = null
   }
-  if (clockTimer != null) {
-    clearInterval(clockTimer)
-    clockTimer = null
-  }
+  stopClock()
+  document.removeEventListener('visibilitychange', onDocumentVisible)
+  window.removeEventListener('focus', onLifecycleResume)
+  window.removeEventListener('pageshow', onLifecycleResume)
 })
 
 /**
@@ -246,17 +253,162 @@ const EXTERNAL_TYPES = ['EXTERNO', 'DIDI', 'UBER']
 void EXTERNAL_TYPES // documental: tipos con timer cuando exista tipoDeOrden en Rest
 const TIMER_GREEN_MINUTES = 20
 
+const TEKLIVE_RES_CACHE_KEY = 'teklive-rest-timer-anchor-v1'
+
+/**
+ * Primer instante en que el cliente vio cada orden (id → epoch ms).
+ *
+ * El timer se calcula contra `createdAt` del servidor, pero ese instante puede
+ * llegar adelantado respecto al reloj del equipo (desfase de zona o de segundo
+ * entre el insert y la lectura). `Math.max(0, …)` lo escondía como 00:00 fijo
+ * durante el desfase. Anclar en la primera observación acota eso a la ventana
+ * real y hace que el contador arranque exactamente en 00:00 y avance.
+ *
+ * Persiste en localStorage para que recargar la app no reinicie el contador de
+ * órdenes que ya estaban en piso: es dato de presentación, no de negocio.
+ */
+const firstSeen = ref<Record<number, number>>(readAnchors())
+
+function readAnchors(): Record<number, number> {
+  try {
+    const raw = localStorage.getItem(TEKLIVE_RES_CACHE_KEY)
+    if (raw == null) return {}
+    const parsed = JSON.parse(raw) as unknown
+    if (parsed == null || typeof parsed !== 'object') return {}
+    const out: Record<number, number> = {}
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      const id = Number(key)
+      if (Number.isInteger(id) && typeof value === 'number' && Number.isFinite(value)) {
+        out[id] = value
+      }
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+function writeAnchors(map: Record<number, number>): void {
+  try {
+    localStorage.setItem(TEKLIVE_RES_CACHE_KEY, JSON.stringify(map))
+  } catch {
+    // Sin storage (modo privado / cuota): el ancla vive solo en memoria.
+  }
+}
+
+/**
+ * Registra el ancla de las órdenes visibles que aún no la tienen.
+ *
+ * No poda las que dejan de estar visibles: al cambiar de filtro (o cuando una
+ * orden pasa a pagada) reaparecerían con el contador reiniciado en 00:00. Las
+ * entradas viejas se recortan por antigüedad en `trimAnchors` para que el mapa
+ * no crezca sin límite durante la vida del equipo.
+ */
+const ANCHOR_CAP = 2000
+
+function markFirstSeen(): void {
+  const now = Date.now()
+  let added = false
+  const next: Record<number, number> = { ...firstSeen.value }
+  for (const order of ordersStore.pendingOrders) {
+    if (next[order.id] != null) continue
+    next[order.id] = now
+    added = true
+  }
+  if (!added) return
+  firstSeen.value = trimAnchors(next)
+  writeAnchors(firstSeen.value)
+}
+
+/** Conserva solo las ANCHOR_CAP anclas más recientes. */
+function trimAnchors(map: Record<number, number>): Record<number, number> {
+  const entries = Object.entries(map)
+  if (entries.length <= ANCHOR_CAP) return map
+  const kept = entries.sort((a, b) => b[1] - a[1]).slice(0, ANCHOR_CAP)
+  return Object.fromEntries(kept)
+}
+
 /**
  * Reloj reactivo: `Date.now()` NO es reactivo, así que si el template lo llama
  * directamente el timer solo se repinta cuando el polling (15 s) trae datos
  * nuevos — y podía quedarse congelado varios segundos o en 00:00.
  *
  * Este ref avanza cada segundo y es la ÚNICA fuente de "ahora" del cálculo.
- * Se detiene en onBeforeUnmount (junto al polling) para no dejar intervalos
- * vivos al salir de la vista.
  */
 const nowTick = ref(Date.now())
+
+/**
+ * Se incrementa en cada tick para forzar el repintado de `formatElapsedTime`
+ * aunque dos ticks seguidos caigan en el mismo segundo (o el equipo salga de
+ * suspensión y `Date.now()` avance a saltos).
+ */
+const clockPulse = ref(0)
+
 let clockTimer: ReturnType<typeof setInterval> | null = null
+
+/**
+ * Repinta "ahora" al instante.
+ *
+ * `restart` re-crea el intervalo aunque la referencia siga viva: si el WebView
+ * congeló el reloj, `clockTimer` no es null pero sus callbacks ya no llegan, así
+ * que comprobar solo `clockTimer == null` no lo recuperaría. Re-crear un timer
+ * de 1 s es barato y deja el estado siempre sano.
+ */
+function bumpClock(restart = false): void {
+  nowTick.value = Date.now()
+  clockPulse.value += 1
+  if (restart) startClock()
+}
+
+/**
+ * Reloj de 1 s usado por el MM:SS de las externas.
+ *
+ * En el WebView de Android (APK) un `setInterval` se congela cuando la app pasa
+ * a segundo plano y, al volver, los callbacks no siempre se reanudan: el
+ * contador se quedaba clavado hasta remontar la vista. Por eso además del
+ * intervalo se re-arma en cada señal de "volvimos a estar vivos" (ver
+ * `onLifecycleResume`), y `bumpClock` repinta sin esperar al siguiente tick.
+ */
+function startClock(): void {
+  if (clockTimer != null) clearInterval(clockTimer)
+  clockTimer = setInterval(() => {
+    bumpClock()
+  }, 1000)
+  bumpClock()
+}
+
+function stopClock(): void {
+  if (clockTimer == null) return
+  clearInterval(clockTimer)
+  clockTimer = null
+}
+
+/**
+ * Reanudación tras volver a primer plano / enfocar la ventana.
+ *
+ * Cubre APK (visibilitychange + resume del WebView), desktop Tauri (focus) y
+ * web. Repinta, re-arma el reloj si se perdió, registra anclas de las órdenes
+ * que entraron mientras la vista estaba en segundo plano y refresca datos para
+ * no esperar hasta el siguiente polling de 15 s.
+ */
+const RESUME_REFRESH_MIN_MS = 3_000
+let lastResumeRefresh = 0
+
+function onLifecycleResume(): void {
+  markFirstSeen()
+  bumpClock(true)
+  // `focus` y `visibilitychange` llegan casi juntos al volver: un solo refresh.
+  const now = Date.now()
+  if (now - lastResumeRefresh < RESUME_REFRESH_MIN_MS) return
+  lastResumeRefresh = now
+  void refresh()
+}
+
+function onDocumentVisible(): void {
+  if (typeof document === 'undefined') return
+  if (document.visibilityState !== 'visible') return
+  onLifecycleResume()
+}
 
 function orderTypeOf(order: PendingOrderListItem): string {
   return (order as unknown as { orderType?: string | null }).orderType ?? 'LOCAL'
@@ -276,18 +428,31 @@ function needsTimer(order: PendingOrderListItem): boolean {
 /** Verde si &lt;20 min, rojo si ≥20 (L366-379); gris si no es externa (L367-369). */
 function borderColorOf(order: PendingOrderListItem): string {
   if (!needsTimer(order)) return '#616161' // Colors.grey[700]
-  const elapsed = nowTick.value - new Date(order.createdAt).getTime()
+  const elapsed = elapsedMsOf(order)
   return elapsed < TIMER_GREEN_MINUTES * 60_000 ? '#4caf50' : '#f44336'
+}
+
+/**
+ * Milisegundos transcurridos desde que la orden entró al piso.
+ *
+ * Usa el ancla de primera observación cuando existe: si `createdAt` del
+ * servidor viniera adelantado, el contador arrancaría en 00:00 clavado en vez
+ * de avanzar. La ancla cae al `createdAt` cuando ya pasó, así que en el caso
+ * normal (servidor y equipo de acuerdo) el valor es el mismo de antes.
+ */
+function elapsedMsOf(order: PendingOrderListItem): number {
+  void clockPulse.value // dependencia reactiva: el tick repinta el contador
+  const created = new Date(order.createdAt).getTime()
+  if (Number.isNaN(created)) return 0
+  const anchor = firstSeen.value[order.id]
+  const reference = anchor != null ? Math.min(anchor, created) : created
+  return Math.max(0, nowTick.value - reference)
 }
 
 /** MM:SS transcurrido (L382-387). */
 function formatElapsedTime(order: PendingOrderListItem): string {
-  const created = new Date(order.createdAt).getTime()
-  if (Number.isNaN(created)) return '--:--'
-  // max(0) protege contra createdAt futuro (desfase de reloj servidor/cliente):
-  // sin esto un salto negativo se ve igual que una orden recién creada.
-  const elapsed = Math.max(0, nowTick.value - created)
-  const totalSeconds = Math.floor(elapsed / 1000)
+  if (Number.isNaN(new Date(order.createdAt).getTime())) return '--:--'
+  const totalSeconds = Math.floor(elapsedMsOf(order) / 1000)
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
