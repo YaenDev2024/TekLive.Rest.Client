@@ -418,9 +418,20 @@ function targetSubnets(): string[] {
   return [...new Set(candidates)]
 }
 
+/** Cancelación del barrido en curso (el boton pasa a "Cancelar"). */
+const scanCancelled = ref(false)
+
+function cancelScan(): void {
+  if (!scanning.value) return
+  scanCancelled.value = true
+  scanProgress.value = 'Cancelando...'
+  toast.info('Escaneo cancelado.')
+}
+
 async function scanNetwork(): Promise<void> {
   if (scanning.value) return
   scanning.value = true
+  scanCancelled.value = false
   devices.value = []
   scanProgress.value = 'Buscando impresoras locales...'
   try {
@@ -444,6 +455,13 @@ async function scanNetwork(): Promise<void> {
 
     const tasks = targets.map(async (target) => {
       await sem.acquire()
+      // Cancelado: cada tarea pendiente sale sin sondear (las que ya estan
+      // en vuelo terminan solas en <=800ms). Sin esto, cancelar seguia
+      // barriendo las 254 IPs y el boton parecia no responder.
+      if (scanCancelled.value) {
+        sem.release()
+        return
+      }
       try {
         // Solo 9100 (raw/ESC-POS): es el puerto que usamos al imprimir
         // (réplica _probeHost que prioriza 9100; 515/631 no sirven para RAW).
@@ -456,7 +474,9 @@ async function scanNetwork(): Promise<void> {
       } finally {
         sem.release()
         done++
-        if (done % 8 === 0) scanProgress.value = `Escaneando red... ${done}/${targets.length}`
+        if (done % 8 === 0 && !scanCancelled.value) {
+          scanProgress.value = `Escaneando red... ${done}/${targets.length}`
+        }
       }
     })
     await Promise.all(tasks)
@@ -470,7 +490,8 @@ async function scanNetwork(): Promise<void> {
     devices.value = [...devices.value.filter((d) => d.ip.startsWith('usb:')), ...network]
     scanProgress.value = null
 
-    if (network.length === 0) {
+    // Al cancelar no se avisa "no se encontraron": el usuario ya cortó.
+    if (network.length === 0 && !scanCancelled.value) {
       toast.warning(
         `No se encontraron impresoras de red en ${subnets.join(', ')}. Revisa que estén encendidas y en la misma red.`,
       )
@@ -479,6 +500,7 @@ async function scanNetwork(): Promise<void> {
     toast.error(`Error al escanear la red: ${e instanceof Error ? e.message : String(e)}`)
   } finally {
     scanning.value = false
+    scanCancelled.value = false
     scanProgress.value = null
   }
 }
@@ -811,18 +833,20 @@ onMounted(() => {
         </div>
       </section>
 
-      <!-- ===== ESCANEO DE RED ===== -->
+      <!-- ===== ESCANEO DE RED =====
+           Mientras barre, el boton sigue habilitado y CANCELA: el barrido de
+           254 IPs tarda y antes no habia forma de cortarlo. -->
       <button
         type="button"
         class="prt-btn prt-btn--accent prt-btn--full"
         data-testid="prt-scan"
-        :disabled="scanning || !desktop"
+        :disabled="!desktop"
         :title="desktop ? undefined : 'Solo disponible en la app de escritorio'"
-        @click="scanNetwork"
+        @click="scanning ? cancelScan() : scanNetwork()"
       >
         <Loader2 v-if="scanning" :size="20" class="prt-spin" aria-hidden="true" />
         <Search v-else :size="20" aria-hidden="true" />
-        {{ scanning ? 'Buscando...' : 'Buscar impresoras (USB y red)' }}
+        {{ scanning ? 'Cancelar búsqueda' : 'Buscar impresoras (USB y red)' }}
       </button>
 
       <h2 class="prt-section-title">Impresoras descubiertas</h2>

@@ -32,23 +32,40 @@ pub struct PrinterInfo {
 
 /// Lista las impresoras instaladas (EnumPrintersW, nivel 4).
 /// Solo escritorio Windows; fuera de Windows devuelve lista vacía.
+///
+/// ASYNC: EnumPrintersW es una llamada bloqueante del spooler. En un comando
+/// sync se ejecutaria en el hilo principal y congelaria el WebView mientras
+/// Windows enumera (justo al pulsar "Buscar impresoras").
 #[tauri::command]
-pub fn list_printers() -> Vec<PrinterInfo> {
-    imp::enumerate()
+pub async fn list_printers() -> Vec<PrinterInfo> {
+    tauri::async_runtime::spawn_blocking(imp::enumerate)
+        .await
+        .unwrap_or_default()
 }
 
 /// Envía bytes RAW (ESC/POS) a la impresora indicada.
 /// `data` llega como arreglo de números desde el frontend (Vec<u8>).
+///
+/// ASYNC: WritePrinter puede tardar (spooler / papel atascado). En sync
+/// bloquearia el hilo principal y la UI quedaria muda durante el envio.
 #[tauri::command]
-pub fn print_raw(printer_name: String, data: Vec<u8>) -> Result<(), String> {
-    imp::send(&printer_name, &data)
+pub async fn print_raw(printer_name: String, data: Vec<u8>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || imp::send(&printer_name, &data))
+        .await
+        .map_err(|e| format!("El envio a la impresora no termino: {e}"))?
 }
 
 /// Prueba de conectividad TCP con una impresora de red (réplica de
 /// printer_probe_service.dart / Socket.connect(ip, port, timeout)).
 /// Devuelve true si el puerto acepta conexión dentro del timeout.
+///
+/// ASYNC a proposito: en Tauri 2 un comando sync corre en el hilo principal y
+/// bloquea el WebView. El barrido de la vista de impresoras lanza cientos de
+/// probes (254 IPs x 800ms de timeout); siendo sync, la UI se congelaba justo
+/// al pulsar "Buscar impresoras (USB y red)" y no volvia. Con `async` el
+/// runtime lo ejecuta en el pool de hilos y la interfaz sigue respondiendo.
 #[tauri::command]
-pub fn probe_printer(ip: String, port: u16, timeout_ms: u64) -> Result<bool, String> {
+pub async fn probe_printer(ip: String, port: u16, timeout_ms: u64) -> Result<bool, String> {
     use std::net::{IpAddr, SocketAddr, TcpStream};
     use std::time::Duration;
 
@@ -72,14 +89,24 @@ pub fn probe_printer(ip: String, port: u16, timeout_ms: u64) -> Result<bool, Str
         }
     };
 
-    match TcpStream::connect_timeout(&addr, Duration::from_millis(timeout_ms)) {
-        Ok(stream) => {
-            // Mirror de socket.destroy() del Dart: cerrar al instante.
-            drop(stream);
-            Ok(true)
+    let ip_owned = ip.clone();
+
+    // connect_timeout es bloqueante: dentro de un comando async hay que
+    // sacarlo a un hilo del pool con spawn_blocking. Si se llamara directo,
+    // bloquearia un worker del runtime async y con cientos de probes en
+    // paralelo el barrido se serializaria (o agotaria el pool).
+    tauri::async_runtime::spawn_blocking(move || {
+        match TcpStream::connect_timeout(&addr, Duration::from_millis(timeout_ms)) {
+            Ok(stream) => {
+                // Mirror de socket.destroy() del Dart: cerrar al instante.
+                drop(stream);
+                Ok(true)
+            }
+            Err(e) => Err(format!("Sin respuesta de {ip_owned}:{port}: {e}")),
         }
-        Err(e) => Err(format!("Sin respuesta de {ip}:{port}: {e}")),
-    }
+    })
+    .await
+    .map_err(|e| format!("El probe de {ip}:{port} no termino: {e}"))?
 }
 
 /// Envía bytes ESC/POS por socket TCP DIRECTO a una impresora de red
@@ -98,7 +125,7 @@ pub fn probe_printer(ip: String, port: u16, timeout_ms: u64) -> Result<bool, Str
 ///
 /// `timeout_ms` aplica a connect Y a write (set_write/read_timeout).
 #[tauri::command]
-pub fn print_tcp(
+pub async fn print_tcp(
     ip: String,
     port: u16,
     data: Vec<u8>,
@@ -131,51 +158,61 @@ pub fn print_tcp(
         }
     };
 
-    let timeout = Duration::from_millis(timeout_ms);
+    // Async por la misma razon que probe_printer: connect, write y el drain
+    // de ~250ms son bloqueantes. En un comando sync corrian en el hilo
+    // principal y dejaban la UI sin responder al imprimir.
+    let where_to = format!("{ip_trim}:{port}");
+    tauri::async_runtime::spawn_blocking(move || {
+        let timeout = Duration::from_millis(timeout_ms);
 
-    // connect_timeout exige SocketAddr (ya resuelto arriba). Error descriptivo
-    // con destino + causa (mirror del mensaje del probe).
-    let mut stream = TcpStream::connect_timeout(&addr, timeout).map_err(|e| {
-        format!("Sin respuesta de {ip_trim}:{port}: {e} (verifica que esté encendida y en la red)")
-    })?;
+        // connect_timeout exige SocketAddr (ya resuelto arriba). Error
+        // descriptivo con destino + causa (mirror del mensaje del probe).
+        let mut stream = TcpStream::connect_timeout(&addr, timeout).map_err(|e| {
+            format!(
+                "Sin respuesta de {ip_trim}:{port}: {e} (verifica que esté encendida y en la red)"
+            )
+        })?;
 
-    // Timeouts de E/S: write y read acotados por el mismo timeout_ms.
-    stream
-        .set_write_timeout(Some(timeout))
-        .map_err(|e| format!("No se pudo configurar el timeout de escritura: {e}"))?;
-    stream
-        .set_read_timeout(Some(Duration::from_millis(250)))
-        .map_err(|e| format!("No se pudo configurar el timeout de lectura: {e}"))?;
+        // Timeouts de E/S: write y read acotados por el mismo timeout_ms.
+        stream
+            .set_write_timeout(Some(timeout))
+            .map_err(|e| format!("No se pudo configurar el timeout de escritura: {e}"))?;
+        stream
+            .set_read_timeout(Some(Duration::from_millis(250)))
+            .map_err(|e| format!("No se pudo configurar el timeout de lectura: {e}"))?;
 
-    // write_all + flush: todos los bytes al buffer del socket.
-    if let Err(e) = stream.write_all(&data) {
-        return Err(format!("Error enviando datos a {ip_trim}:{port}: {e}"));
-    }
-    if let Err(e) = stream.flush() {
-        return Err(format!("Error enviando datos a {ip_trim}:{port}: {e}"));
-    }
-
-    // shutdown(Write): señal EOF a la impresora (el Dart cerraba el socket
-    // tras el delay; shutdown permite drenar mientras ella procesa).
-    if let Err(e) = stream.shutdown(Shutdown::Write) {
-        // No fatal: algunas térmicas ya cerraron su lado.
-        let _ = e;
-    }
-
-    // Drain ~250ms: leer la respuesta de la impresora (status bytes, ACKs)
-    // hasta timeout/EOF — réplica del socket Dart que vivía 300-1000ms tras
-    // el flush. Sin este delay una térmica lenta puede perder el tail.
-    let mut sink = [0u8; 512];
-    loop {
-        match std::io::Read::read(&mut stream, &mut sink) {
-            Ok(0) => break,   // EOF: la impresora cerró.
-            Ok(_) => {}       // Bytes de estado: descartados.
-            Err(_) => break,  // TimedOut/WouldBlock/interrumpido: fin del drain.
+        // write_all + flush: todos los bytes al buffer del socket.
+        if let Err(e) = stream.write_all(&data) {
+            return Err(format!("Error enviando datos a {ip_trim}:{port}: {e}"));
         }
-    }
+        if let Err(e) = stream.flush() {
+            return Err(format!("Error enviando datos a {ip_trim}:{port}: {e}"));
+        }
 
-    // Drop del stream: cierre garantizado en todos los caminos.
-    Ok(())
+        // shutdown(Write): señal EOF a la impresora (el Dart cerraba el socket
+        // tras el delay; shutdown permite drenar mientras ella procesa).
+        if let Err(e) = stream.shutdown(Shutdown::Write) {
+            // No fatal: algunas térmicas ya cerraron su lado.
+            let _ = e;
+        }
+
+        // Drain ~250ms: leer la respuesta de la impresora (status bytes, ACKs)
+        // hasta timeout/EOF — réplica del socket Dart que vivía 300-1000ms tras
+        // el flush. Sin este delay una térmica lenta puede perder el tail.
+        let mut sink = [0u8; 512];
+        loop {
+            match std::io::Read::read(&mut stream, &mut sink) {
+                Ok(0) => break,  // EOF: la impresora cerró.
+                Ok(_) => {}      // Bytes de estado: descartados.
+                Err(_) => break, // TimedOut/WouldBlock/interrumpido: fin del drain.
+            }
+        }
+
+        // Drop del stream: cierre garantizado en todos los caminos.
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("El envio a {where_to} no termino: {e}"))?
 }
 
 #[cfg(windows)]
