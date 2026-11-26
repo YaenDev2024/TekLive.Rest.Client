@@ -1,6 +1,6 @@
 [package]
 name = "teklive-rest"
-version = "0.1.0"
+version = "0.2.0"
 description = "TekLive Rest — restaurant POS client (Tauri 2 desktop shell)"
 authors = ["TekLive"]
 edition = "2021"
