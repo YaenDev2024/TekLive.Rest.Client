@@ -61,6 +61,10 @@ jobs:
           VERSION="$MAJOR.$MINOR.$PATCH"
           VERSION_CODE=$((10#$MAJOR * 10000 + 10#$MINOR * 100 + 10#$PATCH))
           git rev-parse --verify "refs/tags/$tag" > /dev/null
+          # actions/checkout deja el tag como ref ligero apuntando al commit,
+          # asi que %(contents) devuelve el asunto del commit en vez del
+          # mensaje del tag. Este fetch recupera el tag anotado real.
+          git fetch --force --tags origin > /dev/null 2>&1 || true
           {
             echo "version=$VERSION"
             echo "version_code=$VERSION_CODE"

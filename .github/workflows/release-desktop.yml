@@ -47,6 +47,10 @@ jobs:
             throw "Tag inválido '$tag'. Usa formato vMAJOR.MINOR.PATCH (ej. v0.2.0)."
           }
           $version = $Matches[1]
+          # actions/checkout resuelve el tag como ref ligero apuntando al
+          # commit; sin este fetch, %(contents) devuelve el asunto del commit
+          # en vez del mensaje del tag (y las notas del updater salen mal).
+          git fetch --force --tags origin 2>&1 | Out-Null
           $notes = (git tag -l --format='%(contents)' $tag).Trim()
           "version=$version" >> $env:GITHUB_OUTPUT
           "notes<<EOF" >> $env:GITHUB_OUTPUT
