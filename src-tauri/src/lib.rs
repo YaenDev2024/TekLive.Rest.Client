@@ -24,7 +24,8 @@ pub fn run() {
             printing::print_raw,
             printing::probe_printer,
             printing::print_tcp,
-            window_icon::set_window_icon
+            window_icon::set_window_icon,
+            window_icon::sync_shortcut_icons
         ])
         .run(tauri::generate_context!())
         .expect("error while running TekLive Rest");

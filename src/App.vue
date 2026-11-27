@@ -29,8 +29,9 @@ onMounted(() => {
  *
  * El `companyId` viene del servidor (login/me). Con él:
  * - web y APK: el favicon de la pestaña apunta al logo público.
- * - desktop: además se aplica como ícono de ventana, barra de tareas y accesos
- *   directos del usuario (Rust `set_window_icon`).
+ * - desktop: además se aplica como ícono de ventana y barra de tareas
+ *   (Rust `set_window_icon`) y se encola la actualización de los accesos
+ *   directos del usuario (Rust `sync_shortcut_icons`, en segundo plano).
  *
  * Reactivo a `companyId` (login/logout) y a `logoCacheVersion` (el usuario
  * acaba de subir un logo nuevo en Ajustes: se repinta al instante).

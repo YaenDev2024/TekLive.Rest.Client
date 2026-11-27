@@ -177,10 +177,10 @@
       "description": "Permission identifier",
       "oneOf": [
         {
-          "description": "Ícono de ventana dinámico por empresa: aplicar RGBA rasterizado desde el frontend.",
+          "description": "Ícono de ventana dinámico por empresa: aplicar RGBA rasterizado desde el frontend y encolar la sincronización de accesos directos.",
           "type": "string",
           "const": "allow-window-icon",
-          "markdownDescription": "Ícono de ventana dinámico por empresa: aplicar RGBA rasterizado desde el frontend."
+          "markdownDescription": "Ícono de ventana dinámico por empresa: aplicar RGBA rasterizado desde el frontend y encolar la sincronización de accesos directos."
         },
         {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",

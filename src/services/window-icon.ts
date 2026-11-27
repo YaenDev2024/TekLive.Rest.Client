@@ -1,12 +1,17 @@
 /**
  * TekLive Rest · Ícono de ventana dinámico por empresa (desktop Tauri).
  *
- * Puerto del `window-icon.ts` de Abogados, con el mismo pipeline:
+ * Pipeline:
  * 1. Descarga el logo aprobado de la empresa (endpoint público).
  * 2. Lo rasteriza a RGBA 128x128 en canvas (ícono de ventana).
  * 3. Genera además un PNG 256x256 empaquetado como ICO (accesos directos).
- * 4. Envía ambos al comando `set_window_icon`, que en Windows actualiza la
- *    barra de tareas, Alt-Tab y los .lnk del escritorio/menú inicio.
+ * 4. `set_window_icon` aplica ventana + barra de tareas (inmediato).
+ * 5. `sync_shortcut_icons` ENCOLA el recorrido de .lnk y retorna sin esperar:
+ *    el worker COM corre en segundo plano dentro de Rust.
+ *
+ * El paso 5 solo se pide con sesión válida, porque el recorrido de accesos
+ * directos no tiene sentido (ni debe tocar nada) antes de saber qué empresa
+ * está activa. Separarlo evita el bloqueo que producía el recorrido previo.
  *
  * Best-effort total: cualquier fallo se ignora y la app conserva su ícono. En
  * web y APK no hace nada (`getPlatform()` no es Desktop).
@@ -78,21 +83,28 @@ function makeIco(png: Uint8Array): number[] {
   return Array.from(ico)
 }
 
-/** Rasteriza la URL para la ventana (RGBA) y para el acceso directo (ICO). */
-async function rasterize(
-  url: string,
-): Promise<{ rgba: number[]; width: number; height: number; iconIco: number[] } | null> {
+type Raster = { rgba: number[]; width: number; height: number; iconIco: number[] }
+
+/**
+ * Rasteriza la URL para la ventana (RGBA) y para el acceso directo (ICO).
+ *
+ * 404 devuelve null (la empresa aún no tiene logo aprobado: es un caso normal,
+ * no un error). Cualquier otro fallo se propaga como excepción para que el
+ * llamador lo registre y decida reintentar.
+ */
+async function rasterize(url: string): Promise<Raster | null> {
   const res = await fetch(url)
-  if (!res.ok) return null
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`No se pudo descargar el icono (${res.status}).`)
   const blob = await res.blob()
-  if (!blob.type.startsWith('image/')) return null
+  if (!blob.type.startsWith('image/')) throw new Error('La respuesta del icono no es una imagen.')
   const bitmap = await createImageBitmap(blob)
   try {
     const windowCanvas = document.createElement('canvas')
     windowCanvas.width = ICON_SIZE
     windowCanvas.height = ICON_SIZE
     const windowContext = windowCanvas.getContext('2d', { willReadFrequently: true })
-    if (!windowContext) return null
+    if (!windowContext) throw new Error('No se pudo crear el contexto del icono de ventana.')
     drawContained(windowContext, bitmap, ICON_SIZE)
     const rgba = windowContext.getImageData(0, 0, ICON_SIZE, ICON_SIZE)
 
@@ -100,7 +112,7 @@ async function rasterize(
     shortcutCanvas.width = SHORTCUT_ICON_SIZE
     shortcutCanvas.height = SHORTCUT_ICON_SIZE
     const shortcutContext = shortcutCanvas.getContext('2d')
-    if (!shortcutContext) return null
+    if (!shortcutContext) throw new Error('No se pudo crear el contexto del icono del acceso directo.')
     drawContained(shortcutContext, bitmap, SHORTCUT_ICON_SIZE)
 
     return {
@@ -112,6 +124,37 @@ async function rasterize(
   } finally {
     bitmap.close()
   }
+}
+
+/**
+ * Aplica el icono activo y, si se pide, encola la sincronización de accesos.
+ *
+ * Los dos comandos son independientes: si el encolado falla, el icono de la
+ * ventana ya quedó aplicado y la sesión sigue siendo válida.
+ */
+async function applyRasterizedIcon(
+  raster: Raster,
+  isCurrent: () => boolean,
+  syncShortcuts: boolean,
+): Promise<boolean> {
+  if (!isCurrent()) return false
+  await tauriInvoke('set_window_icon', {
+    rgba: raster.rgba,
+    width: raster.width,
+    height: raster.height,
+    iconIco: raster.iconIco,
+    updateShortcutIcon: syncShortcuts,
+  })
+
+  if (!syncShortcuts) return true
+  if (!isCurrent()) return false
+  try {
+    await tauriInvoke('sync_shortcut_icons')
+  } catch (error) {
+    console.warn('No se pudo encolar la sincronizacion de iconos de accesos directos.', error)
+    return false
+  }
+  return true
 }
 
 /**
@@ -129,39 +172,33 @@ export async function applyCompanyWindowIcon(
   try {
     const path = logoPath(companyId)
     if (!path) return false
-    const raster = await rasterize(path)
-    // 404 = la empresa aún no tiene logo aprobado: se conserva el de TekLive.
-    if (!raster) return false
-    if (!isCurrent()) return false
-    await tauriInvoke('set_window_icon', {
-      rgba: raster.rgba,
-      width: raster.width,
-      height: raster.height,
-      iconIco: raster.iconIco,
-    })
-    return true
-  } catch {
+    // Si la empresa no tiene logo aprobado se usa el de TekLive, que también
+    // debe quedar en sus accesos directos.
+    const raster = (await rasterize(path)) ?? (await rasterize('/logo.png'))
+    if (!raster) throw new Error('No se pudo resolver el icono predeterminado.')
+    return await applyRasterizedIcon(raster, isCurrent, true)
+  } catch (error) {
+    console.warn('No se pudo aplicar el icono de la empresa.', error)
     return false
   }
 }
 
-/** Restaura el ícono por defecto de TekLive (logout o empresa sin logo). */
+/**
+ * Restaura el ícono por defecto solo en la ventana.
+ *
+ * Los accesos directos conservan el logo de la última empresa (decisión del
+ * dueño: cerrar sesión no debe dejar los accesos apuntando al ícono genérico).
+ */
 export async function resetWindowIcon(isCurrent: () => boolean = () => true): Promise<boolean> {
   if (!isDesktop()) return true
   try {
     // Se rasteriza el logo de TekLive desde los assets del propio bundle
     // (ruta relativa: en el WebView de Tauri el origen es tauri://localhost).
     const raster = await rasterize('/logo.png')
-    if (!raster) return false
-    if (!isCurrent()) return false
-    await tauriInvoke('set_window_icon', {
-      rgba: raster.rgba,
-      width: raster.width,
-      height: raster.height,
-      iconIco: raster.iconIco,
-    })
-    return true
-  } catch {
+    if (!raster) throw new Error('No se pudo resolver el icono predeterminado.')
+    return await applyRasterizedIcon(raster, isCurrent, false)
+  } catch (error) {
+    console.warn('No se pudo restaurar el icono predeterminado.', error)
     return false
   }
 }
