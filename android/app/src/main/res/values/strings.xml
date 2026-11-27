@@ -4,4 +4,14 @@
     <string name="title_activity_main">TekLive Rest</string>
     <string name="package_name">com.teklive.rest</string>
     <string name="custom_url_scheme">com.teklive.rest</string>
+
+    <!--
+        Etiquetas de los aliases de ícono. Todas dicen lo mismo a propósito:
+        cambiar de ícono no debe renombrar la app. Si algún día se quiere
+        cambiar el nombre junto con el ícono, basta editar la que corresponda.
+    -->
+    <string name="icon_default_label">TekLive Rest</string>
+    <string name="icon_dark_label">TekLive Rest</string>
+    <string name="icon_light_label">TekLive Rest</string>
+    <string name="icon_mono_label">TekLive Rest</string>
 </resources>

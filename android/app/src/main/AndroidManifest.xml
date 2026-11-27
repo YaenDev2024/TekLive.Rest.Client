@@ -9,6 +9,16 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
 
+        <!--
+            MainActivity NO declara category.LAUNCHER a propósito.
+
+            El ícono de la app lo aportan los <activity-alias> de abajo, que sí
+            son los que aparecen en el launcher. Habilitar/deshabilitar un alias
+            (RestIconPlugin) es entonces inofensivo: nunca se toca este
+            componente. Si se habilitara/deshabilitara la activity destino, el
+            sistema mataría la tarea y la app desaparecería de "recientes"
+            (comportamiento documentado de setComponentEnabledSetting).
+        -->
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
             android:name=".MainActivity"
@@ -19,10 +29,70 @@
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
         </activity>
+
+        <!--
+            Un alias por preset de ícono. Todos lanzan la misma MainActivity y
+            se diferencian sólo en android:icon / android:label.
+
+            Regla: exactamente uno habilitado en todo momento. El valor
+            android:enabled de aquí es el estado de fábrica; RestIconPlugin lo
+            cambia en runtime con PackageManager y lo recuerda en preferencias
+            compartidas, así que el state sobrevive a las actualizaciones.
+        -->
+        <activity-alias
+            android:name=".IconDefault"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_default"
+            android:label="@string/icon_default_label"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".IconDark"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_dark"
+            android:label="@string/icon_dark_label"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".IconLight"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_light"
+            android:label="@string/icon_light_label"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".IconMono"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_mono"
+            android:label="@string/icon_mono_label"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <provider
             android:name="androidx.core.content.FileProvider"
