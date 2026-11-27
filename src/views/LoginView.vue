@@ -52,6 +52,11 @@ async function login(): Promise<void> {
     // Access token stays in memory only.
     applyTokens(data.token, data.refreshToken)
 
+    // companyId SOLO en memoria (el servidor es la fuente de verdad), pero se
+    // toma YA del login: si /me falla, la empresa sigue conocida y el logo de
+    // Ajustes no cae a "Sin logo" por una llamada de enriquecimiento opcional.
+    session.companyId = data.user.companyId ?? null
+
     // Persist the non-sensitive profile (employee identity for next visits).
     // companyId is intentionally NOT persisted: server-side concern.
     persistSession({
@@ -70,8 +75,8 @@ async function login(): Promise<void> {
       })
       // companyId SOLO en memoria (el servidor es la fuente de verdad). Lo usan
       // el favicon y el ícono de ventana/accesos directos para poner el logo de
-      // la empresa en cuanto se entra.
-      session.companyId = meData.companyId ?? null
+      // la empresa en cuanto se entra. /me manda si el login no lo traía.
+      session.companyId = meData.companyId ?? session.companyId
     } catch {
       // /me is optional enrichment; login response already has the essentials.
     }

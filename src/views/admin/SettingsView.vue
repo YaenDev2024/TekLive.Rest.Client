@@ -18,7 +18,7 @@
  *   se retiraron de esta pantalla por decisión del dueño; el ticket-config
  *   sigue disponible vía API y sus flags aplican a los tickets.)
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ImagePlus, Printer, RefreshCw, Smartphone } from 'lucide-vue-next'
 import { checkUpdatesNow, readInstalledVersionLabel } from '../../services/update-ui'
@@ -33,6 +33,7 @@ import {
 } from '../../services/app-icon'
 import type { IconPreset } from '../../services/app-icon'
 import { ApiError, apiGet, apiUpload } from '../../api/client'
+import { getMe } from '../../api/rest'
 import { useToastStore } from '../../stores/toast'
 
 const router = useRouter()
@@ -61,6 +62,12 @@ onMounted(async () => {
   if (platform.value !== 'Web') {
     installedVersion.value = await readInstalledVersionLabel()
   }
+  // `session.companyId` vive solo en memoria y lo puebla el arranque de sesión.
+  // Si esta vista se abre antes de que ese resume termine (o el resume no trajo
+  // perfil), queda en null: `logoPath()` devolvería '' y la tarjeta mostraría
+  // "Sin logo" aunque el logo esté aprobado. Se resuelve aquí con una llamada
+  // /me, que es la fuente de verdad del dato.
+  await ensureCompanyId()
   // Estado de revisión del logo (best-effort: sin red queda el texto genérico).
   if (companyId.value != null) {
     try {
@@ -80,6 +87,28 @@ onMounted(async () => {
     }
   }
 })
+
+/**
+ * Garantiza que `session.companyId` esté poblado antes de pintar el logo.
+ *
+ * Best-effort: sin red o con /me caído se conserva el valor actual (quizá
+ * null) y la tarjeta cae a "Sin logo", que es el comportamiento anterior.
+ */
+async function ensureCompanyId(): Promise<void> {
+  if (companyId.value != null && companyId.value > 0) return
+  try {
+    const { data } = await getMe()
+    const id = data?.companyId
+    if (typeof id === 'number' && id > 0) {
+      session.companyId = id
+      // El logo ya se puede resolver: se re-evalúa la URL y, en desktop, el
+      // ícono de la ventana (App.vue observa companyId y logoCacheVersion).
+      bustLogoCache()
+    }
+  } catch {
+    // Sin red: se queda como estaba.
+  }
+}
 
 async function onCheckUpdates(): Promise<void> {
   if (checking.value) return
@@ -107,6 +136,14 @@ const canEditLogo = computed(() => {
 
 const existingLogoSrc = computed(() => logoPath(companyId.value))
 const existingLogoFailed = ref(false)
+
+// La URL del logo cambia al llegar el companyId o tras subir/reemplazar el
+// logo. `existingLogoFailed` es un flag de "esta URL no cargó": si no se
+// reinicia, un 404 durante el arranque (companyId aún null) dejaba la tarjeta
+// clavada en "Sin logo" para siempre aunque la imagen estuviera disponible.
+watch(existingLogoSrc, () => {
+  existingLogoFailed.value = false
+})
 const logoFile = ref<File | null>(null)
 const logoPreviewUrl = ref('')
 const uploadError = ref('')
@@ -308,6 +345,7 @@ async function onPinShortcut(): Promise<void> {
             <div class="logo-frame">
               <img
                 v-if="logoPreviewUrl || (existingLogoSrc && !existingLogoFailed)"
+                :key="logoPreviewUrl || existingLogoSrc"
                 :src="logoPreviewUrl || existingLogoSrc"
                 alt="Logo de la empresa"
                 class="logo-thumb"
@@ -420,10 +458,15 @@ async function onPinShortcut(): Promise<void> {
 .set {
   display: flex;
   flex-direction: column;
-  /* 100% (NO 100vh): vista hija del shell del POS; en movil el shell ya
-     reserva padding-bottom del bottom-nav. Con 100vh los ultimos 64px
-     (final del scroll) quedaban detras del nav fijo. */
-  min-height: 100%;
+  /* height 100% + overflow hidden: la vista NO scrollea entera, scrollea
+     `.set-list` (flex:1 + min-height:0 + overflow-y:auto).
+     Antes usaba min-height:100% sin dueño del scroll: el padre
+     (.pos-shell-view) tiene overflow:hidden, así que el contenido que
+     excedía el alto se recortaba sin forma de llegar a él. En el APK eso
+     dejaba la tarjeta "Ícono de la app" cortada e inalcanzable. */
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   background: var(--bg); /* var(--bg) */
 }
 
@@ -448,6 +491,16 @@ async function onPinShortcut(): Promise<void> {
    su propio ancho de lectura con max-width, patron .cash-state p) */
 .set-list {
   width: 100%;
+  /* Dueño del scroll de la vista: el shell recorta (overflow:hidden), así que
+     este es el único contenedor que desplaza. min-height:0 es obligatorio:
+     sin él un hijo flex no encoge por debajo de su contenido (min-height:auto)
+     y el final de la lista queda fuera de pantalla sin poder alcanzarse.
+     En el APK, con la tarjeta del ícono añadida, el contenido pasó a exceder
+     el alto y la lista se cortaba. */
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 0 24px 32px;
   list-style: none;
   display: flex;

@@ -170,8 +170,32 @@ export async function tryResumeFromPersistedRefresh(
     // navegación (el perfil no-sensible sobrevive para el prefill).
     writeLS(LS_REFRESH_TOKEN, null)
     session.refreshToken = null
+    return false
   }
-  return ok
+  // Rotar el token NO trae el perfil: `companyId` vive solo en memoria y solo
+  // lo llenaban el login y tryResumeSession. En el APK y el desktop el arranque
+  // SIEMPRE pasa por aquí (la memoria se pierde al cerrar la app), así que sin
+  // esta llamada `session.companyId` quedaba en null: `logoPath()` devolvía ''
+  // y Ajustes mostraba "Sin logo" aunque el logo estuviera aprobado.
+  await hydrateProfileFromMe()
+  return true
+}
+
+/**
+ * Puebla el perfil no-token de la sesión (nombre, rol, empresa) desde /me.
+ *
+ * Best-effort: si falla, la sesión sigue siendo válida (el token ya se rotó) y
+ * la vista que necesite el dato puede reintentar. Nunca lanza.
+ */
+async function hydrateProfileFromMe(): Promise<void> {
+  try {
+    const { data } = await getMe()
+    session.displayName = `${data.firstName} ${data.lastName}`.trim()
+    session.role = data.role
+    session.companyId = data.companyId ?? null
+  } catch {
+    // Sin red o /me caído: la sesión sigue viva, solo queda sin perfil.
+  }
 }
 
 /**
@@ -191,21 +215,17 @@ export function restoreSession(): boolean {
 }
 
 /**
- * Try to resume the session with the current (memory) access token.
- * Web reload wipes memory tokens, so this normally fails on web —
- * the caller then shows the login again with prefilled employee number.
+ * Resume la sesión con el access token que ya está en memoria.
+ *
+ * Devuelve false SOLO si no hay token. El perfil (/me) es best-effort: si esa
+ * llamada falla la sesión sigue siendo válida, así que no se reporta como
+ * sesión perdida (antes un fallo de red en /me mandaba al login con un token
+ * bueno).
  */
 export async function tryResumeSession(): Promise<boolean> {
   if (getAccessToken() == null) return false
-  try {
-    const { data } = await getMe()
-    session.displayName = `${data.firstName} ${data.lastName}`.trim()
-    session.role = data.role
-    session.companyId = data.companyId ?? null
-    return true
-  } catch {
-    return false
-  }
+  await hydrateProfileFromMe()
+  return true
 }
 
 /** Clear everything (logout or invalid session). */
