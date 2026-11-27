@@ -64,7 +64,11 @@ public class RestIconPlugin extends Plugin {
 
     private static final String SHORTCUT_ID = "company_logo_shortcut";
 
-    /** Nombre del paquete, para resolver los ComponentName de los alias. */
+    /**
+     * Prefijo de los ComponentName de los aliases. Va literal (igual que
+     * FILE_PROVIDER_AUTHORITY en el updater) para que un cambio de
+     * applicationId rompa el build de forma visible y no falle en runtime.
+     */
     private static final String ALIAS_PREFIX = "com.teklive.rest.Icon";
 
     /** Presets soportados; el orden es el que ve la UI. */
