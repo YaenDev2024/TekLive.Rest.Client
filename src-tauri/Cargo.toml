@@ -25,7 +25,7 @@ tauri-plugin-process = "2.4.0"
 # Printing (OpenPrinterW/PRINTER_INFO_2W) requieren además Win32_Graphics_Gdi.
 # Solo Windows (el resto usa stub).
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Printing", "Win32_Graphics_Gdi", "Win32_Security"] }
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Printing", "Win32_Graphics_Gdi", "Win32_Security", "Win32_UI_WindowsAndMessaging"] }
 
 [profile.release]
 codegen-units = 1

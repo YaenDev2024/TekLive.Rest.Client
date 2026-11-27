@@ -68,6 +68,10 @@ async function login(): Promise<void> {
         displayName: `${meData.firstName} ${meData.lastName}`.trim(),
         role: meData.role,
       })
+      // companyId SOLO en memoria (el servidor es la fuente de verdad). Lo usan
+      // el favicon y el ícono de ventana/accesos directos para poner el logo de
+      // la empresa en cuanto se entra.
+      session.companyId = meData.companyId ?? null
     } catch {
       // /me is optional enrichment; login response already has the essentials.
     }

@@ -1,11 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability de la ventana principal: core + auto-update (updater minisign y process para relanzar tras instalar).",
+  "description": "Capability de la ventana principal: core + auto-update (updater minisign y process para relanzar tras instalar) + ícono de ventana dinámico por empresa.",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "updater:default",
-    "process:default"
+    "process:default",
+    "allow-window-icon"
   ]
 }

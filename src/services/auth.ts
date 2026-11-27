@@ -60,6 +60,12 @@ export const session = reactive({
   displayName: null as string | null,
   role: null as string | null,
   deviceId: null as string | null,
+  /**
+   * Empresa del usuario autenticado, SOLO en memoria y siempre resuelta por el
+   * servidor (/me o login). NUNCA se persiste ni se envía: la usa únicamente el
+   * logo de empresa (favicon/ícono de ventana).
+   */
+  companyId: null as number | null,
 })
 
 function readLS(key: string): string | null {
@@ -195,6 +201,7 @@ export async function tryResumeSession(): Promise<boolean> {
     const { data } = await getMe()
     session.displayName = `${data.firstName} ${data.lastName}`.trim()
     session.role = data.role
+    session.companyId = data.companyId ?? null
     return true
   } catch {
     return false
@@ -216,6 +223,7 @@ export function clearSession(): void {
   session.employeeNumber = null
   session.displayName = null
   session.role = null
+  session.companyId = null
   // NOTE: deviceId survives logout intentionally: it identifies the
   // device/installation, not the employee.
 }

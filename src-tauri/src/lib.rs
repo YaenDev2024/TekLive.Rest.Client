@@ -6,8 +6,13 @@
 //
 // Auto-update: updater (minisign) + process (relanzar tras instalar), mismo
 // par que Abogados. La llave pública vive en tauri.conf.json > plugins.updater.
+//
+// window_icon: ícono de ventana/accesos directos dinámico por empresa (mismo
+// puerto que Abogados). Permiso expuesto en permissions/window-icon.toml y
+// concedido en capabilities/default.json (`allow-window-icon`).
 
 mod printing;
+mod window_icon;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -18,7 +23,8 @@ pub fn run() {
             printing::list_printers,
             printing::print_raw,
             printing::probe_printer,
-            printing::print_tcp
+            printing::print_tcp,
+            window_icon::set_window_icon
         ])
         .run(tauri::generate_context!())
         .expect("error while running TekLive Rest");

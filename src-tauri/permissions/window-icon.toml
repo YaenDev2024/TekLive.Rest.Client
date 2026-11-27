@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-window-icon"
+description = "Ícono de ventana dinámico por empresa: aplicar RGBA rasterizado desde el frontend."
+commands.allow = ["set_window_icon"]
