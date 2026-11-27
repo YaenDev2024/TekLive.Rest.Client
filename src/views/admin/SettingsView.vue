@@ -5,23 +5,65 @@
  *
  * Réplica de lib/screens/admin/settings.dart (SettingsAdming):
  * - Scaffold bg #212121, AppBar "Ajustes" con bg del scaffold.
- * - ListView con UN SOLO tile (el personal solo configura la impresora de
- *   su máquina aquí — "Precio del dólar", "Crear Nuevo Producto" y
- *   "Configuración del ticket" se retiraron de esta pantalla; el ticket-
- *   config sigue disponible vía API y sus flags aplican a los tickets):
+ * - ListView con dos tiles:
  *   Icons.print_outlined → "Impresora de Tickets"
  *   subtitle "Busca y configura tu impresora de red"
  *   → /ajustes/impresoras (ronda Piso 1: PrintersView réplica
  *     printer_settings_screen.dart).
+ *   RefreshCw → "Buscar actualizaciones" (solo desktop y APK): muestra la
+ *   versión instalada y fuerza un chequeo del updater. No es parte del .dart:
+ *   se añadió porque el auto-update es silencioso y sin esto no hay forma de
+ *   saber si el equipo ya está al día o si el chequeo está roto.
+ *   ("Precio del dólar", "Crear Nuevo Producto" y "Configuración del ticket"
+ *   se retiraron de esta pantalla por decisión del dueño; el ticket-config
+ *   sigue disponible vía API y sus flags aplican a los tickets.)
  */
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Printer } from 'lucide-vue-next'
+import { Printer, RefreshCw } from 'lucide-vue-next'
+import { checkUpdatesNow, readInstalledVersionLabel } from '../../services/update-ui'
+import { getPlatform } from '../../services/device'
 
 const router = useRouter()
 
 function openPrinters(): void {
   void router.push('/ajustes/impresoras')
 }
+
+/**
+ * Diagnóstico del auto-update.
+ *
+ * Existe porque cuando el aviso de actualización no aparece no hay forma de
+ * distinguir "ya estás al día" de "el chequeo está roto": todo el flujo es
+ * silencioso a propósito. Aquí se ve la versión instalada (la MISMA que compara
+ * el updater) y se puede forzar un chequeo sin esperar el throttle de 15 min.
+ * En web no hay updater: la sección no se pinta.
+ */
+const platform = ref(getPlatform())
+const installedVersion = ref<string | null>(null)
+const checking = ref(false)
+const checkResult = ref('')
+
+onMounted(async () => {
+  platform.value = getPlatform()
+  if (platform.value === 'Web') return
+  installedVersion.value = await readInstalledVersionLabel()
+})
+
+async function onCheckUpdates(): Promise<void> {
+  if (checking.value) return
+  checking.value = true
+  checkResult.value = ''
+  try {
+    checkResult.value = await checkUpdatesNow()
+    installedVersion.value = await readInstalledVersionLabel()
+  } catch {
+    checkResult.value = 'No se pudo comprobar. Revisa la conexión.'
+  } finally {
+    checking.value = false
+  }
+}
+
 </script>
 
 <template>
@@ -39,6 +81,36 @@ function openPrinters(): void {
           <span class="set-tile-text">
             <span class="set-tile-title">Impresora de Tickets</span>
             <span class="set-tile-subtitle">Busca y configura tu impresora de red</span>
+          </span>
+        </button>
+      </li>
+
+      <!-- Diagnóstico del updater: versión instalada + chequeo manual. -->
+      <li v-if="platform !== 'Web'">
+        <button
+          type="button"
+          class="set-tile"
+          data-testid="settings-updates"
+          :disabled="checking"
+          @click="onCheckUpdates"
+        >
+          <RefreshCw
+            :size="24"
+            class="set-tile-icon"
+            :class="{ 'set-tile-icon--spin': checking }"
+            aria-hidden="true"
+          />
+          <span class="set-tile-text">
+            <span class="set-tile-title">Buscar actualizaciones</span>
+            <span class="set-tile-subtitle">
+              <template v-if="installedVersion">
+                Versión instalada {{ installedVersion }}
+              </template>
+              <template v-else>Comprueba si hay una versión nueva</template>
+            </span>
+            <span v-if="checkResult" class="set-tile-note" data-testid="settings-updates-result">
+              {{ checkResult }}
+            </span>
           </span>
         </button>
       </li>
@@ -141,6 +213,28 @@ function openPrinters(): void {
 .set-tile-subtitle {
   color: var(--text-3);
   font-size: var(--text-sm);
+}
+
+/* Nota del chequeo manual del updater (resultado legible bajo el subtítulo). */
+.set-tile-note {
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  margin-top: 2px;
+}
+
+.set-tile:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.set-tile-icon--spin {
+  animation: set-spin 1.1s linear infinite;
+}
+
+@keyframes set-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .set-tile::after {

@@ -211,6 +211,29 @@ function errorCode(error: unknown): string {
   return ''
 }
 
+/**
+ * Versión instalada del APK según el sistema (`PackageManager`).
+ *
+ * Es la MISMA cifra contra la que el updater compara el manifiesto, así que
+ * sirve para responder "¿por qué no se actualiza?" desde el propio equipo sin
+ * depender de adb: si aquí dice 0.4.1 y el manifiesto 0.4.2, el updater tiene
+ * que ofrecerlo; si no lo ofrece, el fallo está en el chequeo, no en el gate.
+ * Devuelve `null` fuera de Android o si el plugin no responde.
+ */
+export async function readInstalledVersion(): Promise<{
+  versionCode: number
+  versionName: string
+} | null> {
+  const loaded = await loadPlugin()
+  if (!loaded) return null
+  try {
+    const info = await loaded.plugin.getInstalledInfo()
+    return { versionCode: info.versionCode, versionName: info.versionName }
+  } catch {
+    return null
+  }
+}
+
 // --- Persistencia (throttle, aplazamiento, versiones bloqueadas) -------------
 
 function readNumber(key: string): number {

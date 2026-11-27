@@ -15,12 +15,14 @@ import { computed } from 'vue'
 import { getPlatform } from './device'
 import {
   canDefer,
+  checkForUpdatesNow,
   closeUpdateModal,
   deferUpdate,
   installUpdate,
   isUpdateDeferred,
   isUpdateModalPinned,
   openUpdateModal,
+  readInstalledVersion as readInstalledDesktopVersion,
   shouldShowModal,
   startUpdateWatcher,
   updateBusy,
@@ -30,6 +32,7 @@ import {
   androidUpdateBusy,
   androidUpdateState,
   canDeferAndroid,
+  checkAndroidUpdatesNow,
   closeAndroidUpdateModal,
   deferAndroidUpdate,
   installAndroidUpdate,
@@ -37,6 +40,7 @@ import {
   isAndroidUpdateModalPinned,
   openAndroidUpdateModal,
   pauseAndroidUpdateModalAutoShow,
+  readInstalledVersion as readInstalledAndroidVersion,
   shouldShowAndroidModal,
   startAndroidUpdateWatcher,
 } from './update-android'
@@ -70,6 +74,10 @@ export interface UpdateViewState {
  */
 function isAndroid(): boolean {
   return getPlatform() === 'Android'
+}
+
+function isDesktop(): boolean {
+  return getPlatform() === 'Desktop'
 }
 
 /**
@@ -181,4 +189,52 @@ export async function installAnyUpdate(): Promise<void> {
 export function startAnyUpdateWatcher(): void {
   startUpdateWatcher()
   startAndroidUpdateWatcher()
+}
+
+/**
+ * Versión instalada que el updater compara contra el manifiesto.
+ *
+ * Existe para que el operador pueda verla en Ajustes: cuando el aviso no
+ * aparece, la primera pregunta es "¿qué versión corre aquí?". Sin este dato el
+ * fallo es indistinguible de "ya estás al día". `null` en web (no hay updater).
+ */
+export async function readInstalledVersionLabel(): Promise<string | null> {
+  if (isAndroid()) {
+    const info = await readInstalledAndroidVersion()
+    return info ? info.versionName || String(info.versionCode) : null
+  }
+  return readInstalledDesktopVersion()
+}
+
+/**
+ * Fuerza un chequeo ignorando el throttle y devuelve el resultado legible.
+ *
+ * En Android el updater normal espera 8 s tras abrir la app y luego aplica un
+ * throttle de 15 min, así que sin esto probar un release recién publicado exige
+ * esperar o reinstalar. Devuelve el estatus final para poder mostrarlo.
+ */
+export async function checkUpdatesNow(): Promise<string> {
+  if (isAndroid()) {
+    const stage = await checkAndroidUpdatesNow()
+    switch (stage) {
+      case 'ready':
+        return 'Actualización descargada. Lista para instalar.'
+      case 'downloading':
+        return 'Descargando la actualización…'
+      case 'installing':
+        return 'Instalando…'
+      default:
+        return 'No hay actualizaciones disponibles.'
+    }
+  }
+  if (!isDesktop()) return 'La búsqueda de actualizaciones solo existe en la app.'
+  const result = await checkForUpdatesNow()
+  switch (result) {
+    case 'ready':
+      return 'Actualización descargada. Lista para instalar.'
+    case 'downloading':
+      return 'Descargando la actualización…'
+    default:
+      return 'No hay actualizaciones disponibles.'
+  }
 }

@@ -372,3 +372,23 @@ export async function checkForUpdatesNow(): Promise<'updated' | 'downloading' | 
   if (after === 'downloading') return 'downloading'
   return 'updated'
 }
+
+/**
+ * Versión instalada del binario, leída de la propia app de Tauri.
+ *
+ * En Windows no hay forma de preguntarle al instalador sin tocar el registro.
+ * `getVersion()` del core devuelve la versión con la que se empaquetó ESTE
+ * ejecutable, que es la que compara el updater: es la cifra que el operador
+ * necesita ver para entender por qué no le aparece el aviso. `null` si no corre
+ * en desktop o si el puente no responde.
+ */
+export async function readInstalledVersion(): Promise<string | null> {
+  if (!isDesktop()) return null
+  try {
+    const app = await import('@tauri-apps/api/app')
+    const version = await app.getVersion()
+    return typeof version === 'string' && version.trim() ? version.trim() : null
+  } catch {
+    return null
+  }
+}
