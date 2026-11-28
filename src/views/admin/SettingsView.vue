@@ -27,11 +27,8 @@ import { session } from '../../services/auth'
 import { bustLogoCache, logoPath } from '../../services/company-logo'
 import {
   isIconCustomizationAvailable,
-  listIconPresets,
   pinCompanyShortcut,
-  setIconPreset,
 } from '../../services/app-icon'
-import type { IconPreset } from '../../services/app-icon'
 import { ApiError, apiGet, apiUpload } from '../../api/client'
 import { getMe } from '../../api/rest'
 import { useToastStore } from '../../stores/toast'
@@ -77,15 +74,8 @@ onMounted(async () => {
       // 404 mientras no haya logo subido: no es un error para el usuario.
     }
   }
-  // Personalización del ícono: sólo existe en el APK (RestIconPlugin).
-  if (await isIconCustomizationAvailable()) {
-    const result = await listIconPresets()
-    if (result) {
-      iconPresets.value = result.presets
-      iconPreset.value = result.current
-      iconAvailable.value = true
-    }
-  }
+  // Acceso directo con logo: sólo existe en el APK (RestIconPlugin).
+  iconAvailable.value = await isIconCustomizationAvailable()
 })
 
 /**
@@ -224,33 +214,17 @@ async function onUploadLogo(): Promise<void> {
 }
 
 /**
- * Personalización del ícono de la app (sólo APK).
+ * Acceso directo con el logo de la empresa (sólo APK).
  *
  * `iconAvailable` se activa cuando RestIconPlugin responde. En web y desktop
  * queda false y la sección no se pinta: no tiene sentido mostrar un control que
  * no puede hacer nada.
+ *
+ * El ícono de la APP es estático y va empaquetado con la marca del cliente: no
+ * hay selector de presets porque el sistema se vende a una sola empresa.
  */
 const iconAvailable = ref(false)
-const iconPresets = ref<IconPreset[]>([])
-const iconPreset = ref('')
-const changingIcon = ref(false)
 const pinningShortcut = ref(false)
-
-async function onPickPreset(preset: string): Promise<void> {
-  if (changingIcon.value || preset === iconPreset.value) return
-  changingIcon.value = true
-  try {
-    const ok = await setIconPreset(preset)
-    if (ok) {
-      iconPreset.value = preset
-      toast.success('Ícono actualizado. El lanzador puede tardar unos segundos.')
-    } else {
-      toast.error('No se pudo cambiar el ícono de la app.')
-    }
-  } finally {
-    changingIcon.value = false
-  }
-}
 
 /**
  * Fija un acceso directo con el logo de la empresa.
@@ -398,45 +372,28 @@ async function onPinShortcut(): Promise<void> {
         </div>
       </li>
 
-      <!-- Ícono de la app Android: sólo en el APK (RestIconPlugin). -->
+      <!-- El icono de la app Android es ESTATICO y va empaquetado en el APK con
+           la marca del cliente (alita de Crazy Wings). El sistema se vende a una
+           sola empresa, asi que no hay selector de presets: ver
+           android/app/src/main/res/values/ic_launcher_presets.xml. La unica
+           personalizacion que queda en Android es el acceso directo con el logo
+           de la empresa, que no reemplaza el icono de la app. -->
       <li v-if="iconAvailable">
         <div class="set-card" data-testid="settings-icon">
           <div class="set-card-head">
             <Smartphone :size="24" class="set-tile-icon" aria-hidden="true" />
             <span class="set-tile-text">
-              <span class="set-tile-title">Ícono de la app</span>
+              <span class="set-tile-title">Acceso directo</span>
               <span class="set-tile-subtitle">
-                Elige cómo se ve TekLive Rest en tu teléfono.
+                Pon el logo de tu empresa en la pantalla de inicio.
               </span>
             </span>
           </div>
 
-          <div class="icon-grid" role="radiogroup" aria-label="Ícono de la app">
-            <button
-              v-for="preset in iconPresets"
-              :key="preset.id"
-              type="button"
-              class="icon-option"
-              :class="{ 'icon-option--active': preset.id === iconPreset }"
-              role="radio"
-              :aria-checked="preset.id === iconPreset"
-              :disabled="changingIcon"
-              :data-testid="`settings-icon-${preset.id}`"
-              @click="onPickPreset(preset.id)"
-            >
-              <span class="icon-dot" :class="`icon-dot--${preset.id}`" aria-hidden="true">R</span>
-              <span class="icon-option-label">{{ preset.label }}</span>
-            </button>
-          </div>
-
-          <p class="logo-hint">
-            Algunos lanzadores tardan unos segundos en reflejar el cambio.
-          </p>
-
           <div class="icon-shortcut">
             <p class="icon-shortcut-text">
-              También puedes poner el logo de tu empresa como acceso directo en
-              la pantalla de inicio.
+              Se añade un acceso aparte: no cambia el ícono de la app, que ya trae
+              la marca de TekLive Rest.
             </p>
             <button
               type="button"
@@ -696,83 +653,9 @@ async function onPinShortcut(): Promise<void> {
   line-height: 1.45;
 }
 
-/* --- Ícono de la app (sólo APK) ---------------------------------------- */
-
-.icon-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.icon-option {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 6px;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  cursor: pointer;
-  font-family: var(--font);
-  transition:
-    border-color var(--dur) var(--ease),
-    background var(--dur) var(--ease);
-}
-
-.icon-option:hover:not(:disabled) {
-  background: var(--surface-hover);
-}
-
-.icon-option--active {
-  border-color: var(--primary);
-  background: var(--primary-soft);
-}
-
-.icon-option:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-/* Miniatura del preset: replica el par fondo/letra del adaptive icon. */
-.icon-dot {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 11px;
-  font-size: 19px;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.icon-dot--default {
-  background: #2fbf71;
-  color: #ffffff;
-}
-
-.icon-dot--dark {
-  background: #111814;
-  color: #2fbf71;
-}
-
-.icon-dot--light {
-  background: #ffffff;
-  color: #2fbf71;
-  box-shadow: inset 0 0 0 1px var(--border);
-}
-
-.icon-dot--mono {
-  background: #2fbf71;
-  color: #111814;
-}
-
-.icon-option-label {
-  font-size: var(--text-xs);
-  color: var(--text-2);
-  text-align: center;
-  line-height: 1.2;
-}
+/* --- Acceso directo con logo (sólo APK) --------------------------------- */
+/* El selector de presets se retiró: el icono de la app es estatico y viene
+   empaquetado con la marca del cliente. */
 
 .icon-shortcut {
   display: flex;

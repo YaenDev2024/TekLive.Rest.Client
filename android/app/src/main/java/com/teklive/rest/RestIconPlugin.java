@@ -12,7 +12,6 @@ import androidx.core.content.pm.ShortcutInfoCompat;
 import androidx.core.content.pm.ShortcutManagerCompat;
 import androidx.core.graphics.drawable.IconCompat;
 
-import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -30,37 +29,40 @@ import java.util.concurrent.Executors;
 /**
  * Ícono de la app Android (TekLive Rest).
  *
- * Dos mecanismos distintos, con capacidades distintas:
+ * El ÍCONO DE LA APP ES ESTÁTICO: va empaquetado en el APK con la marca del
+ * cliente (alita de Crazy Wings) porque el sistema se vende a una sola empresa.
+ * No hay selector de íconos en la UI.
  *
- * 1. PRESETS (`setPreset` / `listPresets`): el ícono del cajón de apps se
- *    cambia habilitando/deshabilitando un <activity-alias> con
- *    PackageManager.setComponentEnabledSetting. El ícono de cada alias es un
- *    recurso del APK (`@mipmap/ic_launcher_<preset>`), así que aquí NO se puede
- *    usar el logo subido por la empresa: sólo variantes empaquetadas. Es el
- *    mismo mecanismo que usan WhatsApp o Instagram para sus íconos alternativos.
+ * Mecanismo que queda:
  *
- * 2. SHORTCUT FIJADO (`pinCompanyShortcut` / `removeCompanyShortcut`): un acceso
- *    directo en la pantalla de inicio cuyo ícono es un Bitmap ARBITRARIO, bajado
- *    del endpoint público de logos. Es la única vía para que el logo real de la
- *    empresa aparezca en el dispositivo. Android pide confirmación al usuario y
- *    el ícono es adicional: no reemplaza al de la app.
+ * - SHORTCUT FIJADO (`pinCompanyShortcut` / `removeCompanyShortcut`): un acceso
+ *   directo en la pantalla de inicio cuyo ícono es un Bitmap ARBITRARIO, bajado
+ *   del endpoint público de logos. Es la única vía para que el logo real de la
+ *   empresa aparezca en el dispositivo. Android pide confirmación al usuario y
+ *   el ícono es adicional: no reemplaza al de la app.
+ *
+ * Los cuatro `<activity-alias>` siguen declarados en el manifiesto aunque sólo
+ * se use el `default`. No se pueden borrar sin riesgo: el estado habilitado de
+ * un componente sobrevive a las actualizaciones, así que un equipo que hubiera
+ * quedado con el alias "dark" activo se quedaría SIN punto de entrada en el
+ * launcher si ese alias desapareciera del manifiesto. `ensureDefaultAlias()`
+ * converge a todos a un único alias en el primer arranque.
  *
  * Reglas que este archivo respeta:
  * - Nunca se habilita/deshabilita MainActivity. Sólo aliases. Deshabilitar la
  *   activity destino hace que el sistema mate la tarea y la app desaparezca de
  *   "recientes"; es un comportamiento documentado, no un bug.
- * - Siempre queda EXACTAMENTE un alias habilitado: primero se habilita el nuevo
- *   y después se deshabilita el anterior, para que el launcher no vea un
- *   instante sin punto de entrada.
+ * - Al terminar `ensureDefaultAlias()` queda EXACTAMENTE un alias habilitado.
  * - La red nunca corre en el hilo UI (NetworkOnMainThreadException).
- * - El preset elegido se guarda en SharedPreferences y no en el manifiesto, así
- *   que sobrevive a las actualizaciones del APK.
  */
 @CapacitorPlugin(name = "RestIcon")
 public class RestIconPlugin extends Plugin {
 
     private static final String PREFS = "rest_icon_prefs";
-    private static final String KEY_PRESET = "preset";
+    /** Marca de que el alias ya se normalizó al estático en este equipo. */
+    private static final String KEY_ALIAS_NORMALIZED = "alias_normalized_to_static";
+    /** Alias único habilitado: el ícono estático con la marca del cliente. */
+    private static final String DEFAULT_PRESET = "default";
 
     private static final String SHORTCUT_ID = "company_logo_shortcut";
 
@@ -71,7 +73,7 @@ public class RestIconPlugin extends Plugin {
      */
     private static final String ALIAS_PREFIX = "com.teklive.rest.Icon";
 
-    /** Presets soportados; el orden es el que ve la UI. */
+    /** Aliases declarados en el manifiesto. Sólo `default` queda habilitado. */
     private static final String[] PRESETS = {"default", "dark", "light", "mono"};
 
     private static final int CONNECT_TIMEOUT_MS = 15_000;
@@ -84,6 +86,9 @@ public class RestIconPlugin extends Plugin {
     @Override
     public void load() {
         io = Executors.newSingleThreadExecutor();
+        // El ícono es estático: converge al alias único en el primer arranque
+        // para que ningún equipo quede con un preset viejo activo.
+        ensureDefaultAlias();
     }
 
     @Override
@@ -94,68 +99,45 @@ public class RestIconPlugin extends Plugin {
         }
     }
 
-    // --- Presets de ícono ----------------------------------------------------
+    // --- Ícono estático ------------------------------------------------------
 
     /**
-     * Presets disponibles y cuál está activo.
-     * -> { presets: [{id, label}], current }
-     */
-    @PluginMethod
-    public void listPresets(PluginCall call) {
-        JSArray presets = new JSArray();
-        for (String preset : PRESETS) {
-            JSObject item = new JSObject();
-            item.put("id", preset);
-            item.put("label", labelFor(preset));
-            presets.put(item);
-        }
-        JSObject ret = new JSObject();
-        ret.put("presets", presets);
-        ret.put("current", currentPreset());
-        call.resolve(ret);
-    }
-
-    /**
-     * setPreset({ preset }) -> { preset }
+     * Converge al alias `default` una sola vez.
      *
-     * Habilita el alias del preset pedido y deshabilita los demás. Este cambio
-     * SÍ puede cerrar la app si el lanzador recrea la tarea, por eso la UI debe
-     * avisar antes al usuario.
+     * El estado habilitado de un componente sobrevive a las actualizaciones del
+     * APK. Un equipo que en una versión anterior hubiera elegido otro preset
+     * seguiría con ese alias activo —y con el ícono viejo— aunque la UI ya no
+     * ofrezca cambiarlo. Se ejecuta al cargar el plugin, antes de que la UI
+     * pregunte nada.
      */
-    @PluginMethod
-    public void setPreset(PluginCall call) {
-        String preset = call.getString("preset");
-        if (preset == null || !isKnownPreset(preset)) {
-            call.reject("Preset de ícono desconocido: " + preset);
-            return;
-        }
+    private void ensureDefaultAlias() {
+        SharedPreferences prefs = prefs();
+        if (prefs.getBoolean(KEY_ALIAS_NORMALIZED, false)) return;
 
         try {
             PackageManager pm = getContext().getPackageManager();
             String pkg = getContext().getPackageName();
 
-            // 1) Habilitar el elegido primero: nunca queda la app sin entrada.
+            // 1) Habilitar el default primero: nunca queda sin punto de entrada.
             pm.setComponentEnabledSetting(
-                    new ComponentName(pkg, ALIAS_PREFIX + capitalize(preset)),
+                    new ComponentName(pkg, ALIAS_PREFIX + capitalize(DEFAULT_PRESET)),
                     PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
                     PackageManager.DONT_KILL_APP);
 
             // 2) Deshabilitar el resto.
             for (String other : PRESETS) {
-                if (other.equals(preset)) continue;
+                if (DEFAULT_PRESET.equals(other)) continue;
                 pm.setComponentEnabledSetting(
                         new ComponentName(pkg, ALIAS_PREFIX + capitalize(other)),
                         PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
                         PackageManager.DONT_KILL_APP);
             }
 
-            prefs().edit().putString(KEY_PRESET, preset).apply();
-
-            JSObject ret = new JSObject();
-            ret.put("preset", preset);
-            call.resolve(ret);
+            prefs.edit()
+                    .putBoolean(KEY_ALIAS_NORMALIZED, true)
+                    .apply();
         } catch (Exception ex) {
-            call.reject("No se pudo cambiar el ícono de la app.", ex);
+            // Best-effort: si falla se reintenta en el próximo arranque.
         }
     }
 
@@ -195,8 +177,8 @@ public class RestIconPlugin extends Plugin {
                 IconCompat icon = IconCompat.createWithBitmap(bitmap);
 
                 // Destino: MainActivity directamente, NO el alias activo.
-                // Un alias concreto se deshabilita al cambiar de preset y el
-                // acceso directo quedaría apuntando a un componente muerto.
+                // Un alias concreto puede estar deshabilitado y el acceso
+                // directo quedaría apuntando a un componente muerto.
                 // MainActivity está siempre habilitada y es exported, así que un
                 // Intent explícito la abre sin depender de los intent-filters.
                 ComponentName target = new ComponentName(ctx.getPackageName(), MainActivity.class.getName());
@@ -249,43 +231,6 @@ public class RestIconPlugin extends Plugin {
 
     private SharedPreferences prefs() {
         return getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-    }
-
-    /**
-     * Preset activo. Se lee de preferencias; si no hay nada guardado se infiere
-     * del alias realmente habilitado (primer arranque tras instalar o tras
-     * actualizar desde una versión sin este plugin).
-     */
-    private String currentPreset() {
-        String saved = prefs().getString(KEY_PRESET, null);
-        if (saved != null && isKnownPreset(saved)) return saved;
-
-        PackageManager pm = getContext().getPackageManager();
-        String pkg = getContext().getPackageName();
-        for (String preset : PRESETS) {
-            int state = pm.getComponentEnabledSetting(
-                    new ComponentName(pkg, ALIAS_PREFIX + capitalize(preset)));
-            if (state == PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
-                return preset;
-            }
-        }
-        return "default";
-    }
-
-    private static boolean isKnownPreset(String preset) {
-        for (String known : PRESETS) {
-            if (known.equals(preset)) return true;
-        }
-        return false;
-    }
-
-    private static String labelFor(String preset) {
-        switch (preset) {
-            case "dark": return "Oscuro";
-            case "light": return "Claro";
-            case "mono": return "Monocromo";
-            default: return "Predeterminado";
-        }
     }
 
     private static String capitalize(String s) {

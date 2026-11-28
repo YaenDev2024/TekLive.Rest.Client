@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_default_background">#2FBF71</color>
-    <color name="ic_launcher_dark_background">#111814</color>
+    <!-- Mismos colores de marca que el icono legacy (#171717 = fondo del POS).
+         El sistema es de una sola empresa, asi que los cuatro presets comparten
+         identidad visual; solo cambia el fondo claro/oscuro/mono. -->
+    <color name="ic_launcher_default_background">#171717</color>
+    <color name="ic_launcher_dark_background">#0B0B0B</color>
     <color name="ic_launcher_light_background">#FFFFFF</color>
-    <color name="ic_launcher_mono_background">#2FBF71</color>
+    <color name="ic_launcher_mono_background">#171717</color>
 </resources>
