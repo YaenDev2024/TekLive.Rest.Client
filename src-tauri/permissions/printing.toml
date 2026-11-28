@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-printing"
+description = "Impresión térmica desktop: listar impresoras instaladas, enviar bytes RAW ESC/POS vía Winspool, probar conectividad TCP y enviar por socket directo a impresoras de red."
+commands.allow = ["list_printers", "print_raw", "probe_printer", "print_tcp"]

@@ -177,6 +177,12 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Impresión térmica desktop: listar impresoras instaladas, enviar bytes RAW ESC/POS vía Winspool, probar conectividad TCP y enviar por socket directo a impresoras de red.",
+          "type": "string",
+          "const": "allow-printing",
+          "markdownDescription": "Impresión térmica desktop: listar impresoras instaladas, enviar bytes RAW ESC/POS vía Winspool, probar conectividad TCP y enviar por socket directo a impresoras de red."
+        },
+        {
           "description": "Ícono de ventana dinámico por empresa: aplicar RGBA rasterizado desde el frontend y encolar la sincronización de accesos directos.",
           "type": "string",
           "const": "allow-window-icon",
