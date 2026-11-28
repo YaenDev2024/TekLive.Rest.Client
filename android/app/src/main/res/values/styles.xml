@@ -16,7 +16,23 @@
     </style>
 
 
+    <!--
+        Tema de arranque. Lo aplica MainActivity en el manifest y el sistema lo
+        dibuja mientras se crea el proceso.
+
+        windowSplashScreenBackground/AnimatedIcon son atributos de la libreria
+        androidx.core.splashscreen: en Android 12+ el sistema los lee y dibuja
+        SU splash (fondo de color + icono con mascara), que es el que se ve en
+        equipos nuevos. En Android < 12 la libreria pinta windowBackground, que
+        aqui es un layer-list con el color de marca y el logo centrado, asi que
+        ambas rutas muestran lo mismo. Si se declara a mano android:background
+        como antes, la ventana se pinta encima del splash del sistema y se ve
+        el recorte blanco por defecto.
+    -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <item name="android:background">@drawable/splash</item>
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_mark</item>
+        <item name="android:windowBackground">@drawable/splash_screen</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>
 </resources>

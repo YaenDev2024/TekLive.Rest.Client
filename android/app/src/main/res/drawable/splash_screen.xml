@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Fondo de ventana del splash en Android < 12.
+
+    El PNG de splash lleva la marca al centro y el color de fondo hasta los
+    bordes, pero NO se usa como windowBackground directo: un bitmap suelto se
+    estira al tamano de la ventana y deforma el alita en pantallas 20:9.
+    Con gravity="center" el bitmap conserva su tamano en dp (320x480dp en
+    xxxhdpi) y el color de debajo cubre el resto sin costuras.
+
+    Android 12+ no usa este archivo: el sistema dibuja su propio splash con
+    @drawable/splash_mark (ver values-v31/styles.xml).
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/splash_background" />
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@drawable/splash" />
+    </item>
+</layer-list>
