@@ -1880,10 +1880,25 @@ defineExpose({ stepValid, unitPrice, optionsSummary })
   }
 
   .wiz-btn {
+    /* `min-width: 0` es obligatorio: un flex-item no encoge por debajo de su
+       contenido (min-width:auto por defecto) y `.wiz` tiene overflow:hidden,
+       así que en pantallas angostas el footer desbordaba y el botón derecho
+       se cortaba contra el borde del diálogo (360px: necesitaba 358px dentro
+       de 336px disponibles). Con min-width:0 los dos botones reparten el
+       ancho y el texto largo solo se recorta si de verdad no cabe. */
     flex: 1;
+    min-width: 0;
     justify-content: center;
-    padding: 12px 16px;
+    padding: 12px 10px;
     font-size: 15px;
+    white-space: nowrap;
+  }
+
+  /* El texto puede ser más ancho que el botón en equipos muy estrechos: se
+     deja elipsis antes que romper el layout del footer. */
+  .wiz-btn > :deep(svg),
+  .wiz-btn :deep(svg) {
+    flex: none;
   }
 
   .wiz-btn--next {
