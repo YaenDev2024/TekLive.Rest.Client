@@ -424,10 +424,16 @@ const submitLabel = computed(() => (isEditingSelected.value ? 'Actualizar' : 'Cr
 .ecf__search-row {
   display: flex;
   gap: 8px;
+  /* stretch (default) + alturas 100% abajo: input y botón comparten el alto de
+     la fila. Sin esto el botón quedaba más alto que el input en el APK, porque
+     la regla global `@media (hover: none) { button { min-height: 44px } }` lo
+     estira a 44px mientras el input se quedaba en sus 32px de contenido. */
+  align-items: stretch;
 }
 
 .ecf__search-wrap {
   position: relative;
+  display: flex;
   flex: 1;
   min-width: 0;
 }
@@ -443,6 +449,9 @@ const submitLabel = computed(() => (isEditingSelected.value ? 'Actualizar' : 'Cr
 
 .ecf__search-input {
   width: 100%;
+  /* 100% (no un alto fijo): hereda el alto de la fila, que manda el botón. */
+  height: 100%;
+  min-height: 40px;
   padding: 8px 10px 8px 30px;
   background: var(--card-overlay);
   border: 1px solid var(--border);
@@ -473,7 +482,10 @@ const submitLabel = computed(() => (isEditingSelected.value ? 'Actualizar' : 'Cr
   align-items: center;
   justify-content: center;
   width: 40px;
-  height: 36px;
+  /* Sin alto fijo: la fila es `stretch` y ambos hijos comparten el alto, así
+     que el botón crece con el input en vez de imponer 44px en táctil. */
+  height: auto;
+  min-height: 40px;
   background: var(--primary);
   border: none;
   border-radius: 6px;
