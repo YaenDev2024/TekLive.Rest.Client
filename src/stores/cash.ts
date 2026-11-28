@@ -1,6 +1,6 @@
 /**
  * TekLive Rest · Cash store (ronda cash) — réplica de CashSessionProvider de
- * CrazyWings (lib/providers/cash_session_provider.dart) adaptada al API Rest:
+ * CrazzyWings (lib/providers/cash_session_provider.dart) adaptada al API Rest:
  *
  * - current: sesión de caja ABIERTA del (plant, sucursal) del POS, o null.
  * - fetchCurrent al montar las vistas que cobran (checkout, pendientes, caja).

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * AppButton · botón base del design system CrazyWings.
+ * AppButton · botón base del design system CrazzyWings.
  * Equivalente a ElevatedButton (main.dart): deepOrange bg, texto blanco,
  * padding 16/24, radius 12, fontSize 16 bold.
  */

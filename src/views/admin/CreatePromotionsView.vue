@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * CreatePromotionsView · "Crear Promociones" (Fase admin M1) — réplica de
- * lib/screens/admin/create_promo.dart (CrazyWings, mock) con la estructura
+ * lib/screens/admin/create_promo.dart (CrazzyWings, mock) con la estructura
  * de ManageCategoriesView.vue (Fase 6.2): AppBar standalone + form + cards
  * + AppModal dialogs + toasts + guard de rol.
  *

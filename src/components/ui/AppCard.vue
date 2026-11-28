@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * AppCard · tarjeta base del design system CrazyWings.
+ * AppCard · tarjeta base del design system CrazzyWings.
  * Equivalente a Card theme (main.dart): color grey[850] #303030, elevation 2,
  * radius 12. `overlay` añade el tinte rgba(0,0,0,0.2) usado por las cards de
  * módulos (module_selection_screen) y la card de login (rgba(0,0,0,0.2)).

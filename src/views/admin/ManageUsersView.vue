@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * ManageUsersView · "Gestionar Usuarios" (Fase 7 PARTE B+C) — réplica de
- * lib/screens/admin/manage_users_screen.dart (CrazyWings, 863 líneas) con la
+ * lib/screens/admin/manage_users_screen.dart (CrazzyWings, 863 líneas) con la
  * estructura de ManageCategoriesView.vue (Fase 6.2): AppBar standalone +
  * buscador + cards + AppModal dialogs + toasts + guard de rol.
  *

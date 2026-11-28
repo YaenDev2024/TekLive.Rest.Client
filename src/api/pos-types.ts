@@ -130,7 +130,7 @@ export type OrderStatus =
 /** Catálogo cerrado de métodos de pago. */
 export type PaymentMethod = 'efectivo' | 'tarjeta' | 'transferencia' | 'dolares' | 'ambos' | 'PENDIENTE'
 
-/** orderType del POS Piso 1 (heredado de CrazyWings). */
+/** orderType del POS Piso 1 (heredado de CrazzyWings). */
 export type OrderType =
   | 'LOCAL'
   | 'DELIVERY'
@@ -191,7 +191,7 @@ export interface OrderPaymentPayload {
 export interface CreateOrderPayload {
   plantId: number
   sucursalId: number
-  /** Mesa genérica del POS Piso 1 (convención CrazyWings). */
+  /** Mesa genérica del POS Piso 1 (convención CrazzyWings). */
   tableId: number
   orderType: OrderType
   customerId?: number
@@ -271,7 +271,7 @@ export interface UpdateOrderStatusPayload {
 
 /**
  * Shape de RestCustomerResponse (BusinessSuite.Shared DTOs, camelCase).
- * Espejo de customer_model.dart del POS CrazyWings.
+ * Espejo de customer_model.dart del POS CrazzyWings.
  */
 export interface RestCustomer {
   customerId: number
@@ -323,7 +323,7 @@ export interface UpdateCustomerPayload {
 
 // ---------------------------------------------------------------------------
 // Caja (ronda cash · backend BusinessSuite rest/cash · envelope {success,data})
-// Espejo del cash_session_model.dart del POS CrazyWings.
+// Espejo del cash_session_model.dart del POS CrazzyWings.
 // ---------------------------------------------------------------------------
 
 /** GET sessions/current · POST sessions/open → CashSession. */

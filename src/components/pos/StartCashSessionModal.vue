@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * StartCashSessionModal · modal de "Iniciar caja" — réplica EXACTA del
- * showDialog de module_selection_screen.dart L113-168 (CrazyWings):
+ * showDialog de module_selection_screen.dart L113-168 (CrazzyWings):
  *
  * - Título 'Iniciar caja - Piso #N' (prop `title` opcional, el original
  *   usa 'Iniciar caja - Planta 2' para Cuentas por Cobrar).

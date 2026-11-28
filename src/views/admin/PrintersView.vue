@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * PrintersView · "Configuración de Impresora" (ronda Piso 1) — réplica de
- * lib/screens/admin/printer_settings_screen.dart (CrazyWings) con el patrón
+ * lib/screens/admin/printer_settings_screen.dart (CrazzyWings) con el patrón
  * de las vistas admin standalone (AppBar back + cards).
  *
  * Secciones réplica (mismo orden que el build() L1017-1305):

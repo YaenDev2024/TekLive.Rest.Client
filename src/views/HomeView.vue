@@ -28,7 +28,7 @@ async function logout(): Promise<void> {
         <img
           class="home-logo"
           src="/logoWText.png"
-          alt="Crazy Wings"
+          alt="Crazzy Wings"
           width="160"
           height="44"
         />

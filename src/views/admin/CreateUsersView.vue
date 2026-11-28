@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * CreateUsersView · "Crear Usuarios" (Fase 7 PARTE A) — réplica de
- * lib/screens/admin/user_settings_screen.dart (CrazyWings) con la estructura
+ * lib/screens/admin/user_settings_screen.dart (CrazzyWings) con la estructura
  * de ManageCategoriesView.vue (Fase 6.2): AppBar standalone + card de form +
  * toasts + guard de rol.
  *

@@ -1,6 +1,6 @@
 /**
  * TekLive Rest · Ticket cocina — réplica EXACTA de _buildEscPosKitchenTicket
- * (printing_service.dart L719-922 de CrazyWings).
+ * (printing_service.dart L719-922 de CrazzyWings).
  *
  * Flujo del original:
  *   'ORDEN PARA PREPARAR' centrado → 'Listo para: HH:mm' (+20 min) → hr

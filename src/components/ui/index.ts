@@ -1,5 +1,5 @@
 /**
- * Componentes UI base del design system CrazyWings (Fase 2.5).
+ * Componentes UI base del design system CrazzyWings (Fase 2.5).
  * Reutilizables para las fases 3 (POS) y 4 (Restaurante).
  */
 export { default as AppButton } from './AppButton.vue'

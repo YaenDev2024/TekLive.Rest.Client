@@ -3,7 +3,7 @@
  * DynamicOptionsModal · WIZARD de opciones dinámicas (ronda 5).
  *
  * Réplica EXACTA de DynamicProductWizardDialog (dynamic_product_stepper_dialog.dart,
- * clase en L1415) del POS CrazyWings Flutter:
+ * clase en L1415) del POS CrazzyWings Flutter:
  *
  * - Dialog a pantalla completa bg #212121 radius 28, inset 40h/60v, con 2 paneles:
  *   · IZQUIERDO 200px tipo ticket (L3081-3173): bg grey[950] #101010, border-right

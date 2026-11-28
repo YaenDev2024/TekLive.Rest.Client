@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * ManageCatalogView · "Gestionar Catálogo" (Fase 6.1) — réplica EXACTA de
- * lib/screens/admin/manage_catalog_screen.dart (CrazyWings).
+ * lib/screens/admin/manage_catalog_screen.dart (CrazzyWings).
  *
  * Gestiona el pool de catalog_items = OPCIONES del wizard del POS (SALSA,
  * PROTEINA, COMPLEMENTO, EXTRA, BEBIDA, MODIFICADOR — p.ej. "Barbacoa",

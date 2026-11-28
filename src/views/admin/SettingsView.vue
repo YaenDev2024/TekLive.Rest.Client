@@ -373,7 +373,7 @@ async function onPinShortcut(): Promise<void> {
       </li>
 
       <!-- El icono de la app Android es ESTATICO y va empaquetado en el APK con
-           la marca del cliente (alita de Crazy Wings). El sistema se vende a una
+           la marca del cliente (alita de Crazzy Wings). El sistema se vende a una
            sola empresa, asi que no hay selector de presets: ver
            android/app/src/main/res/values/ic_launcher_presets.xml. La unica
            personalizacion que queda en Android es el acceso directo con el logo

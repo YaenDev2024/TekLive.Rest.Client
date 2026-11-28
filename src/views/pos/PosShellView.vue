@@ -2,7 +2,7 @@
 /**
  * PosShellView · shell del POS desktop (Fase 3 ronda 2 — réplica Flutter).
  *
- * Layout raíz de CrazyWings desktop (desktop_home_layout.dart):
+ * Layout raíz de CrazzyWings desktop (desktop_home_layout.dart):
  *   Row [ DesktopNavRail(80px fijo), Expanded(vista activa) ]
  *
  * DEMO multiplataforma (beta): en PHONE (<700px) el rail desaparece y se
@@ -137,7 +137,7 @@ async function logout(): Promise<void> {
     <nav class="rail" data-testid="nav-rail" aria-label="Navegación del POS">
       <!-- Leading: logo (desktop_nav_rail.dart L63-66, height 40, vpadding 20) -->
       <RouterLink to="/home" class="rail-leading" aria-label="Ir al inicio">
-        <img src="/logoWText.png" alt="Crazy Wings" class="rail-logo" />
+        <img src="/logoWText.png" alt="Crazzy Wings" class="rail-logo" />
       </RouterLink>
 
       <!-- Destinos (labelType.all: icono 24 + label 12 siempre) -->

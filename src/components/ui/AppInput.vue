@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * AppInput · campo de texto del design system CrazyWings.
+ * AppInput · campo de texto del design system CrazzyWings.
  * Equivalente a InputDecorationTheme (main.dart): filled rgba(0,0,0,0.3),
  * label grey[400], radius 12, enabledBorder grey[700], focusedBorder
  * deepOrange, errorBorder redAccent 2px. prefixIcon vía slot (lucide).

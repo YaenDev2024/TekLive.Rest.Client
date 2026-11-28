@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * PayrollView · "Crear Nómina" (Fase admin M4) — réplica de
- * lib/screens/admin/create_nom.dart (CrazyWings, 1289 líneas) con la
+ * lib/screens/admin/create_nom.dart (CrazzyWings, 1289 líneas) con la
  * estructura de ManageUsersView.vue: AppBar standalone + cards de sección
  * + guard de rol + toasts.
  *

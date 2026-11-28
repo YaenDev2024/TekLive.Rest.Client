@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * ManageCategoriesView · "Catalogo de Categorías" (Fase 6.2) — réplica de
- * lib/screens/admin/create_categorias.dart (CrazyWings) con la estructura de
+ * lib/screens/admin/create_categorias.dart (CrazzyWings) con la estructura de
  * ManageCatalogView.vue (Fase 6.1): AppBar standalone + panel de alcance +
  * cards + AppModal dialogs + toasts.
  *

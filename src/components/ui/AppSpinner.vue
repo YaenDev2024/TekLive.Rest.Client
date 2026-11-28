@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * AppSpinner · spinner circular base (CrazyWings CircularProgressIndicator).
+ * AppSpinner · spinner circular base (CrazzyWings CircularProgressIndicator).
  * Color configurable: blanco (sobre botones deepOrange) o primary.
  */
 interface Props {

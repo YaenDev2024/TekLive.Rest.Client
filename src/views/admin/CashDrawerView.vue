@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * CashDrawerView · pantalla CAJA del rail — réplica PIXEL-FIEL de
- * lib/screens/admin/cash_drawer_screen.dart (CrazyWings, 1189 líneas).
+ * lib/screens/admin/cash_drawer_screen.dart (CrazzyWings, 1189 líneas).
  *
  * Constantes de layout (L22-25): _inputHeight=44, _cardPadding=18,
  * _qtyWidth=110, _valueWidth=140. Inputs monetarios 160x44 prefix 'MXN '

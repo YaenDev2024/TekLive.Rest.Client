@@ -2,7 +2,7 @@
 /**
  * PosPiso1View · vista VENDER del POS desktop (ronda 3 — OrderPanel EXACTO).
  *
- * Copia PIXEL-FIEL del POS Piso 1 de CrazyWings Flutter:
+ * Copia PIXEL-FIEL del POS Piso 1 de CrazzyWings Flutter:
  * - pos_view.dart:      Row = MenuContent (Expanded) + OrderPanel (290px fijo)
  * - menu_content.dart:  header (título+fecha izq / búsqueda der), TabBar
  *                       scrollable horizontal (TODO · categorías · EXTRAS),
@@ -561,7 +561,7 @@ function descriptionOf(template: CatalogTemplate): string {
 
 /**
  * Subtotal del carrito para el bloque de totales.
- * `cart.subtotal` ya existe y NO incluye impuestos (CrazyWings: taxRate 0.0).
+ * `cart.subtotal` ya existe y NO incluye impuestos (CrazzyWings: taxRate 0.0).
  * Aquí solo se muestra desglosado lo que el backend realmente cobra.
  */
 function cartItemsUnitCount(): number {
@@ -660,7 +660,7 @@ watch(lineImageKey, () => void hydrateLineImages(), { immediate: true })
         <!-- Header: título+fecha izquierda, búsqueda ancha + acción derecha -->
         <header class="menu-header">
           <div class="menu-header-text">
-            <h1 class="menu-title">Crazy Wings</h1>
+            <h1 class="menu-title">Crazzy Wings</h1>
             <span class="menu-date">{{ currentDate }}</span>
           </div>
           <div class="menu-search">
@@ -1018,7 +1018,7 @@ watch(lineImageKey, () => void hydrateLineImages(), { immediate: true })
         <!-- Footer con totales + previews + acción única (réplica L432-806) -->
         <footer class="op-footer">
           <!-- Desglose: solo lo que el backend cobra (sin impuestos ni descuentos
-               inventados: CrazyWings opera taxRate 0.0 y no tiene descuentos) -->
+               inventados: CrazzyWings opera taxRate 0.0 y no tiene descuentos) -->
           <div v-if="!cart.isEmpty" class="op-breakdown">
             <div class="op-breakdown-row">
               <span>Subtotal</span>

@@ -1,6 +1,6 @@
 /**
  * TekLive Rest · Floors store (Fase 4) — réplica de FloorProvider de
- * CrazyWings (lib/providers/floor_provider.dart) adaptada al API Rest:
+ * CrazzyWings (lib/providers/floor_provider.dart) adaptada al API Rest:
  *
  * - floors[]: pisos de la sucursal (GET /api/rest/floors, backend Fase 4
  *   en construcción en paralelo por otro agente — BusinessSuite).

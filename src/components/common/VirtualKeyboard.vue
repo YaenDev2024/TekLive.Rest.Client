@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * VirtualKeyboard · teclado virtual PROPIO de la app (réplica EXACTA del
- * overlay de keyboard_provider.dart L90-560 de CrazyWings).
+ * overlay de keyboard_provider.dart L90-560 de CrazzyWings).
  *
  * Se monta UNA vez en App.vue (position:fixed bottom, z sobre todo). El
  * teclado nativo del SO se suprime en el wrapper global (readonly en

@@ -103,7 +103,7 @@ async function login(): Promise<void> {
         <img
           class="login-logo"
           src="/logo.png"
-          alt="Crazy Wings"
+          alt="Crazzy Wings"
           width="210"
           height="210"
         />

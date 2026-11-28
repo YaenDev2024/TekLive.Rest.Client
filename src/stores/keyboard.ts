@@ -2,7 +2,7 @@
  * TekLive Rest — Keyboard store (DESKTOP únicamente).
  *
  * El teclado virtual PROPIO solo existe en desktop (pointer: fine), como
- * réplica del teclado in-app de la app Flutter CrazyWings. En móvil/tablet
+ * réplica del teclado in-app de la app Flutter CrazzyWings. En móvil/tablet
  * (pointer: coarse) NO se usa: los inputs abren el teclado NATIVO del SO
  * (iOS/Android) y los <select> el picker nativo (decisión beta iOS
  * 2026-11-11 tras los bugs de doble teclado y selects que no tomaban la

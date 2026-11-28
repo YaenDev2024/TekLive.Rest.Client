@@ -30,7 +30,7 @@ import java.util.concurrent.Executors;
  * Ícono de la app Android (TekLive Rest).
  *
  * El ÍCONO DE LA APP ES ESTÁTICO: va empaquetado en el APK con la marca del
- * cliente (alita de Crazy Wings) porque el sistema se vende a una sola empresa.
+ * cliente (alita de Crazzy Wings) porque el sistema se vende a una sola empresa.
  * No hay selector de íconos en la UI.
  *
  * Mecanismo que queda:

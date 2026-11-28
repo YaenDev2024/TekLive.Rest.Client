@@ -1,6 +1,6 @@
 /**
  * TekLive Rest · Ticket cliente — réplica EXACTA de _buildEscPosClientTicket
- * (printing_service.dart L925-1242 de CrazyWings, variante sin logo).
+ * (printing_service.dart L925-1242 de CrazzyWings, variante sin logo).
  *
  * Flujo del original:
  *   feed 1 → hr → fiscales centrados (RFC / dirección / Tel) → hr

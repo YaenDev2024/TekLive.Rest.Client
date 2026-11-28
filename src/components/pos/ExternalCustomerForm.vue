@@ -3,7 +3,7 @@
  * ExternalCustomerForm · formulario de cliente EXTERNO (ronda 4).
  *
  * Réplica EXACTA de external_customer_form.dart + customer_provider.dart
- * (CrazyWings Flutter) contra el API REAL de clientes (backend 0700a12):
+ * (CrazzyWings Flutter) contra el API REAL de clientes (backend 0700a12):
  *
  * - Búsqueda por número (Enter o botón): GET /api/rest/customers/search.
  *   · Encontrado (data != null) → selecciona (tarjeta verde), cierra form

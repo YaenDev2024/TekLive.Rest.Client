@@ -2,7 +2,7 @@
  * TekLive Rest · Acceso directo Android con el logo de la empresa.
  *
  * El ÍCONO DE LA APP es estático y va empaquetado en el APK con la marca del
- * cliente (alita de Crazy Wings, ver android/app/src/main/res/mipmap-*) porque
+ * cliente (alita de Crazzy Wings, ver android/app/src/main/res/mipmap-*) porque
  * el sistema se vende a una sola empresa. Android no permite apuntar el ícono
  * del launcher a un archivo descargado, así que la única vía para mostrar el
  * logo de la empresa es un ACCESO DIRECTO adicional en la pantalla de inicio

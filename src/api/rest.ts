@@ -102,7 +102,7 @@ export interface TokenRefreshResponse {
 
 /**
  * GET api/rest/floors — piso/planta del restaurante (Fase 4, réplica del
- * FloorProvider de CrazyWings). Espejo de RestFloorResponse del backend
+ * FloorProvider de CrazzyWings). Espejo de RestFloorResponse del backend
  * (en construcción en paralelo por otro agente — BusinessSuite).
  */
 export interface RestFloorResponse {

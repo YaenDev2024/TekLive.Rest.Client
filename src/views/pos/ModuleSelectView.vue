@@ -3,7 +3,7 @@
  * ModuleSelectView · selector de módulos.
  *
  * LÓGICA: réplica fiel de lib/screens/module_selection_screen.dart
- * (CrazyWings) — permisos, gate de caja por piso y navegación intactos.
+ * (CrazzyWings) — permisos, gate de caja por piso y navegación intactos.
  *
  * PRESENTACIÓN: rediseño visual 2026-11-17 (mismo lenguaje premium del hub de
  * Administración, prioridad móvil):
@@ -316,9 +316,9 @@ function floorSubtitle(floor: RestFloorResponse): string {
     <header class="ms-topbar">
       <div class="ms-topbar-inner">
         <div class="ms-brand">
-          <img class="ms-logo" src="/logo.png" alt="Crazy Wings" />
+          <img class="ms-logo" src="/logo.png" alt="Crazzy Wings" />
           <div class="ms-brand-text">
-            <span class="ms-brand-name">Crazy Wings</span>
+            <span class="ms-brand-name">Crazzy Wings</span>
             <span class="ms-brand-sub">TekLive Rest</span>
           </div>
         </div>

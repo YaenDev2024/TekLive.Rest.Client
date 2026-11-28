@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * ScopeSelector · réplica EXACTA de lib/widgets/admin/scope_selector.dart
- * (CrazyWings) — widget compartido para elegir el alcance de items de
+ * (CrazzyWings) — widget compartido para elegir el alcance de items de
  * catálogo admin: 'GLOBAL' | 'SUCURSAL' | 'PLANT' (doc L6-11).
  *
  * Estructura replicada:

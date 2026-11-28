@@ -2,7 +2,7 @@
 /**
  * AdminDashboardView · hub de Administración.
  *
- * Origen: réplica de lib/screens/admin/admin_dashboard_home.dart (CrazyWings) +
+ * Origen: réplica de lib/screens/admin/admin_dashboard_home.dart (CrazzyWings) +
  * ModuleCard de lib/screens/home_screen2.dart. Rediseño 2026-11 (pedido del
  * dueño: "esa calidad y nivel de profesionalismo al entrar en Administración").
  *

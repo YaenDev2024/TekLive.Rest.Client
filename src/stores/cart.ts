@@ -1,6 +1,6 @@
 /**
  * TekLive Rest · Cart store (Fase 3a) — réplica EXACTA de OrderProvider de
- * CrazyWings (lib/providers/order_provider.dart):
+ * CrazzyWings (lib/providers/order_provider.dart):
  *
  * - addItem: dedup SOLO para items normales. Dos items son "idénticos" si
  *   coincide productId + complementId (si aplica) + extrasIds ordenados
@@ -13,7 +13,7 @@
  *   RestCustomer completo del API de clientes) / platformDeliveryInfo.
  * - total/subtotal: DISPLAY solamente — el backend RECALCULA al crear.
  *
- * Sin impuestos (CrazyWings: taxRate 0.0).
+ * Sin impuestos (CrazzyWings: taxRate 0.0).
  */
 
 import { defineStore } from 'pinia'
@@ -91,7 +91,7 @@ function isDynamicItem(item: CartItem): boolean {
   return item.selectedOptions != null
 }
 
-/** Precio unitario total de un item (CrazyWings: totalItemPrice / quantity). */
+/** Precio unitario total de un item (CrazzyWings: totalItemPrice / quantity). */
 function itemUnitPrice(item: CartItem): number {
   if (isDynamicItem(item)) return item.priceAtTimeOfAddition
   const extrasPrice = item.extras.reduce((sum, e) => sum + e.price, 0)
@@ -128,7 +128,7 @@ export const useCartStore = defineStore('cart', {
     },
 
     total(): number {
-      // CrazyWings: total = subtotal + tax (taxRate 0.0 → total = subtotal).
+      // CrazzyWings: total = subtotal + tax (taxRate 0.0 → total = subtotal).
       return this.subtotal
     },
 

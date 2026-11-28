@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * AdminSummaryView · "Resumen de Caja" (Fase admin M3) — réplica de
- * lib/screens/admin/admin_summary_screen.dart (CrazyWings, 851 líneas) con
+ * lib/screens/admin/admin_summary_screen.dart (CrazzyWings, 851 líneas) con
  * la estructura de ManageUsersView.vue: AppBar standalone + filtros +
  * estado loading/error con Reintentar + guard de rol.
  *

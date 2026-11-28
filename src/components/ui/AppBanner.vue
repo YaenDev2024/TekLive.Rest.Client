@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * AppBanner · banner de feedback del design system CrazyWings.
+ * AppBanner · banner de feedback del design system CrazzyWings.
  * Fondos alpha + borde de color pleno, como payment_screen.dart:
  * error: rgba(255,82,82,0.12) + borde #FF5252 (SnackBar redAccent)
  * success: rgba(76,175,80,0.1) + borde #4CAF50 (banner "COBRADO")

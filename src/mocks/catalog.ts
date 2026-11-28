@@ -2,7 +2,7 @@
  * TekLive Rest · MOCK de catálogo POS Piso 1 (Fase 3a).
  *
  * Fixture demo REALISTA para desarrollo visual y QA mientras el backend
- * implementa GET /api/rest/catalog. Réplica del catálogo de CrazyWings:
+ * implementa GET /api/rest/catalog. Réplica del catálogo de CrazzyWings:
  * Hamburguesas / Alitas / Bebidas / Extras con option groups dinámicos
  * (tamaño/término con min/max), regla condicional y extras/complementos.
  *

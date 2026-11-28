@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * PriceIncreaseView · "Aumento de Precios" (Fase admin M2) — réplica de
- * lib/screens/admin/price_increase_config_screen.dart (CrazyWings, 388
+ * lib/screens/admin/price_increase_config_screen.dart (CrazzyWings, 388
  * líneas) con la estructura de ManageCategoriesView.vue: AppBar standalone
  * + ScopeSelector + cards + AppModal confirm + toasts + guard de rol.
  *

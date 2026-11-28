@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * AutoKeyboardWrapper · wrapper GLOBAL de la app (réplica del
- * auto_keyboard_wrapper.dart de CrazyWings para DESKTOP).
+ * auto_keyboard_wrapper.dart de CrazzyWings para DESKTOP).
  *
  * Estrategia por tipo de puntero (decisión beta iOS 2026-11-11):
  * - MOBILE/TABLET (pointer: coarse): NADA propio — el teclado y los

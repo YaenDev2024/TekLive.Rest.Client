@@ -1,6 +1,6 @@
 /**
  * TekLive Rest · Routing de impresión Tauri (ronda Piso 1) — réplica de
- * printing_service.dart de CrazyWings:
+ * printing_service.dart de CrazzyWings:
  *
  * - printEscPosCreatedOrder(kitchen:true) → _printKitchenOrderByArea
  *   (L490-545): keywords por área → impresoras kitchen_<AREA>_ip; sin

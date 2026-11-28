@@ -2,7 +2,7 @@
  * TekLive Rest · Ticket service (Fase 3c) — tipos del documento de ticket.
  *
  * Modelo intermedio neutral (ni ESC/POS ni HTML): los builders réplica del
- * printing_service.dart de CrazyWings producen un TicketDoc y los renderers
+ * printing_service.dart de CrazzyWings producen un TicketDoc y los renderers
  * lo convierten (HTML para browser hoy, bytes ESC/POS para Tauri después).
  *
  * Ancho 48 chars = PaperSize.mm80 del Flutter (línea Generator mm80 ≈ 48
